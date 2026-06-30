@@ -14,25 +14,30 @@ public class GameCursor : MonoBehaviour
         var keyboard = Keyboard.current;
         if (keyboard == null) return;
 
-        if(gameSystem.IsPlayer1Turn())
+        // 持ち駒の選択中、または成り選択中は盤面のカーソル移動を行わない
+        if (gameSystem != null && (gameSystem.IsSelectingHand || gameSystem.IsWaitingForPromoteChoice)) return;
+
+        bool moveUp = keyboard.wKey.wasPressedThisFrame || keyboard.upArrowKey.wasPressedThisFrame;
+        bool moveDown = keyboard.sKey.wasPressedThisFrame || keyboard.downArrowKey.wasPressedThisFrame;
+        bool moveLeft = keyboard.aKey.wasPressedThisFrame || keyboard.leftArrowKey.wasPressedThisFrame;
+        bool moveRight = keyboard.dKey.wasPressedThisFrame || keyboard.rightArrowKey.wasPressedThisFrame;
+
+        if (gameSystem.IsPlayer1Turn())
         {
-            // 上下左右の移動（wasPressedThisFrame で1回ずつ移動）
-            if (keyboard.wKey.wasPressedThisFrame)    Move(1, 0);
-            if (keyboard.sKey.wasPressedThisFrame)  Move(-1, 0);
-            if (keyboard.aKey.wasPressedThisFrame)  Move(0, -1);
-            if (keyboard.dKey.wasPressedThisFrame) Move(0, 1);
+            // 上下左右の移動
+            if (moveUp)    Move(1, 0);
+            if (moveDown)  Move(-1, 0);
+            if (moveLeft)  Move(0, -1);
+            if (moveRight) Move(0, 1);
         }
         else
         {
             // プレイヤー2のターンの処理
-            // カーソルを移動させて駒を選択
-            if (keyboard.wKey.wasPressedThisFrame)    Move(-1, 0);
-            if (keyboard.sKey.wasPressedThisFrame)  Move(1, 0);
-            if (keyboard.aKey.wasPressedThisFrame)  Move(0, 1);
-            if (keyboard.dKey.wasPressedThisFrame) Move(0, -1);
-
+            if (moveUp)    Move(-1, 0);
+            if (moveDown)  Move(1, 0);
+            if (moveLeft)  Move(0, 1);
+            if (moveRight) Move(0, -1);
         }
-        
 
         // 見た目の位置を更新
         UpdatePosition();

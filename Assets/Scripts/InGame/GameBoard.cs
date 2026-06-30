@@ -141,6 +141,32 @@ public class GameBoard : MonoBehaviour
         return false;
     }
 
+    public void SpawnPiece(PieceType type, PlayerType player, int x, int y)
+    {
+        int index = GameHelper.CalcPanelNum(x, y);
+        if (index == -1) return;
+
+        GameObject prefab = GetPrefabByType(type);
+        if (prefab == null)
+        {
+            Debug.LogError($"Prefab not found for type: {type}");
+            return;
+        }
+
+        GameObject obj = Instantiate(prefab, transform);
+        GamePiece piece = obj.GetComponent<GamePiece>();
+        piece.player = player;
+        piece.X = x;
+        piece.Y = y;
+        piece.transform.localPosition = GameHelper.CalcPanelLocation(x, y);
+
+        if (piece.player == PlayerType.Player2)
+        {
+            piece.transform.localRotation = Quaternion.Euler(0, 0, 180);
+        }
+        boardData[index] = piece;
+    }
+
     private GameObject GetPrefabByType(PieceType type)
     {
         foreach (var map in pieceMapList)
