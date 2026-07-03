@@ -10,10 +10,11 @@ public class HandUIManager : MonoBehaviour
     [SerializeField] private TextMeshProUGUI activePlayerText; // 現在の手番プレイヤーを示すテキスト
     [SerializeField] private TextMeshProUGUI playerHandPieceText; // 操作している側の持ち駒をUIで表示するテキスト
     [SerializeField] private TextMeshProUGUI statusText;       // 操作ステータス表示テキスト
+    [SerializeField] private GameObject darkOverlay; // 画面を暗くする半透明パネル
 
     [Header("Animation Settings")]
-    [SerializeField] private float hiddenY = 350f;   
-    [SerializeField] private float visibleY = 100f;  
+    [SerializeField] private float hiddenY = 350f;
+    [SerializeField] private float visibleY = 100f;
     [SerializeField] private float animDuration = 0.4f;
 
     private static HandUIManager instance;
@@ -45,6 +46,10 @@ public class HandUIManager : MonoBehaviour
         {
             containerPanel.DOKill();
             containerPanel.DOAnchorPosY(visibleY, animDuration).SetEase(Ease.OutBack);
+        }
+        if (darkOverlay != null)
+        {
+            darkOverlay.SetActive(false);
         }
     }
 

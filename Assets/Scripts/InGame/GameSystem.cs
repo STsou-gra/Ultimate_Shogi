@@ -54,6 +54,17 @@ public class GameSystem : MonoBehaviour
 
     public bool IsWaitingForPromoteChoice => isWaitingForPromoteChoice;
 
+    [Header("Visual & Interaction Constraints Settings")]
+    [SerializeField] private GameObject darkOverlay; // 画面を暗くする半透明パネル
+    [SerializeField] private RectTransform promoteYesButtonRect; // 成る(Yes)ボタン
+    [SerializeField] private RectTransform promoteNoButtonRect;  // 成らない(No)ボタン
+    private bool promoteChoice = true;
+
+    private List<Vector2Int> currentMovablePositions = new List<Vector2Int>();
+    public List<Vector2Int> CurrentMovablePositions => currentMovablePositions;
+    public bool IsDroppingHand => isDroppingHand;
+    public GamePiece SelectedPiece => selectedPiece;
+
     // ルールエンジン用のルールリスト
     private List<IGameRule> gameRules = new List<IGameRule>();
 
@@ -125,8 +136,26 @@ public class GameSystem : MonoBehaviour
         var keyboard = Keyboard.current;
         if (keyboard == null) return;
 
-        // 成り確認ダイアログの応答待ち中はキー入力を無視する
-        if (isWaitingForPromoteChoice) return;
+        // 成り確認ダイアログの応答待ち中のキー操作
+        if (isWaitingForPromoteChoice)
+        {
+            bool toggleChoice = keyboard.aKey.wasPressedThisFrame || keyboard.wKey.wasPressedThisFrame ||
+                                keyboard.sKey.wasPressedThisFrame || keyboard.dKey.wasPressedThisFrame ||
+                                keyboard.leftArrowKey.wasPressedThisFrame || keyboard.upArrowKey.wasPressedThisFrame ||
+                                keyboard.downArrowKey.wasPressedThisFrame || keyboard.rightArrowKey.wasPressedThisFrame;
+
+            if (toggleChoice)
+            {
+                promoteChoice = !promoteChoice;
+                UpdatePromoteChoiceVisuals();
+            }
+
+            if (gameController.IsOkTrigger())
+            {
+                ResolvePromotionChoice(promoteChoice);
+            }
+            return;
+        }
 
         PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
 
@@ -142,24 +171,24 @@ public class GameSystem : MonoBehaviour
         if (isSelectingHand)
         {
             // 持ち駒選択モード
-            bool selectPrev = keyboard.aKey.wasPressedThisFrame || keyboard.wKey.wasPressedThisFrame || 
+            bool selectPrev = keyboard.aKey.wasPressedThisFrame || keyboard.wKey.wasPressedThisFrame ||
                               keyboard.leftArrowKey.wasPressedThisFrame || keyboard.upArrowKey.wasPressedThisFrame;
-            bool selectNext = keyboard.dKey.wasPressedThisFrame || keyboard.sKey.wasPressedThisFrame || 
+            bool selectNext = keyboard.dKey.wasPressedThisFrame || keyboard.sKey.wasPressedThisFrame ||
                               keyboard.rightArrowKey.wasPressedThisFrame || keyboard.downArrowKey.wasPressedThisFrame;
 
-            if (selectPrev)
+            if (availableHandTypes.Count > 0)
             {
-                selectedHandIndex--;
-                UpdateSelectingHandUI();
-            }
-            else if (selectNext)
-            {
-                selectedHandIndex++;
-                UpdateSelectingHandUI();
-            }
-            else if (gameController.IsOkTrigger())
-            {
-                if (availableHandTypes.Count > 0)
+                if (selectPrev)
+                {
+                    selectedHandIndex--;
+                    UpdateSelectingHandUI();
+                }
+                else if (selectNext)
+                {
+                    selectedHandIndex++;
+                    UpdateSelectingHandUI();
+                }
+                else if (gameController.IsOkTrigger())
                 {
                     isSelectingHand = false;
                     isDroppingHand = true;
@@ -168,7 +197,8 @@ public class GameSystem : MonoBehaviour
                     ShowDroppablePanels(selectedHandType);
                 }
             }
-            else if (gameController.IsCancelTrigger())
+
+            if (gameController.IsCancelTrigger())
             {
                 isSelectingHand = false;
                 if (HandUIManager.Instance != null)
@@ -177,6 +207,7 @@ public class GameSystem : MonoBehaviour
                     HandUIManager.Instance.HidePanel();
                 }
                 gameBoard.AllDeactivePanel();
+                SetDarkOverlayActive(false);
             }
         }
         else if (isDroppingHand)
@@ -212,6 +243,8 @@ public class GameSystem : MonoBehaviour
                 isSelectingHand = true;
                 UpdateHandList();
                 UpdateSelectingHandUI();
+                ClearBoardHighlight();
+                currentMovablePositions.Clear();
             }
         }
         else
@@ -220,22 +253,16 @@ public class GameSystem : MonoBehaviour
             if (keyboard.hKey.wasPressedThisFrame)
             {
                 UpdateHandList();
-                if (availableHandTypes.Count > 0)
+                isSelectingHand = true;
+                selectedHandIndex = 0;
+                UpdateSelectingHandUI();
+                if (HandUIManager.Instance != null)
                 {
-                    isSelectingHand = true;
-                    selectedHandIndex = 0;
-                    UpdateSelectingHandUI();
-                    if (HandUIManager.Instance != null)
-                    {
-                        var hand = IsPlayer1Turn() ? player1Hand : player2Hand;
-                        HandUIManager.Instance.UpdateActiveHandDisplay(activePlayer, hand);
-                        HandUIManager.Instance.ShowPanel();
-                    }
+                    var hand = IsPlayer1Turn() ? player1Hand : player2Hand;
+                    HandUIManager.Instance.UpdateActiveHandDisplay(activePlayer, hand);
+                    HandUIManager.Instance.ShowPanel();
                 }
-                else
-                {
-                    Debug.Log("持ち駒がありません。");
-                }
+                SetDarkOverlayActive(true);
             }
             else if (gameController.IsOkTrigger())
             {
@@ -245,6 +272,9 @@ public class GameSystem : MonoBehaviour
             {
                 selectedPiece = null;
                 gameBoard.AllDeactivePanel();
+                ClearBoardHighlight();
+                SetDarkOverlayActive(false);
+                currentMovablePositions.Clear();
             }
         }
     }
@@ -307,6 +337,9 @@ public class GameSystem : MonoBehaviour
             NetworkManager.Instance.SendMoveRequest(fromX, fromY, toX, toY, promote);
             selectedPiece = null;
             gameBoard.AllDeactivePanel();
+            ClearBoardHighlight();
+            SetDarkOverlayActive(false);
+            currentMovablePositions.Clear();
         }
         else
         {
@@ -325,6 +358,19 @@ public class GameSystem : MonoBehaviour
         pendingFromY = fromY;
         pendingToX = toX;
         pendingToY = toY;
+
+        promoteChoice = true; // 初期選択は「成る(Yes)」
+        UpdatePromoteChoiceVisuals();
+
+        // 盤面全体のハイライトとマスのハイライトを一旦クリア
+        ClearBoardHighlight();
+
+        // 成りになれる駒（選択されている駒）だけを光らせる
+        if (selectedPiece != null)
+        {
+            selectedPiece.SetHighlight(true);
+            highlightedPieces.Add(selectedPiece);
+        }
 
         if (promoteConfirmPanel != null)
         {
@@ -417,6 +463,9 @@ public class GameSystem : MonoBehaviour
         }
         selectedPiece = null;
         gameBoard.AllDeactivePanel();
+        ClearBoardHighlight();
+        SetDarkOverlayActive(false);
+        currentMovablePositions.Clear();
         NextState();
     }
 
@@ -455,6 +504,9 @@ public class GameSystem : MonoBehaviour
 
         selectedPiece = null;
         gameBoard.AllDeactivePanel();
+        ClearBoardHighlight();
+        SetDarkOverlayActive(false);
+        currentMovablePositions.Clear();
         NextState();
     }
 
@@ -479,6 +531,9 @@ public class GameSystem : MonoBehaviour
         isDroppingHand = false;
         isSelectingHand = false;
         gameBoard.AllDeactivePanel();
+        ClearBoardHighlight();
+        SetDarkOverlayActive(false);
+        currentMovablePositions.Clear();
         NextState();
     }
 
@@ -522,10 +577,9 @@ public class GameSystem : MonoBehaviour
     {
         if (availableHandTypes.Count == 0)
         {
-            isSelectingHand = false;
             if (HandUIManager.Instance != null)
             {
-                HandUIManager.Instance.SetStatusText("");
+                HandUIManager.Instance.SetStatusText("持ち駒がありません \n(取消: Space)");
             }
             return;
         }
@@ -557,6 +611,7 @@ public class GameSystem : MonoBehaviour
     private void ShowDroppablePanels(PieceType type)
     {
         gameBoard.AllDeactivePanel();
+        currentMovablePositions.Clear();
         PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
 
         for (int tx = 0; tx < 9; tx++)
@@ -566,8 +621,18 @@ public class GameSystem : MonoBehaviour
                 if (CanDropPieceTo(activePlayer, type, tx, ty))
                 {
                     gameBoard.ActivePanel(GameHelper.CalcPanelNum(tx, ty));
+                    currentMovablePositions.Add(new Vector2Int(tx, ty));
                 }
             }
+        }
+
+        // 画面を暗くし、打てるマスをハイライト（打つ時はselectedはnull）
+        ApplyBoardHighlight(null, currentMovablePositions);
+
+        // カーソル初期位置を最初の打てるマスへ移動
+        if (currentMovablePositions.Count > 0 && gameCursor != null)
+        {
+            gameCursor.SetPosition(currentMovablePositions[0].x, currentMovablePositions[0].y);
         }
     }
 
@@ -593,6 +658,8 @@ public class GameSystem : MonoBehaviour
         isDroppingHand = false;
         isSelectingHand = false;
         gameBoard.AllDeactivePanel();
+        ClearBoardHighlight();
+        currentMovablePositions.Clear();
     }
 
     bool IsMyPiece(GamePiece piece)
@@ -617,6 +684,10 @@ public class GameSystem : MonoBehaviour
     void ShowMovablePanels(GamePiece piece)
     {
         gameBoard.AllDeactivePanel();
+        currentMovablePositions.Clear();
+
+        // 元のマスもカーソルが戻れるよう移動可能リストに追加する
+        currentMovablePositions.Add(new Vector2Int(piece.X, piece.Y));
 
         for (int tx = 0; tx < 9; tx++)
         {
@@ -625,16 +696,25 @@ public class GameSystem : MonoBehaviour
                 if (CanPieceMoveTo(piece, tx, ty))
                 {
                     gameBoard.ActivePanel(GameHelper.CalcPanelNum(tx, ty));
+                    currentMovablePositions.Add(new Vector2Int(tx, ty));
                 }
             }
         }
+
+        // 画面を暗くし、選択した駒と敵の駒を光らせる
+        ApplyBoardHighlight(piece, currentMovablePositions);
     }
+
 
     void NextState()
     {
         // ターン切り替え時に状態をクリア
         isSelectingHand = false;
         isDroppingHand = false;
+        if (gameBoard != null)
+        {
+            gameBoard.ChangeSkillOnOff(0); // スキルをリセット
+        }
         if (HandUIManager.Instance != null)
         {
             HandUIManager.Instance.SetStatusText("");
@@ -685,6 +765,129 @@ public class GameSystem : MonoBehaviour
     public bool IsPlayer1Turn()
     {
         return currentState == GameState.Player1Turn;
+    }
+
+    public void UseSkill(PlayerType player)
+    {
+        // 自分のターンであるかチェック
+        PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
+        if (player != activePlayer)
+        {
+            Debug.LogWarning("相手のターンにはスキルを使用できません。");
+            return;
+        }
+
+        if (NetworkManager.Instance != null && NetworkManager.Instance.IsOnlineMatch)
+        {
+            // オンライン対戦時はサーバーへ要求を送信
+            NetworkManager.Instance.SendUseSkillRequest();
+        }
+        else
+        {
+            // ローカル対戦時は直接発動
+            if (gameBoard != null)
+            {
+                gameBoard.ChangeSkillOnOff(1);
+            }
+            Debug.Log($"ローカルスキル発動: {player}");
+            if (HandUIManager.Instance != null)
+            {
+                HandUIManager.Instance.SetStatusText($"【スキル発動！】 相手の飛車を取れば勝利します");
+            }
+        }
+    }
+
+    public void OnServerUseSkill(PlayerType activePlayer)
+    {
+        if (gameBoard != null)
+        {
+            gameBoard.ChangeSkillOnOff(1);
+        }
+        Debug.Log($"プレイヤー {(activePlayer == PlayerType.Player1 ? "1" : "2")} がスキルを使用しました！ (飛車が王将扱いになります)");
+        if (HandUIManager.Instance != null)
+        {
+            HandUIManager.Instance.SetStatusText($"【スキル発動中！】 相手の飛車を取れば勝利します");
+        }
+    }
+
+    private Color originalAmbientColor;
+    private bool isAmbientSaved = false;
+    private List<GamePiece> highlightedPieces = new List<GamePiece>();
+
+    void SetDarkOverlayActive(bool active)
+    {
+        if (darkOverlay != null)
+        {
+            darkOverlay.SetActive(active);
+        }
+        else if (active)
+        {
+            if (!isAmbientSaved)
+            {
+                originalAmbientColor = RenderSettings.ambientLight;
+                isAmbientSaved = true;
+                RenderSettings.ambientLight = Color.gray * 0.25f; // 暗転
+            }
+        }
+        else
+        {
+            if (isAmbientSaved)
+            {
+                RenderSettings.ambientLight = originalAmbientColor;
+                isAmbientSaved = false;
+            }
+        }
+    }
+
+    // 画面を暗くし、関係する駒を光らせる
+    void ApplyBoardHighlight(GamePiece selected, List<Vector2Int> movablePos)
+    {
+        // 1. 暗転
+        SetDarkOverlayActive(true);
+
+        // 2. 選択された駒を光らせる
+        if (selected != null)
+        {
+            selected.SetHighlight(true);
+            highlightedPieces.Add(selected);
+        }
+
+        // 3. 移動可能マスの敵の駒を光らせる
+        foreach (var pos in movablePos)
+        {
+            GamePiece target = gameBoard.GetPieceAt(pos.x, pos.y);
+            if (target != null && selected != null && target.player != selected.player)
+            {
+                target.SetHighlight(true);
+                highlightedPieces.Add(target);
+            }
+        }
+    }
+
+    // 暗転とハイライトを解除する
+    void ClearBoardHighlight()
+    {
+        // 駒のハイライト解除
+        foreach (var piece in highlightedPieces)
+        {
+            if (piece != null)
+            {
+                piece.SetHighlight(false);
+            }
+        }
+        highlightedPieces.Clear();
+    }
+
+    private void UpdatePromoteChoiceVisuals()
+    {
+        if (promoteYesButtonRect != null)
+        {
+            promoteYesButtonRect.localScale = promoteChoice ? Vector3.one * 1.15f : Vector3.one;
+        }
+        if (promoteNoButtonRect != null)
+        {
+            promoteNoButtonRect.localScale = !promoteChoice ? Vector3.one * 1.15f : Vector3.one;
+        }
     }
 }
 

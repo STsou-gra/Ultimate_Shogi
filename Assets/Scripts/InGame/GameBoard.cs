@@ -21,7 +21,7 @@ public class GameBoard : MonoBehaviour
 
     private GamePiece[] boardData = new GamePiece[81]; // 9x9の盤面を想定
 
-    public int AbilityOnOff = 0;//0がoff
+    public int SkillOnOff = 0;//0がoff
     
 
     [SerializeField] private List<PieceMap> pieceMapList = new List<PieceMap>();
@@ -115,8 +115,8 @@ public class GameBoard : MonoBehaviour
         return boardData;
     }
 
-    public void ChangeAbilityOnOff(int i){
-        AbilityOnOff = i;
+    public void ChangeSkillOnOff(int i){
+        SkillOnOff = i;
     }
 
     public bool RemovePieceAt(int x, int y)
@@ -126,7 +126,7 @@ public class GameBoard : MonoBehaviour
         {
             // 消される駒の種類をチェック
             bool isKing = (boardData[index].type == PieceType.King);
-            if(AbilityOnOff == 1){
+            if(SkillOnOff == 1){
                 // 消される駒の種類をチェック
                 if(boardData[index].type == PieceType.Rook){
                     isKing = (boardData[index].type == PieceType.Rook);

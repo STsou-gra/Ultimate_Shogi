@@ -41,7 +41,7 @@ public class SelectionManager : MonoBehaviour
         }
     }
 }*/
-
+/*
 using UnityEngine;
 using TMPro;
 using DG.Tweening;
@@ -84,4 +84,4 @@ public class SelectionManager : MonoBehaviour
             selectionPanel.SetActive(false); // 消えるアニメが終わったら非アクティブに
         });
     }
-}
+}*/

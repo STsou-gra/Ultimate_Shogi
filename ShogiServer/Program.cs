@@ -32,6 +32,7 @@ namespace ShogiServer
         private static Dictionary<PieceType, int> player2Hand = new Dictionary<PieceType, int>();
         private static PlayerType currentTurn = PlayerType.Player1;
         private static bool isGameActive = false;
+        private static int skillOnOff = 0; // 0 = off, 1 = active
 
         static void Main(string[] args)
         {
@@ -65,6 +66,7 @@ namespace ShogiServer
         {
             currentTurn = PlayerType.Player1;
             isGameActive = false;
+            skillOnOff = 0;
 
             // 持ち駒辞書の初期化
             foreach (PieceType type in Enum.GetValues(typeof(PieceType)))
@@ -74,7 +76,7 @@ namespace ShogiServer
                 player2Hand[type] = 0;
             }
 
-            // 初期盤面レイアウト作成 (GameBoard.cs.CreateLayout と同一)
+            // 初期盤面レイアウト作成
             for (int i = 0; i < 9; i++)
             {
                 AddPiece(PieceType.Pawn, PlayerType.Player1, 2, i);
@@ -199,8 +201,8 @@ namespace ShogiServer
             {
                 if (targetPiece.player != player)
                 {
-                    // 駒を取る
-                    if (targetPiece.type == PieceType.King)
+                    // 駒を取る (通常時は王将、スキル発動中は飛車も対象)
+                    if (targetPiece.type == PieceType.King || (skillOnOff == 1 && targetPiece.type == PieceType.Rook))
                     {
                         isGameOver = true;
                     }
@@ -247,8 +249,26 @@ namespace ShogiServer
             {
                 // ターン交代
                 currentTurn = (currentTurn == PlayerType.Player1) ? PlayerType.Player2 : PlayerType.Player1;
+                skillOnOff = 0; // スキルリセット
             }
 
+            return true;
+        }
+
+        public static bool HandleUseSkillRequest(PlayerType player)
+        {
+            if (!isGameActive) return false;
+            if (player != currentTurn) return false;
+
+            skillOnOff = 1;
+            Console.WriteLine($"プレイヤー {player} がスキルを使用しました。");
+
+            GameEventPayload ev = new GameEventPayload
+            {
+                eventType = "Skill",
+                activePlayer = (int)player
+            };
+            Broadcast("GameEvent", ev);
             return true;
         }
 
@@ -319,6 +339,7 @@ namespace ShogiServer
 
             // ターン交代
             currentTurn = (currentTurn == PlayerType.Player1) ? PlayerType.Player2 : PlayerType.Player1;
+            skillOnOff = 0; // スキルリセット
 
             return true;
         }
@@ -501,6 +522,11 @@ namespace ShogiServer
                             if (!success) SendError("無効な配置要求です。");
                         }
                         break;
+
+                    case "UseSkillRequest":
+                        bool skillSuccess = Program.HandleUseSkillRequest(Role);
+                        if (!skillSuccess) SendError("スキルの使用に失敗しました。");
+                        break;
                 }
             }
             catch (Exception e)
@@ -559,6 +585,10 @@ namespace ShogiServer
         public int pieceType { get; set; }
         public int toX { get; set; }
         public int toY { get; set; }
+    }
+
+    public class UseSkillRequestPayload
+    {
     }
 
     public class GameEventPayload

@@ -158,6 +158,11 @@ public class NetworkManager : MonoBehaviour
         SendMessageToServer("DropRequest", new DropRequestPayload { pieceType = (int)pieceType, toX = toX, toY = toY });
     }
 
+    public void SendUseSkillRequest()
+    {
+        SendMessageToServer("UseSkillRequest", new UseSkillRequestPayload { });
+    }
+
     private void ProcessMessage(string jsonMessage)
     {
         try
@@ -206,6 +211,10 @@ public class NetworkManager : MonoBehaviour
         else if (ev.eventType == "Drop")
         {
             gameSystem.OnServerDropPiece((PieceType)ev.pieceType, ev.toX, ev.toY, (PlayerType)ev.activePlayer);
+        }
+        else if (ev.eventType == "Skill")
+        {
+            gameSystem.OnServerUseSkill((PlayerType)ev.activePlayer);
         }
     }
 
@@ -270,6 +279,11 @@ public class DropRequestPayload
     public int pieceType;
     public int toX;
     public int toY;
+}
+
+[System.Serializable]
+public class UseSkillRequestPayload
+{
 }
 
 [System.Serializable]

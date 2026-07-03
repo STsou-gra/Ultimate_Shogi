@@ -1,10 +1,11 @@
 using UnityEngine;
 
-public class AbilityManager : MonoBehaviour
+public class SkillManager : MonoBehaviour
 {
     public GameBoard gameBoard;
 
-    void State(){
+    void State()
+    {
         gameBoard = Object.FindObjectsByType<GameBoard>(FindObjectsSortMode.None)[0];
     }
     // ボタンが押された時に実行されるメソッド
