@@ -22,7 +22,7 @@ public class GameBoard : MonoBehaviour
     private GamePiece[] boardData = new GamePiece[81]; // 9x9の盤面を想定
 
     public int SkillOnOff = 0;//0がoff
-    
+
 
     [SerializeField] private List<PieceMap> pieceMapList = new List<PieceMap>();
 
@@ -32,7 +32,7 @@ public class GameBoard : MonoBehaviour
         selectPanelArray.AddRange(foundPanels);
         Debug.Log($"{selectPanelArray.Count}");
 
-        for(int i = 0; i < selectPanelArray.Count; i++)
+        for (int i = 0; i < selectPanelArray.Count; i++)
         {
             var panel = selectPanelArray[i];
             int x, y;
@@ -47,7 +47,7 @@ public class GameBoard : MonoBehaviour
 
     public void ActivePanel(int num)
     {
-        if(num < 0 || num >= selectPanelArray.Count)
+        if (num < 0 || num >= selectPanelArray.Count)
         {
             return;
         }
@@ -56,7 +56,7 @@ public class GameBoard : MonoBehaviour
 
     public void AllDeactivePanel()
     {
-        foreach(var panel in selectPanelArray)
+        foreach (var panel in selectPanelArray)
         {
             panel.gameObject.SetActive(false);
         }
@@ -73,19 +73,19 @@ public class GameBoard : MonoBehaviour
         foreach (PieceSpawnData item in layout)
         {
             int index = GameHelper.CalcPanelNum(item.X, item.Y);
-            
+
             // ここで本物の駒（MonoBehaviour）を生成する
             GameObject prefab = GetPrefabByType(item.type);
             GameObject obj = Instantiate(prefab, transform);
-            
+
             // データをセット
             GamePiece piece = obj.GetComponent<GamePiece>();
             piece.player = item.player;
             piece.X = item.X; // 座標も忘れずにセット
             piece.Y = item.Y;
-            
+
             piece.transform.localPosition = GameHelper.CalcPanelLocation(item.X, item.Y);
-            
+
             if (piece.player == PlayerType.Player2)
             {
                 piece.transform.localRotation = Quaternion.Euler(0, 0, 180);
@@ -93,7 +93,7 @@ public class GameBoard : MonoBehaviour
             boardData[index] = piece;
         }
     }
-    
+
     public GamePiece GetPieceAt(int x, int y)
     {
         int index = GameHelper.CalcPanelNum(x, y);
@@ -115,7 +115,8 @@ public class GameBoard : MonoBehaviour
         return boardData;
     }
 
-    public void ChangeSkillOnOff(int i){
+    public void ChangeSkillOnOff(int i)
+    {
         SkillOnOff = i;
     }
 
@@ -126,9 +127,11 @@ public class GameBoard : MonoBehaviour
         {
             // 消される駒の種類をチェック
             bool isKing = (boardData[index].type == PieceType.King);
-            if(SkillOnOff == 1){
+            if (SkillOnOff == 1)
+            {
                 // 消される駒の種類をチェック
-                if(boardData[index].type == PieceType.Rook){
+                if (boardData[index].type == PieceType.Rook)
+                {
                     isKing = (boardData[index].type == PieceType.Rook);
                 }
             }
@@ -176,13 +179,68 @@ public class GameBoard : MonoBehaviour
         return null;
     }
 
+    // ========================================================
+    // スキル用：指定したプレイヤーの特定の駒がどこにあるかを探す
+    // ========================================================
+    public Vector2Int FindPiece(PlayerType player, PieceType type)
+    {
+        // 9x9の盤面を全スキャン
+        for (int x = 0; x < 9; x++)
+        {
+            for (int y = 0; y < 9; y++)
+            {
+                int index = GameHelper.CalcPanelNum(x, y);
+                GamePiece piece = boardData[index];
+
+                // 指定されたプレイヤーの、指定された種類の駒が見つかったらその座標を返す
+                if (piece != null && piece.player == player && piece.type == type)
+                {
+                    return new Vector2Int(x, y);
+                }
+            }
+        }
+        // 見つからなかった場合は、エラー値として (-1, -1) を返す
+        return new Vector2Int(-1, -1);
+    }
+
+    // ========================================================
+    // スキル用：盤面上の2つの座標にある駒を「データ」も「見た目」も入れ替える
+    // ========================================================
+    public void SwapPiecePosition(Vector2Int posA, Vector2Int posB)
+    {
+        int indexA = GameHelper.CalcPanelNum(posA.x, posA.y);
+        int indexB = GameHelper.CalcPanelNum(posB.x, posB.y);
+
+        // 1. boardData（配列データ）の入れ替え
+        GamePiece pieceA = boardData[indexA];
+        GamePiece pieceB = boardData[indexB];
+
+        boardData[indexA] = pieceB;
+        boardData[indexB] = pieceA;
+
+        // 2. それぞれの駒の内部座標(X, Y)の更新と、3D上の見た目(localPosition)の移動
+        if (pieceA != null)
+        {
+            pieceA.X = posB.x;
+            pieceA.Y = posB.y;
+            pieceA.MoveTo(GameHelper.CalcPanelLocation(posB.x, posB.y)); // 見た目をBの場所へ
+        }
+
+        if (pieceB != null)
+        {
+            pieceB.X = posA.x;
+            pieceB.Y = posA.y;
+            pieceB.MoveTo(GameHelper.CalcPanelLocation(posA.x, posA.y)); // 見た目をAの場所へ
+        }
+    }
+
     public List<PieceSpawnData> CreateLayout()
     {
         List<PieceSpawnData> layout = new List<PieceSpawnData>();
         // 例：歩 (Fu) を並べる
         for (int i = 0; i < 9; i++)
         {
-            layout.Add(new PieceSpawnData { X = 2, Y = i,  player = PlayerType.Player1, type = PieceType.Pawn });
+            layout.Add(new PieceSpawnData { X = 2, Y = i, player = PlayerType.Player1, type = PieceType.Pawn });
             layout.Add(new PieceSpawnData { X = 6, Y = i, player = PlayerType.Player2, type = PieceType.Pawn });
         }
 

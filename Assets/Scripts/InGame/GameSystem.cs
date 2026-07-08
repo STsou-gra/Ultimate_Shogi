@@ -432,6 +432,16 @@ public class GameSystem : MonoBehaviour
         return false;
     }
 
+    // 追加ターン（2回連続行動）のフラグ。初期値は false
+    private bool hasExtraTurn = false;
+
+    // スキル（DoubleTurnEffect）から呼ばれるメソッド
+    public void GrantExtraTurn(PlayerType player)
+    {
+        hasExtraTurn = true;
+        Debug.Log($"{player} に追加行動権が与えられました。");
+    }
+
     void ExecuteLocalMove(GamePiece piece, int targetX, int targetY, bool promote)
     {
         bool isGameOver = false;
@@ -442,6 +452,17 @@ public class GameSystem : MonoBehaviour
             {
                 AddPieceToHand(piece.player, targetPiece.type);
                 isGameOver = gameBoard.RemovePieceAt(targetX, targetY);
+
+                PlayerType opponent = targetPiece.player;
+                if (!IsKingAlive(opponent))
+                {
+                    //盤面に相手の王が一枚も残っていない場合、ゲームオーバーとする
+                    isGameOver = true;
+                }
+                else
+                {
+                    isGameOver = false;
+                }
             }
         }
         gameBoard.UpdateBoardData(piece.X, piece.Y, targetX, targetY);
@@ -482,6 +503,18 @@ public class GameSystem : MonoBehaviour
             {
                 AddPieceToHand(piece.player, targetPiece.type);
                 isGameOver = gameBoard.RemovePieceAt(toX, toY);
+
+
+                PlayerType opponent = targetPiece.player;
+                if (!IsKingAlive(opponent))
+                {
+                    //盤面に相手の王が一枚も残っていない場合、ゲームオーバーとする
+                    isGameOver = true;
+                }
+                else
+                {
+                    isGameOver = false;
+                }
             }
         }
         gameBoard.UpdateBoardData(fromX, fromY, toX, toY);
@@ -708,6 +741,14 @@ public class GameSystem : MonoBehaviour
 
     void NextState()
     {
+        if (hasExtraTurn)
+        {
+            hasExtraTurn = false;
+            isSelectingHand = false;
+            isDroppingHand = false;
+            Debug.Log("追加行動権により、同じプレイヤーのターンが続きます。");
+            return; // ターンを切り替えずに同じプレイヤーのターンを続ける
+        }
         // ターン切り替え時に状態をクリア
         isSelectingHand = false;
         isDroppingHand = false;
@@ -810,6 +851,8 @@ public class GameSystem : MonoBehaviour
         }
     }
 
+
+
     private Color originalAmbientColor;
     private bool isAmbientSaved = false;
     private List<GamePiece> highlightedPieces = new List<GamePiece>();
@@ -862,6 +905,25 @@ public class GameSystem : MonoBehaviour
                 highlightedPieces.Add(target);
             }
         }
+    }
+
+    // 指定したプレイヤーの王将が盤面にまだ残っているかをチェックする
+    private bool IsKingAlive(PlayerType player)
+    {
+        // 9x9の盤面をすべてループして探す
+        for (int x = 0; x < 9; x++)
+        {
+            for (int y = 0; y < 9; y++)
+            {
+                GamePiece p = gameBoard.GetPieceAt(x, y);
+                // 自分の駒、かつ王将(King)が見つかったら生存！
+                if (p != null && p.player == player && p.type == PieceType.King)
+                {
+                    return true;
+                }
+            }
+        }
+        return false; // 1枚も見つからなければ死亡
     }
 
     // 暗転とハイライトを解除する
