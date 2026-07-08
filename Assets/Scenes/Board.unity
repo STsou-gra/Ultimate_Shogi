@@ -554,7 +554,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 521f118181fdd4a888a0e63b44b6c0c7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GameBoard
-  AbilityOnOff: 0
+  SkillOnOff: 0
   pieceMapList:
   - type: 0
     prefab: {fileID: 5540687825723701027, guid: 4f3ef0c86802d4892bda4f65dda20e77, type: 3}
@@ -1891,7 +1891,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f74ebd427442c42d489420adf06a4077, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Ability2
-  gameBoard: {fileID: 0}
 --- !u!1 &412033334
 GameObject:
   m_ObjectHideFlags: 0
@@ -2464,9 +2463,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9fd4c7098a1ab4c84a118a178478ed9c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SelectionManager
-  selectionPanel: {fileID: 467973575}
-  canvasGroup: {fileID: 467973576}
-  ab: {fileID: 579187027}
 --- !u!1 &490421974
 GameObject:
   m_ObjectHideFlags: 0
@@ -4464,6 +4460,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1003394563}
   - component: {fileID: 1003394562}
+  - component: {fileID: 1003394564}
   m_Layer: 0
   m_Name: GameSystem
   m_TagString: Untagged
@@ -4504,6 +4501,19 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1003394564
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1003394561}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 077374f1abbb543b699b82d201704918, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SkillManager
+  gameBoard: {fileID: 165876872}
 --- !u!1 &1016886068
 GameObject:
   m_ObjectHideFlags: 0
@@ -4521,7 +4531,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1016886069
 RectTransform:
   m_ObjectHideFlags: 0
@@ -4948,9 +4958,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9fd4c7098a1ab4c84a118a178478ed9c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SelectionManager
-  selectionPanel: {fileID: 1098706899}
-  canvasGroup: {fileID: 1098706902}
-  ab: {fileID: 579187027}
 --- !u!1001 &1102008168
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -6933,6 +6940,7 @@ GameObject:
   - component: {fileID: 1646198639}
   - component: {fileID: 1646198638}
   - component: {fileID: 1646198637}
+  - component: {fileID: 1646198640}
   m_Layer: 5
   m_Name: PlayerSkillButton
   m_TagString: Untagged
@@ -6955,10 +6963,10 @@ RectTransform:
   - {fileID: 1857953682}
   m_Father: {fileID: 1992486200}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 0}
-  m_SizeDelta: {x: 160, y: 30}
+  m_AnchorMin: {x: 0, y: 1}
+  m_AnchorMax: {x: 0, y: 1}
+  m_AnchoredPosition: {x: 160, y: -100}
+  m_SizeDelta: {x: 300, y: 100}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1646198637
 MonoBehaviour:
@@ -7003,7 +7011,19 @@ MonoBehaviour:
   m_TargetGraphic: {fileID: 1646198638}
   m_OnClick:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 1646198640}
+        m_TargetAssemblyTypeName: Skill, Assembly-CSharp
+        m_MethodName: OnButtonClick
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
 --- !u!114 &1646198638
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7042,6 +7062,19 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1646198635}
   m_CullTransparentMesh: 1
+--- !u!114 &1646198640
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1646198635}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 33afff5587636442995bcd057eae38c4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Skill
+  gameBoard: {fileID: 165876872}
 --- !u!1001 &1663089647
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -8046,10 +8079,10 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Button
+  m_text: "\u30B9\u30AD\u30EB"
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
-  m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: a5ea774865e3d43cbba4f2a9c3ed2e12, type: 2}
+  m_sharedMaterial: {fileID: 6755379500816233061, guid: a5ea774865e3d43cbba4f2a9c3ed2e12, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -8073,8 +8106,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 24
-  m_fontSizeBase: 24
+  m_fontSize: 64
+  m_fontSizeBase: 64
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18

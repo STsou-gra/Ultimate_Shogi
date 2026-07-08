@@ -6,11 +6,11 @@ public class SkillManager : MonoBehaviour
 
     void State()
     {
-        gameBoard = Object.FindObjectsByType<GameBoard>(FindObjectsSortMode.None)[0];
+        gameBoard = Object.FindAnyObjectByType<GameBoard>();
     }
     // ボタンが押された時に実行されるメソッド
     public virtual void OnButtonClick()
     {
-        Debug.Log("Abilityボタンが押されました！");
+        Debug.Log("Skillボタンが押されました！");
     }
 }

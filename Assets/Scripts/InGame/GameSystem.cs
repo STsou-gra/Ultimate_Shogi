@@ -125,7 +125,7 @@ public class GameSystem : MonoBehaviour
                 {
                     Debug.Log("引き分け！");
                 }
-                gameBoard.ChangeAbilityOnOff(0);
+                gameBoard.ChangeSkillOnOff(0);
                 sceneManager.GameOver();
                 break;
         }
