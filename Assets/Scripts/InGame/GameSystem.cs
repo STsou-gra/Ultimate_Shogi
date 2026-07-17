@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using System.Collections.Generic;
 using System.Security.Cryptography.X509Certificates;
+using TMPro;
 
 // ターン管理やゲームの準備を行う
 public class GameSystem : MonoBehaviour
@@ -67,6 +68,23 @@ public class GameSystem : MonoBehaviour
 
     // ルールエンジン用のルールリスト
     private List<IGameRule> gameRules = new List<IGameRule>();
+
+    [Header("Skill Settings")]
+    [SerializeField] private SkillDeck player1Deck;
+    [SerializeField] private SkillDeck player2Deck;
+    [SerializeField] private PointManager player1PointManager;
+    [SerializeField] private PointManager player2PointManager;
+
+    [System.Serializable]
+    public struct SkillButtonUI
+    {
+        public UnityEngine.UI.Button button;
+        public TextMeshProUGUI nameText;
+        public TextMeshProUGUI costText;
+    }
+    [Header("UI References")]
+    [SerializeField] private SkillButtonUI[] player1SkillUIs; // 要素数5
+    [SerializeField] private SkillButtonUI[] player2SkillUIs; // 要素数5
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -191,6 +209,7 @@ public class GameSystem : MonoBehaviour
                 else if (gameController.IsOkTrigger())
                 {
                     isSelectingHand = false;
+                    HandUIManager.Instance.HidePanel();
                     isDroppingHand = true;
                     string jpName = HandUIManager.GetJapaneseName(selectedHandType);
                     HandUIManager.Instance.SetStatusText($"【打つ場所を選択】 {jpName} (決定: F / 取消: Space)");
@@ -693,6 +712,7 @@ public class GameSystem : MonoBehaviour
         gameBoard.AllDeactivePanel();
         ClearBoardHighlight();
         currentMovablePositions.Clear();
+        SetDarkOverlayActive(false);
     }
 
     bool IsMyPiece(GamePiece piece)
@@ -808,7 +828,7 @@ public class GameSystem : MonoBehaviour
         return currentState == GameState.Player1Turn;
     }
 
-    public void UseSkill(PlayerType player)
+    public void UseSkill(PlayerType player, int slotIndex)
     {
         // 自分のターンであるかチェック
         PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
@@ -817,6 +837,36 @@ public class GameSystem : MonoBehaviour
             Debug.LogWarning("相手のターンにはスキルを使用できません。");
             return;
         }
+        SkillDeck deck = (player == PlayerType.Player1) ? player1Deck : player2Deck;
+        PointManager pointManager = (player == PlayerType.Player1) ? player1PointManager : player2PointManager;
+        if (deck == null || pointManager == null)
+        {
+            return;
+        }
+        if (slotIndex < 0 || slotIndex >= deck.skills.Count)
+        {
+            return;
+        }
+
+        SkillDefinition skill = deck.skills[slotIndex];
+        if (skill == null)
+        {
+            return;
+        }
+
+        //コスト検証
+        if (pointManager.CurrentPoint < skill.cost)
+        {
+            Debug.LogWarning($"スキル「{skill.skillName}」を使用するためのポイントが不足しています。必要: {skill.cost}, 現在: {pointManager.CurrentPoint}");
+            return;
+        }
+
+        //コスト消費・効果実行
+        pointManager.CurrentPoint -= skill.cost;
+        SkillContext context = new SkillContext(this, gameBoard, player);
+        skill.Use(context);
+
+        Debug.Log($"プレイヤー {(player == PlayerType.Player1 ? "1" : "2")} がスキル「{skill.skillName}」を使用しました。残りポイント: {pointManager.CurrentPoint}");
 
         if (NetworkManager.Instance != null && NetworkManager.Instance.IsOnlineMatch)
         {

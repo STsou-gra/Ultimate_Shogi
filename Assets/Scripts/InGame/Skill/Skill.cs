@@ -9,7 +9,7 @@ public class Skill : SkillManager
         GameSystem gameSystem = GameObject.FindAnyObjectByType<GameSystem>();
         if (gameSystem != null)
         {
-            gameSystem.UseSkill(PlayerType.Player1);
+            gameSystem.UseSkill(PlayerType.Player1, 0);
         }
     }
 }
