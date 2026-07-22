@@ -16,28 +16,11 @@ public class GameSystem : MonoBehaviour
     public GameSceneManager sceneManager;
     [SerializeField] private GameController gameController;
 
-    // 持ち駒のデータ
-    private Dictionary<PieceType, int> player1Hand = new Dictionary<PieceType, int>()
-    {
-        { PieceType.Pawn, 0 },
-        { PieceType.Lance, 0 },
-        { PieceType.Knight, 0 },
-        { PieceType.SilverGeneral, 0 },
-        { PieceType.GoldGeneral, 0 },
-        { PieceType.Bishop, 0 },
-        { PieceType.Rook, 0 }
-    };
+    [Header("Players")]
+    [SerializeField] private Player player1;
+    [SerializeField] private Player player2;
 
-    private Dictionary<PieceType, int> player2Hand = new Dictionary<PieceType, int>()
-    {
-        { PieceType.Pawn, 0 },
-        { PieceType.Lance, 0 },
-        { PieceType.Knight, 0 },
-        { PieceType.SilverGeneral, 0 },
-        { PieceType.GoldGeneral, 0 },
-        { PieceType.Bishop, 0 },
-        { PieceType.Rook, 0 }
-    };
+    public Player CurrentPlayer => IsPlayer1Turn() ? player1 : player2;
 
     // 持ち駒打つ系の状態変数
     private bool isSelectingHand = false; // 持ち駒の種類を選択中か
@@ -69,12 +52,6 @@ public class GameSystem : MonoBehaviour
     // ルールエンジン用のルールリスト
     private List<IGameRule> gameRules = new List<IGameRule>();
 
-    [Header("Skill Settings")]
-    [SerializeField] private SkillDeck player1Deck;
-    [SerializeField] private SkillDeck player2Deck;
-    [SerializeField] private PointManager player1PointManager;
-    [SerializeField] private PointManager player2PointManager;
-
     [System.Serializable]
     public struct SkillButtonUI
     {
@@ -82,9 +59,8 @@ public class GameSystem : MonoBehaviour
         public TextMeshProUGUI nameText;
         public TextMeshProUGUI costText;
     }
-    [Header("UI References")]
-    [SerializeField] private SkillButtonUI[] player1SkillUIs; // 要素数5
-    [SerializeField] private SkillButtonUI[] player2SkillUIs; // 要素数5
+    [Header("Shared UI References")]
+    [SerializeField] private SkillButtonUI[] skillSlotUIs; // 要素数5の共通UIスロット
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -103,6 +79,16 @@ public class GameSystem : MonoBehaviour
         gameRules.Add(new EmptyCellDropRule());
         gameRules.Add(new NoLegalMoveDropRule());
         gameRules.Add(new NifuDropRule());
+
+        // デッキの初期化
+        if (DeckTransferManager.Player1SelectedDeck != null && player1 != null)
+        {
+            player1.SetSkillDeck(DeckTransferManager.Player1SelectedDeck);
+        }
+        if (DeckTransferManager.Player2SelectedDeck != null && player2 != null)
+        {
+            player2.SetSkillDeck(DeckTransferManager.Player2SelectedDeck);
+        }
     }
 
     // Update is called once per frame
@@ -116,7 +102,7 @@ public class GameSystem : MonoBehaviour
                 if (HandUIManager.Instance != null)
                 {
                     PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
-                    var activeHand = IsPlayer1Turn() ? player1Hand : player2Hand;
+                    var activeHand = CurrentPlayer.Hand;
                     HandUIManager.Instance.UpdateActiveHandDisplay(activePlayer, activeHand);
                 }
                 break;
@@ -262,6 +248,10 @@ public class GameSystem : MonoBehaviour
                 isSelectingHand = true;
                 UpdateHandList();
                 UpdateSelectingHandUI();
+                if (HandUIManager.Instance != null)
+                {
+                    HandUIManager.Instance.ShowPanel();
+                }
                 ClearBoardHighlight();
                 currentMovablePositions.Clear();
             }
@@ -277,7 +267,7 @@ public class GameSystem : MonoBehaviour
                 UpdateSelectingHandUI();
                 if (HandUIManager.Instance != null)
                 {
-                    var hand = IsPlayer1Turn() ? player1Hand : player2Hand;
+                    var hand = CurrentPlayer.Hand;
                     HandUIManager.Instance.UpdateActiveHandDisplay(activePlayer, hand);
                     HandUIManager.Instance.ShowPanel();
                 }
@@ -564,12 +554,9 @@ public class GameSystem : MonoBehaviour
 
     public void OnServerDropPiece(PieceType type, int toX, int toY, PlayerType activePlayer)
     {
-        var hand = (activePlayer == PlayerType.Player1) ? player1Hand : player2Hand;
-
-        if (hand.ContainsKey(type) && hand[type] > 0)
-        {
-            hand[type]--;
-        }
+        Player targetPlayer = (activePlayer == PlayerType.Player1) ? player1 : player2;
+        targetPlayer.RemovePieceFromHand(type);
+        var hand = targetPlayer.Hand;
 
         gameBoard.SpawnPiece(type, activePlayer, toX, toY);
 
@@ -599,15 +586,12 @@ public class GameSystem : MonoBehaviour
     {
         if (type == PieceType.King) return;
 
-        var hand = (player == PlayerType.Player1) ? player1Hand : player2Hand;
-        if (hand.ContainsKey(type))
-        {
-            hand[type]++;
-        }
+        Player targetPlayer = (player == PlayerType.Player1) ? player1 : player2;
+        targetPlayer.AddPieceToHand(type);
         if (HandUIManager.Instance != null)
         {
             PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
-            var activeHand = IsPlayer1Turn() ? player1Hand : player2Hand;
+            var activeHand = CurrentPlayer.Hand;
             HandUIManager.Instance.UpdateActiveHandDisplay(activePlayer, activeHand);
         }
     }
@@ -615,7 +599,7 @@ public class GameSystem : MonoBehaviour
     private void UpdateHandList()
     {
         availableHandTypes.Clear();
-        var hand = IsPlayer1Turn() ? player1Hand : player2Hand;
+        var hand = CurrentPlayer.Hand;
         foreach (var kvp in hand)
         {
             if (kvp.Value > 0)
@@ -691,12 +675,8 @@ public class GameSystem : MonoBehaviour
     private void DropPiece(PieceType type, int x, int y)
     {
         PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
-        var hand = IsPlayer1Turn() ? player1Hand : player2Hand;
-
-        if (hand.ContainsKey(type) && hand[type] > 0)
-        {
-            hand[type]--;
-        }
+        CurrentPlayer.RemovePieceFromHand(type);
+        var hand = CurrentPlayer.Hand;
 
         gameBoard.SpawnPiece(type, activePlayer, x, y);
 
@@ -781,7 +761,8 @@ public class GameSystem : MonoBehaviour
             HandUIManager.Instance.SetStatusText("");
             // 交代後のプレイヤーの手持ち表示に更新
             PlayerType activePlayer = (currentState == GameState.Player1Turn) ? PlayerType.Player2 : PlayerType.Player1;
-            var hand = (activePlayer == PlayerType.Player1) ? player1Hand : player2Hand;
+            Player nextPlayer = (activePlayer == PlayerType.Player1) ? player1 : player2;
+            var hand = nextPlayer.Hand;
             HandUIManager.Instance.UpdateActiveHandDisplay(activePlayer, hand);
         }
 
@@ -804,6 +785,7 @@ public class GameSystem : MonoBehaviour
                 // ゲームオーバーの処理
                 break;
         }
+        UpdateActivePlayerSkillUI();
     }
 
     void DecideTurn()
@@ -821,6 +803,7 @@ public class GameSystem : MonoBehaviour
             Debug.Log("プレイヤー2のターンです！");
             gameCamera.RotateToPlayer(PlayerType.Player2);
         }
+        UpdateActivePlayerSkillUI();
     }
 
     public bool IsPlayer1Turn()
@@ -837,12 +820,12 @@ public class GameSystem : MonoBehaviour
             Debug.LogWarning("相手のターンにはスキルを使用できません。");
             return;
         }
-        SkillDeck deck = (player == PlayerType.Player1) ? player1Deck : player2Deck;
-        PointManager pointManager = (player == PlayerType.Player1) ? player1PointManager : player2PointManager;
-        if (deck == null || pointManager == null)
+        Player targetPlayer = (player == PlayerType.Player1) ? player1 : player2;
+        if (targetPlayer == null || targetPlayer.SkillDeck == null)
         {
             return;
         }
+        SkillDeck deck = targetPlayer.SkillDeck;
         if (slotIndex < 0 || slotIndex >= deck.skills.Count)
         {
             return;
@@ -855,18 +838,18 @@ public class GameSystem : MonoBehaviour
         }
 
         //コスト検証
-        if (pointManager.CurrentPoint < skill.cost)
+        if (!targetPlayer.HasEnoughPoint(skill.cost))
         {
-            Debug.LogWarning($"スキル「{skill.skillName}」を使用するためのポイントが不足しています。必要: {skill.cost}, 現在: {pointManager.CurrentPoint}");
+            Debug.LogWarning($"スキル「{skill.skillName}」を使用するためのポイントが不足しています。必要: {skill.cost}");
             return;
         }
 
         //コスト消費・効果実行
-        pointManager.CurrentPoint -= skill.cost;
+        targetPlayer.ConsumePoint(skill.cost);
         SkillContext context = new SkillContext(this, gameBoard, player);
         skill.Use(context);
 
-        Debug.Log($"プレイヤー {(player == PlayerType.Player1 ? "1" : "2")} がスキル「{skill.skillName}」を使用しました。残りポイント: {pointManager.CurrentPoint}");
+        Debug.Log($"プレイヤー {(player == PlayerType.Player1 ? "1" : "2")} がスキル「{skill.skillName}」を使用しました。");
 
         if (NetworkManager.Instance != null && NetworkManager.Instance.IsOnlineMatch)
         {
@@ -1000,6 +983,47 @@ public class GameSystem : MonoBehaviour
         {
             promoteNoButtonRect.localScale = !promoteChoice ? Vector3.one * 1.15f : Vector3.one;
         }
+    }
+
+    public void UpdateActivePlayerSkillUI()
+    {
+        Player activePlayer = CurrentPlayer;
+        if (activePlayer == null) return;
+
+        SkillDeck activeDeck = activePlayer.SkillDeck;
+        PointManager activePointManager = activePlayer.PointManager;
+
+        if (activeDeck == null || skillSlotUIs == null) return;
+
+        for (int i = 0; i < skillSlotUIs.Length; i++)
+        {
+            if (i < activeDeck.skills.Count)
+            {
+                SkillDefinition skill = activeDeck.skills[i];
+                if (skill != null)
+                {
+                    skillSlotUIs[i].button.gameObject.SetActive(true);
+                    skillSlotUIs[i].nameText.text = skill.skillName;
+                    skillSlotUIs[i].costText.text = $"{skill.cost} Pt";
+                    skillSlotUIs[i].button.interactable = activePlayer.HasEnoughPoint(skill.cost);
+                }
+                else
+                {
+                    skillSlotUIs[i].button.gameObject.SetActive(false);
+                }
+            }
+            else
+            {
+                skillSlotUIs[i].button.gameObject.SetActive(false);
+            }
+        }
+    }
+
+    public void OnSkillSlotClicked(int slotIndex)
+    {
+        PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
+        UseSkill(activePlayer, slotIndex);
+        UpdateActivePlayerSkillUI();
     }
 }
 

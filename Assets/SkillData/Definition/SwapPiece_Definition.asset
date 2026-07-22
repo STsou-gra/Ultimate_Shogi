@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 0}
+  m_Name: SwapPiece_Definition
+  m_EditorClassIdentifier: Assembly-CSharp::SkillDefinition
+  skillName: Swap Piece
+  icon: {fileID: -4706692235080993762, guid: 542c1c406ec714741b50b50b292d2b48, type: 3}
+  cost: 4
+  description: "\u99D2\u306E\u4F4D\u7F6E\u3092\u4EA4\u63DB\u3059\u308B\u3002"
+  effect: {fileID: 11400000, guid: f88fa6a1a396e41a59001cb953bcbf9f, type: 2}
