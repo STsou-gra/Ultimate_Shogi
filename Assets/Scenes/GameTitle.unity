@@ -444,7 +444,7 @@ MonoBehaviour:
       m_Calls:
       - m_Target: {fileID: 1784892416}
         m_TargetAssemblyTypeName: GameSceneManager, Assembly-CSharp
-        m_MethodName: PlayGame
+        m_MethodName: OrganizeDeck
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}

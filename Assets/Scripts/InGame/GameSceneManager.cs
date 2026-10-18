@@ -32,6 +32,11 @@ public class GameSceneManager : MonoBehaviour
         Debug.Log("ゲームスタート");
     }
 
+    // タイトルのスタートボタンから呼び出し、スキル編成画面へ切り替える
+    public void OrganizeDeck(){
+        SceneManager.LoadScene("OrganizationScene");
+    }
+
     /*
     public void sceneManager(String sceneName){
         SceneManager.LoadScene(sceneName);

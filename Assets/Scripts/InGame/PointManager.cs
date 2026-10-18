@@ -41,6 +41,9 @@ public class PointManager : MonoBehaviour
 
     private void AnimateScore()
     {
+        // 表示用テキストが未設定の場合は演出をスキップ
+        if (scoreText == null) return;
+
         // 1. スケール（大きさ）のアニメーション
         // 一瞬1.2倍に膨らんでから元のサイズ(1.0)に戻る「パンチ」演出
         scoreText.transform.DOPunchScale(new Vector3(0.2f, 0.2f, 0.2f), 0.3f);
