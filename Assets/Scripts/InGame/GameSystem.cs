@@ -9,6 +9,7 @@ public class GameSystem : MonoBehaviour
 {
     private GameState currentState;
     private PlayerType winner; // 勝者のプレイヤータイプを保存する変数
+    private bool isResultLoading = false; // 結果画面への遷移を開始したか
     private GameBoard gameBoard;
     private GameCamera gameCamera;
     private GameCursor gameCursor;
@@ -66,6 +67,7 @@ public class GameSystem : MonoBehaviour
     void Start()
     {
         currentState = GameState.Preparation;
+        GameResult.Winner = null;
 
         gameBoard = Object.FindObjectsByType<GameBoard>(FindObjectsSortMode.None)[0];
         gameCamera = Object.FindObjectsByType<GameCamera>(FindObjectsSortMode.None)[0];
@@ -89,6 +91,16 @@ public class GameSystem : MonoBehaviour
         {
             player2.SetSkillDeck(DeckTransferManager.Player2SelectedDeck);
         }
+
+        // スキルボタンのクリックイベントを登録
+        for (int i = 0; i < skillSlotUIs.Length; i++)
+        {
+            int index = i; // ラムダ式のクロージャ用
+            if (skillSlotUIs[i].button != null)
+            {
+                skillSlotUIs[i].button.onClick.AddListener(() => OnSkillSlotClicked(index));
+            }
+        }
     }
 
     // Update is called once per frame
@@ -111,7 +123,10 @@ public class GameSystem : MonoBehaviour
                 HandleTurnUpdate();
                 break;
             case GameState.GameOver:
-                // ゲームオーバーの処理
+                // ゲームオーバーの処理（シーン遷移は1回だけ行う）
+                if (isResultLoading) break;
+                isResultLoading = true;
+
                 gameBoard.AllDeactivePanel();
                 if (HandUIManager.Instance != null)
                 {
@@ -129,7 +144,8 @@ public class GameSystem : MonoBehaviour
                 {
                     Debug.Log("引き分け！");
                 }
-                gameBoard.ChangeSkillOnOff(0);
+                // 結果画面に勝者を渡す
+                GameResult.Winner = winner;
                 sceneManager.GameOver();
                 break;
         }
@@ -460,6 +476,7 @@ public class GameSystem : MonoBehaviour
             if (targetPiece.player != piece.player)
             {
                 AddPieceToHand(piece.player, targetPiece.type);
+                AddCapturePoint(piece.player, targetPiece);
                 isGameOver = gameBoard.RemovePieceAt(targetX, targetY);
 
                 PlayerType opponent = targetPiece.player;
@@ -511,6 +528,7 @@ public class GameSystem : MonoBehaviour
             if (targetPiece.player != piece.player)
             {
                 AddPieceToHand(piece.player, targetPiece.type);
+                AddCapturePoint(piece.player, targetPiece);
                 isGameOver = gameBoard.RemovePieceAt(toX, toY);
 
 
@@ -593,6 +611,16 @@ public class GameSystem : MonoBehaviour
             PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
             var activeHand = CurrentPlayer.Hand;
             HandUIManager.Instance.UpdateActiveHandDisplay(activePlayer, activeHand);
+        }
+    }
+
+    // 駒を取ったプレイヤーに、取った駒のポイントを加算する
+    void AddCapturePoint(PlayerType player, GamePiece capturedPiece)
+    {
+        Player targetPlayer = (player == PlayerType.Player1) ? player1 : player2;
+        if (targetPlayer != null && targetPlayer.PointManager != null)
+        {
+            targetPlayer.PointManager.AddPoint(capturedPiece.piecePoint);
         }
     }
 
@@ -747,15 +775,12 @@ public class GameSystem : MonoBehaviour
             isSelectingHand = false;
             isDroppingHand = false;
             Debug.Log("追加行動権により、同じプレイヤーのターンが続きます。");
+            UpdateActivePlayerSkillUI(); // 獲得したポイントをスキルボタンに反映
             return; // ターンを切り替えずに同じプレイヤーのターンを続ける
         }
         // ターン切り替え時に状態をクリア
         isSelectingHand = false;
         isDroppingHand = false;
-        if (gameBoard != null)
-        {
-            gameBoard.ChangeSkillOnOff(0); // スキルをリセット
-        }
         if (HandUIManager.Instance != null)
         {
             HandUIManager.Instance.SetStatusText("");
@@ -851,36 +876,24 @@ public class GameSystem : MonoBehaviour
 
         Debug.Log($"プレイヤー {(player == PlayerType.Player1 ? "1" : "2")} がスキル「{skill.skillName}」を使用しました。");
 
+        if (HandUIManager.Instance != null)
+        {
+            HandUIManager.Instance.SetStatusText($"【スキル発動！】 {skill.skillName}");
+        }
+
         if (NetworkManager.Instance != null && NetworkManager.Instance.IsOnlineMatch)
         {
-            // オンライン対戦時はサーバーへ要求を送信
+            // オンライン対戦時はサーバーへ通知
             NetworkManager.Instance.SendUseSkillRequest();
-        }
-        else
-        {
-            // ローカル対戦時は直接発動
-            if (gameBoard != null)
-            {
-                gameBoard.ChangeSkillOnOff(1);
-            }
-            Debug.Log($"ローカルスキル発動: {player}");
-            if (HandUIManager.Instance != null)
-            {
-                HandUIManager.Instance.SetStatusText($"【スキル発動！】 相手の飛車を取れば勝利します");
-            }
         }
     }
 
     public void OnServerUseSkill(PlayerType activePlayer)
     {
-        if (gameBoard != null)
-        {
-            gameBoard.ChangeSkillOnOff(1);
-        }
-        Debug.Log($"プレイヤー {(activePlayer == PlayerType.Player1 ? "1" : "2")} がスキルを使用しました！ (飛車が王将扱いになります)");
+        Debug.Log($"プレイヤー {(activePlayer == PlayerType.Player1 ? "1" : "2")} がスキルを使用しました！");
         if (HandUIManager.Instance != null)
         {
-            HandUIManager.Instance.SetStatusText($"【スキル発動中！】 相手の飛車を取れば勝利します");
+            HandUIManager.Instance.SetStatusText($"【スキル発動！】");
         }
     }
 

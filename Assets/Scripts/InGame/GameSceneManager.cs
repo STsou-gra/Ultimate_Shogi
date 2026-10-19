@@ -27,7 +27,13 @@ public class GameSceneManager : MonoBehaviour
         SceneManager.LoadScene("GameOver");
     }
 
+    // タイトルの「ゲームスタート」から呼び出す（スキル編成画面へ）
     public void PlayGame(){
+        SceneManager.LoadScene("OrganizationScene");
+    }
+
+    // スキル編成画面の「対局」から呼び出す（対局画面へ）
+    public void StartMatch(){
         SceneManager.LoadScene("Board");
         Debug.Log("ゲームスタート");
     }
