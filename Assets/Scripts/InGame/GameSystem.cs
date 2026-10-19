@@ -204,6 +204,11 @@ public class GameSystem : MonoBehaviour
             {
                 ResolvePromotionChoice(promoteChoice);
             }
+            else if (gameController.IsCancelTrigger())
+            {
+                // Space で「成らない」を選ぶ
+                ResolvePromotionChoice(false);
+            }
             return;
         }
 
@@ -422,6 +427,10 @@ public class GameSystem : MonoBehaviour
 
         promoteChoice = true; // 初期選択は「成る(Yes)」
         UpdatePromoteChoiceVisuals();
+        if (HandUIManager.Instance != null)
+        {
+            HandUIManager.Instance.SetStatusText("【成りますか？】 決定: F / 成らない: Space / 選択: 矢印キー・WASD");
+        }
 
         // 盤面全体のハイライトとマスのハイライトを一旦クリア
         ClearBoardHighlight();
