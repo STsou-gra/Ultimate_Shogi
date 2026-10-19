@@ -204,10 +204,15 @@ public class GameSystem : MonoBehaviour
             {
                 ResolvePromotionChoice(promoteChoice);
             }
+            else if (keyboard.jKey.wasPressedThisFrame)
+            {
+                // J で「成らない」を選ぶ
+                ResolvePromotionChoice(false);
+            }
             else if (gameController.IsCancelTrigger())
             {
-                // Space で「成らない」を選ぶ
-                ResolvePromotionChoice(false);
+                // Space でこの駒の移動自体を取り消す
+                CancelPromotionChoice();
             }
             return;
         }
@@ -429,7 +434,7 @@ public class GameSystem : MonoBehaviour
         UpdatePromoteChoiceVisuals();
         if (HandUIManager.Instance != null)
         {
-            HandUIManager.Instance.SetStatusText("【成りますか？】 決定: F / 成らない: Space / 選択: 矢印キー・WASD");
+            HandUIManager.Instance.SetStatusText("【成りますか？】 決定: F / 成らない: J / 取消: Space / 選択: 矢印キー・WASD");
         }
 
         // 盤面全体のハイライトとマスのハイライトを一旦クリア
@@ -463,6 +468,25 @@ public class GameSystem : MonoBehaviour
     {
         if (!isWaitingForPromoteChoice) return;
         ResolvePromotionChoice(false);
+    }
+
+    // 成り確認を閉じて、駒の選択前の状態に戻す（移動しない）
+    void CancelPromotionChoice()
+    {
+        isWaitingForPromoteChoice = false;
+        if (promoteConfirmPanel != null)
+        {
+            promoteConfirmPanel.SetActive(false);
+        }
+        selectedPiece = null;
+        gameBoard.AllDeactivePanel();
+        ClearBoardHighlight();
+        SetDarkOverlayActive(false);
+        currentMovablePositions.Clear();
+        if (HandUIManager.Instance != null)
+        {
+            HandUIManager.Instance.SetStatusText(IdleStatusText);
+        }
     }
 
     void ResolvePromotionChoice(bool promote)
