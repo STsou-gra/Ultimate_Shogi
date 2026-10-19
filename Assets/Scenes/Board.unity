@@ -285,7 +285,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 36d26fd1c9693416588474c88d85ad74, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PointManager
-  scoreText: {fileID: 0}
+  scoreText: {fileID: 1415171091}
 --- !u!4 &102891091
 Transform:
   m_ObjectHideFlags: 0
@@ -674,7 +674,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 521f118181fdd4a888a0e63b44b6c0c7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GameBoard
-  SkillOnOff: 0
   pieceMapList:
   - type: 0
     prefab: {fileID: 5540687825723701027, guid: 4f3ef0c86802d4892bda4f65dda20e77, type: 3}
@@ -4785,14 +4784,14 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 1003394562}
-        m_TargetAssemblyTypeName: GameSystem, Assembly-CSharp
-        m_MethodName: OnSkillSlotClicked
-        m_Mode: 3
+      - m_Target: {fileID: 0}
+        m_TargetAssemblyTypeName: 
+        m_MethodName: 
+        m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 3
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
           m_FloatArgument: 0
           m_StringArgument: 
           m_BoolArgument: 0
@@ -6801,14 +6800,14 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 1003394562}
-        m_TargetAssemblyTypeName: GameSystem, Assembly-CSharp
-        m_MethodName: OnSkillSlotClicked
-        m_Mode: 3
+      - m_Target: {fileID: 0}
+        m_TargetAssemblyTypeName: 
+        m_MethodName: 
+        m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 1
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
           m_FloatArgument: 0
           m_StringArgument: 
           m_BoolArgument: 0
@@ -6998,14 +6997,14 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 1003394562}
-        m_TargetAssemblyTypeName: GameSystem, Assembly-CSharp
-        m_MethodName: OnSkillSlotClicked
-        m_Mode: 3
+      - m_Target: {fileID: 0}
+        m_TargetAssemblyTypeName: 
+        m_MethodName: 
+        m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 4
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
           m_FloatArgument: 0
           m_StringArgument: 
           m_BoolArgument: 0
@@ -7332,14 +7331,14 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 1003394562}
-        m_TargetAssemblyTypeName: GameSystem, Assembly-CSharp
-        m_MethodName: OnSkillSlotClicked
-        m_Mode: 3
+      - m_Target: {fileID: 0}
+        m_TargetAssemblyTypeName: 
+        m_MethodName: 
+        m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
-          m_IntArgument: 2
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
           m_FloatArgument: 0
           m_StringArgument: 
           m_BoolArgument: 0
@@ -9595,7 +9594,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 36d26fd1c9693416588474c88d85ad74, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PointManager
-  scoreText: {fileID: 0}
+  scoreText: {fileID: 1415171091}
 --- !u!4 &1726302913
 Transform:
   m_ObjectHideFlags: 0
@@ -11543,13 +11542,13 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
-      - m_Target: {fileID: 1003394562}
-        m_TargetAssemblyTypeName: GameSystem, Assembly-CSharp
-        m_MethodName: OnSkillSlotClicked
-        m_Mode: 3
+      - m_Target: {fileID: 0}
+        m_TargetAssemblyTypeName: 
+        m_MethodName: 
+        m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}
-          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_ObjectArgumentAssemblyTypeName: 
           m_IntArgument: 0
           m_FloatArgument: 0
           m_StringArgument: 

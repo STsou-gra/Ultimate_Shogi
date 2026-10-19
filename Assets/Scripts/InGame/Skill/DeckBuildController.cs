@@ -174,7 +174,7 @@ public class DeckBuildController : MonoBehaviour
         // シーンをロード
         if (sceneManager != null)
         {
-            sceneManager.PlayGame();
+            sceneManager.StartMatch();
         }
         else
         {

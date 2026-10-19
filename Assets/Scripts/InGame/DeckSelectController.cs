@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
-using NUnit.Framework;
 
 public class DeckSelectController : MonoBehaviour
 {
@@ -40,7 +39,29 @@ public class DeckSelectController : MonoBehaviour
     void Start()
     {
         InitializeSelectionPanel();
+        RegisterSlotButtons();
         UpdateSlotDisplays();
+    }
+
+    //スロットボタンのクリックイベントを登録する（インスペクターの配列に入れるだけで動くようにする）
+    private void RegisterSlotButtons()
+    {
+        for (int i = 0; i < player1SlotButtons.Length; i++)
+        {
+            int index = i; //ラムダ式のクロージャ用
+            if (player1SlotButtons[i] != null)
+            {
+                player1SlotButtons[i].onClick.AddListener(() => Player1OnSlotButtonClicked(index));
+            }
+        }
+        for (int i = 0; i < player2SlotButtons.Length; i++)
+        {
+            int index = i; //ラムダ式のクロージャ用
+            if (player2SlotButtons[i] != null)
+            {
+                player2SlotButtons[i].onClick.AddListener(() => Player2OnSlotButtonClicked(index));
+            }
+        }
     }
 
     private void InitializeSelectionPanel()
@@ -221,7 +242,7 @@ public class DeckSelectController : MonoBehaviour
 
         if (sceneManager != null)
         {
-            sceneManager.PlayGame();
+            sceneManager.StartMatch();
         }
         else
         {
