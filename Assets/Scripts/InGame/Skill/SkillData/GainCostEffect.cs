@@ -12,8 +12,8 @@ public class GainCostEffect : SkillEffect
     GameSystem system = context.GameSystem;
     PlayerType player = context.Player;
 
-    // 2. 具体的な処理を行う（※GameSystem側にそういうメソッドがあると仮定）
-    // system.AddCost(player, amount); 
+    // 2. 使用したプレイヤーにポイントを加算する
+    system.AddPoint(player, amount);
 
     Debug.Log($"{player} のコストを {amount} 回復しました！");
   }

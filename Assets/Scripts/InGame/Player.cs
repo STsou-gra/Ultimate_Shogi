@@ -39,6 +39,14 @@ public class Player : MonoBehaviour
         }
     }
 
+    public void AddPoint(int amount)
+    {
+        if (pointManager != null)
+        {
+            pointManager.AddPoint(amount);
+        }
+    }
+
     // 持ち駒の追加・削減処理
     public void AddPieceToHand(PieceType type)
     {

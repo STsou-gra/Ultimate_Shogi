@@ -9,6 +9,7 @@ public class GameSystem : MonoBehaviour
 {
     private GameState currentState;
     private PlayerType winner; // 勝者のプレイヤータイプを保存する変数
+    private bool isDraw = false; // 千日手などによる引き分け
     private GameBoard gameBoard;
     private GameCamera gameCamera;
     private GameCursor gameCursor;
@@ -52,6 +53,32 @@ public class GameSystem : MonoBehaviour
     // ルールエンジン用のルールリスト
     private List<IGameRule> gameRules = new List<IGameRule>();
 
+    // 王手の状態（王将が1枚のときのみ発生）
+    private bool isActivePlayerInCheck = false;
+
+    // 千日手判定用の局面の記録
+    private struct PositionRecord
+    {
+        public string key;
+        public PlayerType sideToMove;
+        public bool inCheck;
+    }
+    private List<PositionRecord> positionHistory = new List<PositionRecord>();
+    private Dictionary<string, int> positionCounts = new Dictionary<string, int>();
+    private static readonly PieceType[] HandOrder =
+    {
+        PieceType.Pawn, PieceType.Lance, PieceType.Knight, PieceType.SilverGeneral,
+        PieceType.GoldGeneral, PieceType.Bishop, PieceType.Rook
+    };
+
+    // スキルの対象選択（爆発の中心・駒入替の駒など）
+    private bool isSelectingSkillTarget = false;
+    private SkillDefinition pendingSkill;
+    private SkillContext pendingSkillContext;
+    private Vector2Int lastPreviewCursor;
+
+    public bool IsSelectingSkillTarget => isSelectingSkillTarget;
+
     [System.Serializable]
     public struct SkillButtonUI
     {
@@ -79,6 +106,7 @@ public class GameSystem : MonoBehaviour
         gameRules.Add(new EmptyCellDropRule());
         gameRules.Add(new NoLegalMoveDropRule());
         gameRules.Add(new NifuDropRule());
+        gameRules.Add(new KingSafetyRule()); // 他のルールを満たした手だけを調べるので最後に置く
 
         // デッキの初期化
         if (DeckTransferManager.Player1SelectedDeck != null && player1 != null)
@@ -117,19 +145,21 @@ public class GameSystem : MonoBehaviour
                 {
                     HandUIManager.Instance.SetStatusText("");
                 }
-                if (winner == PlayerType.Player1)
+                if (isDraw)
+                {
+                    Debug.Log("引き分け！");
+                    GameResult.Message = "引き分け!";
+                }
+                else if (winner == PlayerType.Player1)
                 {
                     Debug.Log("プレイヤー1の勝利！");
-                }
-                else if (winner == PlayerType.Player2)
-                {
-                    Debug.Log("プレイヤー2の勝利！");
+                    GameResult.Message = "Player 1 の勝利!";
                 }
                 else
                 {
-                    Debug.Log("引き分け！");
+                    Debug.Log("プレイヤー2の勝利！");
+                    GameResult.Message = "Player 2 の勝利!";
                 }
-                gameBoard.ChangeSkillOnOff(0);
                 sceneManager.GameOver();
                 break;
         }
@@ -172,6 +202,12 @@ public class GameSystem : MonoBehaviour
             }
         }
 
+        if (isSelectingSkillTarget)
+        {
+            HandleSkillTargetSelection();
+            return;
+        }
+
         if (isSelectingHand)
         {
             // 持ち駒選択モード
@@ -208,7 +244,7 @@ public class GameSystem : MonoBehaviour
                 isSelectingHand = false;
                 if (HandUIManager.Instance != null)
                 {
-                    HandUIManager.Instance.SetStatusText("");
+                    HandUIManager.Instance.SetStatusText(IdleStatusText);
                     HandUIManager.Instance.HidePanel();
                 }
                 gameBoard.AllDeactivePanel();
@@ -460,6 +496,7 @@ public class GameSystem : MonoBehaviour
             if (targetPiece.player != piece.player)
             {
                 AddPieceToHand(piece.player, targetPiece.type);
+                AddPoint(piece.player, targetPiece.piecePoint); // 獲得量は各駒プレハブの piecePoint で調整
                 isGameOver = gameBoard.RemovePieceAt(targetX, targetY);
 
                 PlayerType opponent = targetPiece.player;
@@ -511,6 +548,7 @@ public class GameSystem : MonoBehaviour
             if (targetPiece.player != piece.player)
             {
                 AddPieceToHand(piece.player, targetPiece.type);
+                AddPoint(piece.player, targetPiece.piecePoint); // 獲得量は各駒プレハブの piecePoint で調整
                 isGameOver = gameBoard.RemovePieceAt(toX, toY);
 
 
@@ -594,6 +632,15 @@ public class GameSystem : MonoBehaviour
             var activeHand = CurrentPlayer.Hand;
             HandUIManager.Instance.UpdateActiveHandDisplay(activePlayer, activeHand);
         }
+    }
+
+    // 駒を取った時やスキル（GainCostEffect）から呼ばれるポイント加算
+    public void AddPoint(PlayerType player, int amount)
+    {
+        Player targetPlayer = (player == PlayerType.Player1) ? player1 : player2;
+        if (targetPlayer == null) return;
+        targetPlayer.AddPoint(amount);
+        UpdateActivePlayerSkillUI();
     }
 
     private void UpdateHandList()
@@ -752,10 +799,6 @@ public class GameSystem : MonoBehaviour
         // ターン切り替え時に状態をクリア
         isSelectingHand = false;
         isDroppingHand = false;
-        if (gameBoard != null)
-        {
-            gameBoard.ChangeSkillOnOff(0); // スキルをリセット
-        }
         if (HandUIManager.Instance != null)
         {
             HandUIManager.Instance.SetStatusText("");
@@ -786,6 +829,7 @@ public class GameSystem : MonoBehaviour
                 break;
         }
         UpdateActivePlayerSkillUI();
+        OnTurnStarted();
     }
 
     void DecideTurn()
@@ -804,6 +848,150 @@ public class GameSystem : MonoBehaviour
             gameCamera.RotateToPlayer(PlayerType.Player2);
         }
         UpdateActivePlayerSkillUI();
+        OnTurnStarted();
+    }
+
+    // 手番が始まったときの判定（詰み・千日手・王手の表示）
+    void OnTurnStarted()
+    {
+        PlayerType side = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
+        isActivePlayerInCheck = CheckRules.IsInCheck(gameBoard, side);
+
+        // 詰み（王将が1枚のときのみ。スキルは回避手に含めない）
+        if (isActivePlayerInCheck && IsCheckmated(side))
+        {
+            Debug.Log($"詰み！ {side} の負け");
+            EndGame(CheckRules.Opponent(side));
+            return;
+        }
+
+        if (RecordPositionAndCheckRepetition(side, isActivePlayerInCheck))
+        {
+            return;
+        }
+
+        if (HandUIManager.Instance != null)
+        {
+            HandUIManager.Instance.SetStatusText(IdleStatusText);
+        }
+    }
+
+    // 操作中でないときのステータス表示（王手中なら知らせる）
+    string IdleStatusText => isActivePlayerInCheck ? "【王手！】 王将を守ってください" : "";
+
+    // 王手を回避できる手（駒の移動・持ち駒を打つ）が1つもないか。スキルは判定に含めない
+    bool IsCheckmated(PlayerType side)
+    {
+        GamePiece[] cells = gameBoard.GetBoardData();
+        for (int i = 0; i < cells.Length; i++)
+        {
+            GamePiece piece = cells[i];
+            if (piece == null || piece.player != side) continue;
+
+            for (int x = 0; x < 9; x++)
+            {
+                for (int y = 0; y < 9; y++)
+                {
+                    if (CanPieceMoveTo(piece, x, y)) return false;
+                }
+            }
+        }
+
+        Player sidePlayer = (side == PlayerType.Player1) ? player1 : player2;
+        if (sidePlayer != null)
+        {
+            foreach (var kvp in sidePlayer.Hand)
+            {
+                if (kvp.Value <= 0) continue;
+                for (int x = 0; x < 9; x++)
+                {
+                    for (int y = 0; y < 9; y++)
+                    {
+                        if (CanDropPieceTo(side, kvp.Key, x, y)) return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    // 局面を記録し、千日手（同じ局面が4回）になったら対局を終える
+    bool RecordPositionAndCheckRepetition(PlayerType sideToMove, bool inCheck)
+    {
+        string key = BuildPositionKey(sideToMove);
+        positionHistory.Add(new PositionRecord { key = key, sideToMove = sideToMove, inCheck = inCheck });
+
+        int count;
+        positionCounts.TryGetValue(key, out count);
+        count++;
+        positionCounts[key] = count;
+        if (count < 4) return false;
+
+        // 連続王手の千日手: 繰り返しの間、片方の手番の局面がすべて王手されていたら、王手をかけ続けた側の負け
+        int first = positionHistory.FindIndex(r => r.key == key);
+        foreach (PlayerType checkedSide in new[] { PlayerType.Player1, PlayerType.Player2 })
+        {
+            bool found = false;
+            bool allInCheck = true;
+            for (int i = first; i < positionHistory.Count; i++)
+            {
+                if (positionHistory[i].sideToMove != checkedSide) continue;
+                found = true;
+                if (!positionHistory[i].inCheck)
+                {
+                    allInCheck = false;
+                    break;
+                }
+            }
+            if (found && allInCheck)
+            {
+                Debug.Log("連続王手の千日手：王手をかけ続けた側の負け");
+                EndGame(checkedSide);
+                return true;
+            }
+        }
+
+        Debug.Log("千日手：引き分け");
+        isDraw = true;
+        currentState = GameState.GameOver;
+        return true;
+    }
+
+    // 盤面・持ち駒・手番を1つの文字列にする（ポイントは含めない）
+    string BuildPositionKey(PlayerType sideToMove)
+    {
+        System.Text.StringBuilder sb = new System.Text.StringBuilder();
+        foreach (GamePiece piece in gameBoard.GetBoardData())
+        {
+            if (piece == null)
+            {
+                sb.Append('.');
+                continue;
+            }
+            sb.Append(piece.player == PlayerType.Player1 ? 'a' : 'b');
+            sb.Append((int)piece.type);
+            sb.Append(piece.isPromoted ? '+' : '-');
+        }
+        foreach (Player p in new[] { player1, player2 })
+        {
+            sb.Append('|');
+            if (p == null) continue;
+            foreach (PieceType type in HandOrder)
+            {
+                int num;
+                p.Hand.TryGetValue(type, out num);
+                sb.Append(num).Append(',');
+            }
+        }
+        sb.Append(sideToMove == PlayerType.Player1 ? '1' : '2');
+        return sb.ToString();
+    }
+
+    void EndGame(PlayerType winnerPlayer)
+    {
+        winner = winnerPlayer;
+        isDraw = false;
+        currentState = GameState.GameOver;
     }
 
     public bool IsPlayer1Turn()
@@ -813,6 +1001,9 @@ public class GameSystem : MonoBehaviour
 
     public void UseSkill(PlayerType player, int slotIndex)
     {
+        // 成りの選択中・スキルの対象選択中は使えない
+        if (isWaitingForPromoteChoice || isSelectingSkillTarget) return;
+
         // 自分のターンであるかチェック
         PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
         if (player != activePlayer)
@@ -844,10 +1035,26 @@ public class GameSystem : MonoBehaviour
             return;
         }
 
+        SkillContext context = new SkillContext(this, gameBoard, player);
+
+        // 対象を選ぶスキルは、選び終わってから発動する（ポイントもその時に消費）
+        if (skill.effect != null && skill.effect.TargetCount > 0)
+        {
+            BeginSkillTargetSelection(skill, context);
+            return;
+        }
+        ExecuteSkill(skill, context);
+    }
+
+    void ExecuteSkill(SkillDefinition skill, SkillContext context)
+    {
+        PlayerType player = context.Player;
+        Player targetPlayer = (player == PlayerType.Player1) ? player1 : player2;
+
         //コスト消費・効果実行
         targetPlayer.ConsumePoint(skill.cost);
-        SkillContext context = new SkillContext(this, gameBoard, player);
         skill.Use(context);
+        isActivePlayerInCheck = CheckRules.IsInCheck(gameBoard, player);
 
         Debug.Log($"プレイヤー {(player == PlayerType.Player1 ? "1" : "2")} がスキル「{skill.skillName}」を使用しました。");
 
@@ -856,31 +1063,103 @@ public class GameSystem : MonoBehaviour
             // オンライン対戦時はサーバーへ要求を送信
             NetworkManager.Instance.SendUseSkillRequest();
         }
-        else
+        else if (HandUIManager.Instance != null)
         {
-            // ローカル対戦時は直接発動
-            if (gameBoard != null)
+            HandUIManager.Instance.SetStatusText($"【スキル発動！】 {skill.skillName}");
+        }
+        UpdateActivePlayerSkillUI();
+    }
+
+    void BeginSkillTargetSelection(SkillDefinition skill, SkillContext context)
+    {
+        // 駒の選択・持ち駒の選択を解除してから対象選択に入る
+        selectedPiece = null;
+        isSelectingHand = false;
+        isDroppingHand = false;
+        currentMovablePositions.Clear();
+        ClearBoardHighlight();
+        SetDarkOverlayActive(false);
+        if (HandUIManager.Instance != null)
+        {
+            HandUIManager.Instance.HidePanel();
+        }
+
+        isSelectingSkillTarget = true;
+        pendingSkill = skill;
+        pendingSkillContext = context;
+        lastPreviewCursor = new Vector2Int(-1, -1);
+        UpdateSkillTargetPrompt();
+    }
+
+    void UpdateSkillTargetPrompt()
+    {
+        if (HandUIManager.Instance == null) return;
+        string prompt = pendingSkill.effect.GetTargetPrompt(pendingSkillContext.Targets.Count);
+        HandUIManager.Instance.SetStatusText($"【{pendingSkill.skillName}】 {prompt} (決定: F / 取消: Space)");
+    }
+
+    void HandleSkillTargetSelection()
+    {
+        SkillEffect effect = pendingSkill.effect;
+        Vector2Int cursor = new Vector2Int(gameCursor.X, gameCursor.Y);
+
+        // カーソルが動いたら、光らせるマスを更新する
+        if (cursor != lastPreviewCursor)
+        {
+            lastPreviewCursor = cursor;
+            gameBoard.AllDeactivePanel();
+            foreach (Vector2Int pos in effect.GetPreviewCells(pendingSkillContext, cursor))
             {
-                gameBoard.ChangeSkillOnOff(1);
+                gameBoard.ActivePanel(GameHelper.CalcPanelNum(pos.x, pos.y));
             }
-            Debug.Log($"ローカルスキル発動: {player}");
+        }
+
+        if (gameController.IsOkTrigger())
+        {
+            if (!effect.IsValidTarget(pendingSkillContext, cursor))
+            {
+                Debug.Log("そのマスは選べません");
+                return;
+            }
+
+            pendingSkillContext.Targets.Add(cursor);
+            lastPreviewCursor = new Vector2Int(-1, -1); // 選択状態が変わったので光らせ直す
+            if (pendingSkillContext.Targets.Count < effect.TargetCount)
+            {
+                UpdateSkillTargetPrompt();
+                return;
+            }
+
+            SkillDefinition skill = pendingSkill;
+            SkillContext context = pendingSkillContext;
+            EndSkillTargetSelection();
+            ExecuteSkill(skill, context);
+        }
+        else if (gameController.IsCancelTrigger())
+        {
+            // 取り消した場合はポイントを消費しない
+            EndSkillTargetSelection();
             if (HandUIManager.Instance != null)
             {
-                HandUIManager.Instance.SetStatusText($"【スキル発動！】 相手の飛車を取れば勝利します");
+                HandUIManager.Instance.SetStatusText(IdleStatusText);
             }
         }
     }
 
+    void EndSkillTargetSelection()
+    {
+        isSelectingSkillTarget = false;
+        pendingSkill = null;
+        pendingSkillContext = null;
+        gameBoard.AllDeactivePanel();
+    }
+
     public void OnServerUseSkill(PlayerType activePlayer)
     {
-        if (gameBoard != null)
-        {
-            gameBoard.ChangeSkillOnOff(1);
-        }
-        Debug.Log($"プレイヤー {(activePlayer == PlayerType.Player1 ? "1" : "2")} がスキルを使用しました！ (飛車が王将扱いになります)");
+        Debug.Log($"プレイヤー {(activePlayer == PlayerType.Player1 ? "1" : "2")} がスキルを使用しました！");
         if (HandUIManager.Instance != null)
         {
-            HandUIManager.Instance.SetStatusText($"【スキル発動中！】 相手の飛車を取れば勝利します");
+            HandUIManager.Instance.SetStatusText($"【スキル発動！】 プレイヤー{(activePlayer == PlayerType.Player1 ? "1" : "2")}がスキルを使用しました");
         }
     }
 

@@ -32,7 +32,6 @@ namespace ShogiServer
         private static Dictionary<PieceType, int> player2Hand = new Dictionary<PieceType, int>();
         private static PlayerType currentTurn = PlayerType.Player1;
         private static bool isGameActive = false;
-        private static int skillOnOff = 0; // 0 = off, 1 = active
 
         static void Main(string[] args)
         {
@@ -66,7 +65,6 @@ namespace ShogiServer
         {
             currentTurn = PlayerType.Player1;
             isGameActive = false;
-            skillOnOff = 0;
 
             // 持ち駒辞書の初期化
             foreach (PieceType type in Enum.GetValues(typeof(PieceType)))
@@ -201,8 +199,8 @@ namespace ShogiServer
             {
                 if (targetPiece.player != player)
                 {
-                    // 駒を取る (通常時は王将、スキル発動中は飛車も対象)
-                    if (targetPiece.type == PieceType.King || (skillOnOff == 1 && targetPiece.type == PieceType.Rook))
+                    // 王将を取ったら勝利
+                    if (targetPiece.type == PieceType.King)
                     {
                         isGameOver = true;
                     }
@@ -249,7 +247,6 @@ namespace ShogiServer
             {
                 // ターン交代
                 currentTurn = (currentTurn == PlayerType.Player1) ? PlayerType.Player2 : PlayerType.Player1;
-                skillOnOff = 0; // スキルリセット
             }
 
             return true;
@@ -260,7 +257,6 @@ namespace ShogiServer
             if (!isGameActive) return false;
             if (player != currentTurn) return false;
 
-            skillOnOff = 1;
             Console.WriteLine($"プレイヤー {player} がスキルを使用しました。");
 
             GameEventPayload ev = new GameEventPayload
@@ -339,7 +335,6 @@ namespace ShogiServer
 
             // ターン交代
             currentTurn = (currentTurn == PlayerType.Player1) ? PlayerType.Player2 : PlayerType.Player1;
-            skillOnOff = 0; // スキルリセット
 
             return true;
         }
