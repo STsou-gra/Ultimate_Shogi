@@ -130,26 +130,19 @@ public class NifuDropRule : IGameRule
 }
 
 /// <summary>
-/// 王手放置・自殺手の禁止と、打ち歩詰めの禁止（王将が1枚だけのプレイヤーにのみ適用）
+/// 打ち歩詰めの禁止（相手の王将が1枚だけのときに適用）
+/// 王手放置や、王将を取られるマスへの移動は禁止しない（放置したら次の手で王将を取られて負け）
 /// </summary>
-public class KingSafetyRule : IGameRule
+public class UchifuzumeRule : IGameRule
 {
     public bool IsLegalMove(GamePiece piece, int toX, int toY, GameBoard board)
     {
-        return CheckRules.IsMoveSafe(board, piece, toX, toY);
+        return true; // 配置ルールなのでMove判定は常にパス
     }
 
     public bool IsLegalDrop(PieceType type, PlayerType player, int toX, int toY, GameBoard board)
     {
-        if (!CheckRules.IsDropSafe(board, player, toX, toY))
-        {
-            return false;
-        }
-        if (type == PieceType.Pawn && CheckRules.IsUchifuzume(board, player, toX, toY))
-        {
-            return false; // 打ち歩詰め
-        }
-        return true;
+        return !(type == PieceType.Pawn && CheckRules.IsUchifuzume(board, player, toX, toY));
     }
 }
 
@@ -172,7 +165,7 @@ public static class CheckRules
         return IsInCheck(board.GetBoardData(), NONE, NONE, player);
     }
 
-    // その移動の後に、自分の王将が取られる状態にならないか（王手放置・自殺手の禁止）
+    // その移動の後に、自分の王将が取られる状態にならないか（詰みの判定で、王手を防げる手かを調べる）
     public static bool IsMoveSafe(GameBoard board, GamePiece piece, int toX, int toY)
     {
         GamePiece[] cells = board.GetBoardData();
@@ -195,7 +188,7 @@ public static class CheckRules
         return !IsInCheck(sim, NONE, NONE, piece.player);
     }
 
-    // 持ち駒を打った後に、自分の王将が取られる状態にならないか（合駒で王手を防げるか）
+    // 持ち駒を打った後に、自分の王将が取られる状態にならないか（詰みの判定で、合駒で王手を防げるかを調べる）
     public static bool IsDropSafe(GameBoard board, PlayerType player, int x, int y)
     {
         GamePiece[] cells = board.GetBoardData();
