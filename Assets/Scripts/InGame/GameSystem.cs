@@ -109,7 +109,7 @@ public class GameSystem : MonoBehaviour
         gameRules.Add(new EmptyCellDropRule());
         gameRules.Add(new NoLegalMoveDropRule());
         gameRules.Add(new NifuDropRule());
-        gameRules.Add(new KingSafetyRule()); // 他のルールを満たした手だけを調べるので最後に置く
+        gameRules.Add(new UchifuzumeRule()); // 他のルールを満たした手だけを調べるので最後に置く
 
         // デッキの初期化
         if (DeckTransferManager.Player1SelectedDeck != null && player1 != null)
@@ -894,9 +894,10 @@ public class GameSystem : MonoBehaviour
     }
 
     // 操作中でないときのステータス表示（王手中なら知らせる）
-    string IdleStatusText => isActivePlayerInCheck ? "【王手！】 王将を守ってください" : "";
+    string IdleStatusText => isActivePlayerInCheck ? "【王手！】 放置すると次の手で王将を取られます" : "";
 
     // 王手を回避できる手（駒の移動・持ち駒を打つ）が1つもないか。スキルは判定に含めない
+    // 王手放置は禁止していないので、「指せる手」のうち王将が取られなくなる手があるかを調べる
     bool IsCheckmated(PlayerType side)
     {
         GamePiece[] cells = gameBoard.GetBoardData();
@@ -909,7 +910,7 @@ public class GameSystem : MonoBehaviour
             {
                 for (int y = 0; y < 9; y++)
                 {
-                    if (CanPieceMoveTo(piece, x, y)) return false;
+                    if (CanPieceMoveTo(piece, x, y) && CheckRules.IsMoveSafe(gameBoard, piece, x, y)) return false;
                 }
             }
         }
@@ -924,7 +925,7 @@ public class GameSystem : MonoBehaviour
                 {
                     for (int y = 0; y < 9; y++)
                     {
-                        if (CanDropPieceTo(side, kvp.Key, x, y)) return false;
+                        if (CanDropPieceTo(side, kvp.Key, x, y) && CheckRules.IsDropSafe(gameBoard, side, x, y)) return false;
                     }
                 }
             }
