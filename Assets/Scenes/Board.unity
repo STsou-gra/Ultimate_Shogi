@@ -9321,7 +9321,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "\u6210\u308A\u99D2\u306B\u3057\u307E\u3059\u304B\uFF1F\n\uFF08F\u30AD\u30FC\u3067\u3082\u6210\u308A\u99D2\u306B\u3055\u305B\u308B\u3053\u3068\u304C\u3067\u304D\u307E\u3059\uFF09"
+  m_text: "\u6210\u308A\u99D2\u306B\u3057\u307E\u3059\u304B\uFF1F\n\uFF08F\uFF1A\u6C7A\u5B9A\u3000J\uFF1A\u6210\u3089\u306A\u3044\u3000Space\uFF1A\u53D6\u6D88\uFF09"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: a5ea774865e3d43cbba4f2a9c3ed2e12, type: 2}
   m_sharedMaterial: {fileID: 6755379500816233061, guid: a5ea774865e3d43cbba4f2a9c3ed2e12, type: 2}
@@ -11147,8 +11147,8 @@ RectTransform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 427417494}
-  - {fileID: 1016886069}
   - {fileID: 289758148}
+  - {fileID: 1016886069}
   - {fileID: 1073250524}
   - {fileID: 1071612991}
   m_Father: {fileID: 0}
