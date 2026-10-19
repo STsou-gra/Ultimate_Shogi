@@ -1,24 +1,12 @@
 using UnityEngine;
 using UnityEngine.SceneManagement; // シーン管理
-using TMPro;
-
-// 対局結果を GameOver シーンへ受け渡す
-public static class GameResult
-{
-    public static string Message { get; set; } = "";
-}
 
 public class GameSceneManager : MonoBehaviour
 {
-    [SerializeField] private TextMeshProUGUI resultText; // GameOver シーンの勝敗表示（他のシーンでは未設定でよい）
-
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
-        if (resultText != null && !string.IsNullOrEmpty(GameResult.Message))
-        {
-            resultText.text = GameResult.Message;
-        }
+        
     }
 
     // Update is called once per frame
@@ -39,14 +27,15 @@ public class GameSceneManager : MonoBehaviour
         SceneManager.LoadScene("GameOver");
     }
 
+    // タイトルの「ゲームスタート」から呼び出す（スキル編成画面へ）
     public void PlayGame(){
-        SceneManager.LoadScene("Board");
-        Debug.Log("ゲームスタート");
+        SceneManager.LoadScene("OrganizationScene");
     }
 
-    // タイトルのスタートボタンから呼び出し、スキル編成画面へ切り替える
-    public void OrganizeDeck(){
-        SceneManager.LoadScene("OrganizationScene");
+    // スキル編成画面の「対局」から呼び出す（対局画面へ）
+    public void StartMatch(){
+        SceneManager.LoadScene("Board");
+        Debug.Log("ゲームスタート");
     }
 
     /*

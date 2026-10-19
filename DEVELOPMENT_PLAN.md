@@ -283,8 +283,8 @@
 
 ### Phase 0: 土台整理
 - [x] Board シーン: スキルボタンの OnClick を `GameSystem.OnSkillSlotClicked`（0〜4）に繋ぐ
-- [ ] Board シーン: ポイント表示用のテキストを作り、両プレイヤーの `PointManager` の `Score Text` に設定（シーンにまだテキストがない）
-- [ ] OrganizationScene: プレイヤー2の編成スロットを作成・配線
+- [ ] Board シーン: ポイント表示用のテキストをプレイヤーごとに作り、各 `PointManager` の `Score Text` に設定（今は両方とも操作案内の StatusText に設定されていて、案内文とポイント表示が上書きし合う）
+- [x] OrganizationScene: プレイヤー2の編成スロットを作成・配線
 - [x] ビルド設定: GameTitle をシーン一覧の先頭にする
 - [x] GameOver 画面に勝者・引き分けを表示（以前は「Player 1 の勝利!」固定）
 - [ ] 要検討事項（R・S・A・B・C）をチームで決める
