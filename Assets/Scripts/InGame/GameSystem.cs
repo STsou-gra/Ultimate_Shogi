@@ -90,6 +90,17 @@ public class GameSystem : MonoBehaviour
     [Header("Shared UI References")]
     [SerializeField] private SkillButtonUI[] skillSlotUIs; // 要素数5の共通UIスロット
 
+    // 毎フレーム演出（GameTickEffects）用
+    public IEnumerable<UnityEngine.UI.Button> SkillSlotButtons
+    {
+        get
+        {
+            if (skillSlotUIs == null) yield break;
+            foreach (var slot in skillSlotUIs) yield return slot.button;
+        }
+    }
+    public bool IsInTurn => currentState == GameState.Player1Turn || currentState == GameState.Player2Turn;
+
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
@@ -103,6 +114,12 @@ public class GameSystem : MonoBehaviour
         sceneManager = FindAnyObjectByType<GameSceneManager>();
 
         gameCursor = Object.FindObjectsByType<GameCursor>(FindObjectsSortMode.None)[0];
+
+        // 毎フレームの演出（シーンに置かれていなければ自動で追加する）
+        if (FindAnyObjectByType<GameTickEffects>() == null)
+        {
+            gameObject.AddComponent<GameTickEffects>();
+        }
 
         // ルールの登録
         gameRules.Add(new BaseMoveRule());

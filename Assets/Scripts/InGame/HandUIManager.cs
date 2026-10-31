@@ -19,6 +19,7 @@ public class HandUIManager : MonoBehaviour
 
     private static HandUIManager instance;
     public static HandUIManager Instance => instance;
+    public TextMeshProUGUI ActivePlayerText => activePlayerText;
 
     void Awake()
     {

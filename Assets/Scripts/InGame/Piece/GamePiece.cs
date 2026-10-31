@@ -16,6 +16,11 @@ public abstract class GamePiece : MonoBehaviour
     [SerializeField] protected GameObject promotedVisual;
     public bool isPromoted = false;
 
+    [Header("Tick Effects")]
+    public bool isSpecialReady = false; // 必殺技を発動できる（オーラが光り、光の粒が立ち上る）
+    public bool hasFuse = false;        // 火薬の導火線（先端で火花が散る）
+    public Vector2 fuseOffset = new Vector2(0.06f, 0.6f); // 導火線の先端の位置（駒のローカル座標）
+
     public abstract bool CanMove(int toX, int toY);
 
     // 駒を移動させるメソッド
