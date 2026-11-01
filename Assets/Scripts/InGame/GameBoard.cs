@@ -81,6 +81,7 @@ public class GameBoard : MonoBehaviour
             piece.player = item.player;
             piece.X = item.X; // 座標も忘れずにセット
             piece.Y = item.Y;
+            piece.IsInitial = true; // 初期配置の駒（倒されるとプレイヤーごとに記録される）
 
             piece.transform.localPosition = GameHelper.CalcPanelLocation(item.X, item.Y);
 
@@ -113,6 +114,9 @@ public class GameBoard : MonoBehaviour
         return boardData;
     }
 
+    // 盤から駒を取り除いて破棄する（盤面の操作だけ）。
+    // 対局中に駒を倒すときは、ここを直接呼ばずに GameSystem.CapturePiece（取り）/ VanishPiece（消失）を通すこと
+    // （エナジー配分・持ち駒・初期配置の駒の記録・盾などの割り込みをそちらで行う）
     public bool RemovePieceAt(int x, int y)
     {
         int index = GameHelper.CalcPanelNum(x, y);

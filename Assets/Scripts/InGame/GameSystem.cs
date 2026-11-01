@@ -25,6 +25,22 @@ public class GameSystem : MonoBehaviour
 
     public Player CurrentPlayer => IsPlayer1Turn() ? player1 : player2;
 
+    // 新しいルールの状態（ターン数・エナジー・倒された初期配置の駒）。MonoBehaviour から切り離したプレーンなクラス
+    private MatchState match;
+    public MatchState Match => match;
+
+    // 後手の手番が終わったとき（1ターンの終わり）。引数は終わったターン数。手番交代の前に呼ばれる
+    public event System.Action<int> RoundEnded;
+
+    // 駒が倒された（取り・消失）あと。駒の GameObject はもう破棄されているので、PieceDefeat の Type・X・Y などを使う
+    public event System.Action<PieceDefeat> PieceDefeated;
+
+    // 駒を倒す処理への割り込み（盾・時間停止・アンデッドなど）
+    private readonly List<IPieceDefeatInterceptor> defeatInterceptors = new List<IPieceDefeatInterceptor>();
+
+    // 手番の始まりに出すお知らせ（敵陣への打ち込み解禁など）
+    private string turnNotice = "";
+
     // 持ち駒打つ系の状態変数
     private bool isSelectingHand = false; // 持ち駒の種類を選択中か
     private bool isDroppingHand = false;  // 持ち駒を打つ位置を選択中か
@@ -125,11 +141,24 @@ public class GameSystem : MonoBehaviour
             gameObject.AddComponent<GameTickEffects>();
         }
 
+        // 陣地の色分けと境界線（シーンに置かれていなければ自動で追加する）
+        if (FindAnyObjectByType<BoardZoneView>() == null)
+        {
+            gameObject.AddComponent<BoardZoneView>();
+        }
+
+        // 対局の状態（ターン数・エナジー）
+        match = new MatchState(MatchConfig.FirstPlayer);
+        match.Turn.RoundEnded += OnRoundEnd;
+        if (player1 != null) player1.BindEnergy(match.Energy);
+        if (player2 != null) player2.BindEnergy(match.Energy);
+
         // ルールの登録
         gameRules.Add(new BaseMoveRule());
         gameRules.Add(new EmptyCellDropRule());
         gameRules.Add(new NoLegalMoveDropRule());
         gameRules.Add(new NifuDropRule());
+        gameRules.Add(new EnemyZoneDropLockRule(match.Turn));
         gameRules.Add(new UchifuzumeRule()); // 他のルールを満たした手だけを調べるので最後に置く
 
         // デッキの初期化
@@ -527,9 +556,9 @@ public class GameSystem : MonoBehaviour
             return false;
         }
 
-        // 先手敵陣: X >= 6, 後手敵陣: X <= 2
-        bool fromInEnemy = (piece.player == PlayerType.Player1) ? (fromX >= 6) : (fromX <= 2);
-        bool toInEnemy = (piece.player == PlayerType.Player1) ? (toX >= 6) : (toX <= 2);
+        // 敵陣（先手: X >= 6, 後手: X <= 2）に入る・敵陣から出る
+        bool fromInEnemy = BoardZones.IsEnemyZone(piece.player, fromX);
+        bool toInEnemy = BoardZones.IsEnemyZone(piece.player, toX);
 
         return fromInEnemy || toInEnemy;
     }
@@ -559,26 +588,26 @@ public class GameSystem : MonoBehaviour
 
     void ExecuteLocalMove(GamePiece piece, int targetX, int targetY, bool promote)
     {
-        bool isGameOver = false;
-        GamePiece targetPiece = gameBoard.GetPieceAt(targetX, targetY);
-        if (targetPiece != null)
-        {
-            if (targetPiece.player != piece.player)
-            {
-                AddPieceToHand(piece.player, targetPiece.type);
-                AddPoint(piece.player, targetPiece.piecePoint); // 獲得量は各駒プレハブの piecePoint で調整
-                isGameOver = gameBoard.RemovePieceAt(targetX, targetY);
+        if (ApplyMove(piece, targetX, targetY, promote)) return; // 対局が終わった
 
-                PlayerType opponent = targetPiece.player;
-                if (!IsKingAlive(opponent))
-                {
-                    //盤面に相手の王が一枚も残っていない場合、ゲームオーバーとする
-                    isGameOver = true;
-                }
-                else
-                {
-                    isGameOver = false;
-                }
+        selectedPiece = null;
+        gameBoard.AllDeactivePanel();
+        ClearBoardHighlight();
+        SetDarkOverlayActive(false);
+        currentMovablePositions.Clear();
+        NextState();
+    }
+
+    // 駒の移動（相手の駒がいれば取り）。盤面のデータを変え、見た目の移動を始める。対局が終わったら true
+    bool ApplyMove(GamePiece piece, int targetX, int targetY, bool promote)
+    {
+        GamePiece targetPiece = gameBoard.GetPieceAt(targetX, targetY);
+        if (targetPiece != null && targetPiece.player != piece.player)
+        {
+            if (!CapturePiece(targetPiece, piece.player))
+            {
+                // 取りが防がれた（盾など）：駒は元のマスに残り、手番は消費する
+                return false;
             }
         }
         gameBoard.UpdateBoardData(piece.X, piece.Y, targetX, targetY);
@@ -592,18 +621,7 @@ public class GameSystem : MonoBehaviour
             piece.Promote();
         }
 
-        if (isGameOver)
-        {
-            winner = piece.player;
-            currentState = GameState.GameOver;
-            return;
-        }
-        selectedPiece = null;
-        gameBoard.AllDeactivePanel();
-        ClearBoardHighlight();
-        SetDarkOverlayActive(false);
-        currentMovablePositions.Clear();
-        NextState();
+        return ResolveKingLoss();
     }
 
     // 指し手の見た目の移動（盤面データは即時に更新済み。アニメーションは見た目だけ）
@@ -623,46 +641,7 @@ public class GameSystem : MonoBehaviour
         GamePiece piece = gameBoard.GetPieceAt(fromX, fromY);
         if (piece == null) return;
 
-        bool isGameOver = false;
-        GamePiece targetPiece = gameBoard.GetPieceAt(toX, toY);
-        if (targetPiece != null)
-        {
-            if (targetPiece.player != piece.player)
-            {
-                AddPieceToHand(piece.player, targetPiece.type);
-                AddPoint(piece.player, targetPiece.piecePoint); // 獲得量は各駒プレハブの piecePoint で調整
-                isGameOver = gameBoard.RemovePieceAt(toX, toY);
-
-
-                PlayerType opponent = targetPiece.player;
-                if (!IsKingAlive(opponent))
-                {
-                    //盤面に相手の王が一枚も残っていない場合、ゲームオーバーとする
-                    isGameOver = true;
-                }
-                else
-                {
-                    isGameOver = false;
-                }
-            }
-        }
-        gameBoard.UpdateBoardData(fromX, fromY, toX, toY);
-
-        piece.X = toX;
-        piece.Y = toY;
-        AnimatePieceMove(piece, GameHelper.CalcPanelLocation(toX, toY));
-
-        if (promote)
-        {
-            piece.Promote();
-        }
-
-        if (isGameOver)
-        {
-            winner = piece.player;
-            currentState = GameState.GameOver;
-            return;
-        }
+        if (ApplyMove(piece, toX, toY, promote)) return; // 対局が終わった
 
         selectedPiece = null;
         gameBoard.AllDeactivePanel();
@@ -716,13 +695,101 @@ public class GameSystem : MonoBehaviour
         }
     }
 
-    // 駒を取った時やスキル（GainCostEffect）から呼ばれるポイント加算
+    // エナジー（旧ポイント）の加算。手番の始まり・駒が取られたとき・スキル（GainCostEffect）から呼ばれる
     public void AddPoint(PlayerType player, int amount)
     {
-        Player targetPlayer = (player == PlayerType.Player1) ? player1 : player2;
-        if (targetPlayer == null) return;
-        targetPlayer.AddPoint(amount);
+        if (match == null || amount <= 0) return;
+        match.Energy.Gain(player, amount); // 表示は Player.BindEnergy で PointManager に反映される
         UpdateActivePlayerSkillUI();
+    }
+
+    // ------------------------------------------------------------
+    //  駒を倒す処理の共通入口（取り・消失）
+    //  盤上の駒を倒すときは、必ずこの2つを通すこと（盾・時間停止・アンデッドがここで割り込む）
+    // ------------------------------------------------------------
+
+    public void AddDefeatInterceptor(IPieceDefeatInterceptor interceptor)
+    {
+        if (interceptor != null && !defeatInterceptors.Contains(interceptor)) defeatInterceptors.Add(interceptor);
+    }
+
+    public void RemoveDefeatInterceptor(IPieceDefeatInterceptor interceptor)
+    {
+        defeatInterceptors.Remove(interceptor);
+    }
+
+    // 取り：by が piece を取る。エナジーは取られた側が駒の価値の全額、取った側が半分（切り捨て）を得る。
+    // 取った駒は by の持ち駒になる（王将は持ち駒にならない）。取れたら true（盾などで防がれたら false）。
+    // 王将が全部取られたかの判定は呼び出し側で行う（ResolveKingLoss）
+    public bool CapturePiece(GamePiece piece, PlayerType by)
+    {
+        if (!IsOnBoard(piece)) return false;
+
+        PieceDefeat defeat = new PieceDefeat(piece, DefeatKind.Capture, by, "取り");
+        if (IsDefeatIntercepted(defeat)) return false;
+
+        AddPoint(defeat.Owner, PieceValues.CapturedSideGain(defeat.Type));
+        AddPoint(by, PieceValues.CapturerGain(defeat.Type));
+        RemoveDefeatedPiece(defeat);
+        AddPieceToHand(by, defeat.Type); // 成った駒も元の駒として持ち駒になる
+        return true;
+    }
+
+    // 消失：エナジー・持ち駒化なしで盤から消える（爆発など）。消えたら true（割り込みで止められたら false）
+    public bool VanishPiece(GamePiece piece, string reason)
+    {
+        if (!IsOnBoard(piece)) return false;
+
+        PieceDefeat defeat = new PieceDefeat(piece, DefeatKind.Vanish, null, reason);
+        if (IsDefeatIntercepted(defeat)) return false;
+
+        RemoveDefeatedPiece(defeat);
+        return true;
+    }
+
+    bool IsOnBoard(GamePiece piece)
+    {
+        return piece != null && gameBoard != null && gameBoard.GetPieceAt(piece.X, piece.Y) == piece;
+    }
+
+    bool IsDefeatIntercepted(PieceDefeat defeat)
+    {
+        // 割り込みの中で登録が増減しても大丈夫なように、写しを回す
+        foreach (IPieceDefeatInterceptor interceptor in defeatInterceptors.ToArray())
+        {
+            if (interceptor.TryIntercept(defeat)) return true;
+        }
+        return false;
+    }
+
+    // 取り・消失の共通処理：初期配置の駒なら記録 → 盤から取り除く → 通知
+    void RemoveDefeatedPiece(PieceDefeat defeat)
+    {
+        if (defeat.WasInitial)
+        {
+            match.RecordFallenInitial(defeat.Owner, defeat.Type, defeat.Kind);
+        }
+        gameBoard.RemovePieceAt(defeat.X, defeat.Y);
+        PieceDefeated?.Invoke(defeat);
+    }
+
+    // 王将が全部いなくなったプレイヤーがいれば対局を終える（両方なら引き分け）。終わったら true
+    bool ResolveKingLoss()
+    {
+        bool p1Alive = IsKingAlive(PlayerType.Player1);
+        bool p2Alive = IsKingAlive(PlayerType.Player2);
+        if (p1Alive && p2Alive) return false;
+
+        if (!p1Alive && !p2Alive)
+        {
+            isDraw = true;
+            currentState = GameState.GameOver;
+        }
+        else
+        {
+            EndGame(p1Alive ? PlayerType.Player1 : PlayerType.Player2);
+        }
+        return true;
     }
 
     private void UpdateHandList()
@@ -892,6 +959,12 @@ public class GameSystem : MonoBehaviour
             HandUIManager.Instance.UpdateActiveHandDisplay(activePlayer, hand);
         }
 
+        // 手番を相手に渡す（後手の手番が終わったら、ここで 1ターンの終わり OnRoundEnd が呼ばれる）
+        if (IsInTurn)
+        {
+            match.Turn.EndTurn();
+        }
+
         switch (currentState)
         {
             case GameState.Preparation:
@@ -917,8 +990,8 @@ public class GameSystem : MonoBehaviour
 
     void DecideTurn()
     {
-        // ランダムにプレイヤー1かプレイヤー2のどちらが先攻かを決定する処理
-        if (Random.value < 0.5f)
+        // 先手は MatchConfig.FirstPlayer（Player1）で固定（Prototype と同じく、盤の手前側が先手）
+        if (match.Turn.FirstPlayer == PlayerType.Player1)
         {
             currentState = GameState.Player1Turn;
             Debug.Log("プレイヤー1のターンです！");
@@ -934,10 +1007,25 @@ public class GameSystem : MonoBehaviour
         OnTurnStarted();
     }
 
-    // 手番が始まったときの判定（詰み・千日手・王手の表示）
+    // 手番が始まったときの処理（ターン数・エナジー）と判定（詰み・千日手・王手の表示）
     void OnTurnStarted()
     {
         PlayerType side = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
+
+        // 先手の番ならターン数を進める → エナジー +PointsPerTurn
+        match.Turn.BeginTurn();
+        turnNotice = "";
+        if (side == match.Turn.FirstPlayer && match.Turn.IsDropUnlockTurn)
+        {
+            turnNotice = $"第{match.Turn.TurnNumber}ターン：敵陣への持ち駒の打ち込みが解禁された！";
+            Debug.Log(turnNotice);
+        }
+        AddPoint(side, MatchConfig.PointsPerTurn);
+        if (HandUIManager.Instance != null)
+        {
+            HandUIManager.Instance.SetTurnInfo(match.Turn.Label);
+        }
+
         isActivePlayerInCheck = CheckRules.IsInCheck(gameBoard, side);
 
         // 詰み（王将が1枚のときのみ。スキルは回避手に含めない）
@@ -959,8 +1047,25 @@ public class GameSystem : MonoBehaviour
         }
     }
 
-    // 操作中でないときのステータス表示（王手中なら知らせる）
-    string IdleStatusText => isActivePlayerInCheck ? "【王手！】 放置すると次の手で王将を取られます" : "";
+    // 操作中でないときのステータス表示（王手中なら知らせる。手番の始まりのお知らせもここに出す）
+    string IdleStatusText
+    {
+        get
+        {
+            string check = isActivePlayerInCheck ? "【王手！】 放置すると次の手で王将を取られます" : "";
+            if (string.IsNullOrEmpty(turnNotice)) return check;
+            if (string.IsNullOrEmpty(check)) return turnNotice;
+            return check + "\n" + turnNotice;
+        }
+    }
+
+    // 1ターンの終わり（後手の手番が終わったとき。手番交代の前）。
+    // 今は何もしない。炎上の鎮火・世界の終わりなど「ターンの終わりに起きること」はここに足す
+    void OnRoundEnd(int turnNumber)
+    {
+        Debug.Log($"第{turnNumber}ターン終了");
+        RoundEnded?.Invoke(turnNumber);
+    }
 
     // 王手を回避できる手（駒の移動・持ち駒を打つ）が1つもないか。スキルは判定に含めない
     // 王手放置は禁止していないので、「指せる手」のうち王将が取られなくなる手があるかを調べる
@@ -1138,6 +1243,8 @@ public class GameSystem : MonoBehaviour
         //コスト消費・効果実行
         targetPlayer.ConsumePoint(skill.cost);
         skill.Use(context);
+        UpdateActivePlayerSkillUI();
+        if (ResolveKingLoss()) return; // スキルで王将が全部いなくなった（今のスキルでは起きない）
         isActivePlayerInCheck = CheckRules.IsInCheck(gameBoard, player);
 
         Debug.Log($"プレイヤー {(player == PlayerType.Player1 ? "1" : "2")} がスキル「{skill.skillName}」を使用しました。");

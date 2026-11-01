@@ -2,9 +2,11 @@ using UnityEngine;
 using TMPro; // TextMeshProを使うために必要
 using DG.Tweening; // DOTweenを使うために追加
 
+// エナジーの表示（値は MatchState の EnergyState が持ち、Player.BindEnergy で CurrentPoint に反映される）
 public class PointManager : MonoBehaviour
 {
     [SerializeField] private TextMeshProUGUI scoreText; // インスペクターからTextを紐付け
+    [SerializeField] private string label = "エナジー"; // 表示の見出し
     private int _currentPoint = 0;
 
     // ポイントを変更するためのプロパティ
@@ -29,7 +31,7 @@ public class PointManager : MonoBehaviour
     {
         if (scoreText != null)
         {
-            scoreText.text = $"ポイント: {_currentPoint}";
+            scoreText.text = $"{label}: {_currentPoint}";
         }
     }
 

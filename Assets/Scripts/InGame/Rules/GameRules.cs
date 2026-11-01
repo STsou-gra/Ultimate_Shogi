@@ -130,6 +130,30 @@ public class NifuDropRule : IGameRule
 }
 
 /// <summary>
+/// 序盤（第 MatchConfig.EnemyZoneDropLockTurns ターンまで）は、敵陣（相手側の3段）に持ち駒を打てないルール
+/// </summary>
+public class EnemyZoneDropLockRule : IGameRule
+{
+    private readonly TurnState turn;
+
+    public EnemyZoneDropLockRule(TurnState turn)
+    {
+        this.turn = turn;
+    }
+
+    public bool IsLegalMove(GamePiece piece, int toX, int toY, GameBoard board)
+    {
+        return true; // 配置ルールなのでMove判定は常にパス
+    }
+
+    public bool IsLegalDrop(PieceType type, PlayerType player, int toX, int toY, GameBoard board)
+    {
+        // 段は X（BoardZones の説明を参照）
+        return !(turn.IsEnemyZoneDropLocked && BoardZones.IsEnemyZone(player, toX));
+    }
+}
+
+/// <summary>
 /// 打ち歩詰めの禁止（相手の王将が1枚だけのときに適用）
 /// 王手放置や、王将を取られるマスへの移動は禁止しない（放置したら次の手で王将を取られて負け）
 /// </summary>
