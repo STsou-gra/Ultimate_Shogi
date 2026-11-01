@@ -147,6 +147,16 @@ public class GameSystem : MonoBehaviour
             gameObject.AddComponent<BoardZoneView>();
         }
 
+        // マスの状態（破壊・炎上・落とし穴）の見た目と、動作確認用のデバッグキー（シーンに置かれていなければ自動で追加する）
+        if (FindAnyObjectByType<BoardCellView>() == null)
+        {
+            gameObject.AddComponent<BoardCellView>();
+        }
+        if (FindAnyObjectByType<CellDebugTool>() == null)
+        {
+            gameObject.AddComponent<CellDebugTool>();
+        }
+
         // 対局の状態（ターン数・エナジー）
         match = new MatchState(MatchConfig.FirstPlayer);
         match.Turn.RoundEnded += OnRoundEnd;
@@ -156,6 +166,7 @@ public class GameSystem : MonoBehaviour
         // ルールの登録
         gameRules.Add(new BaseMoveRule());
         gameRules.Add(new EmptyCellDropRule());
+        gameRules.Add(new CellStateDropRule()); // 破壊マス・落とし穴には打てない
         gameRules.Add(new NoLegalMoveDropRule());
         gameRules.Add(new NifuDropRule());
         gameRules.Add(new EnemyZoneDropLockRule(match.Turn));
@@ -616,6 +627,12 @@ public class GameSystem : MonoBehaviour
         piece.Y = targetY;
         AnimatePieceMove(piece, GameHelper.CalcPanelLocation(targetX, targetY));
 
+        // 炎上・落とし穴のマスに入ったら消失する（成りも起きない）
+        if (!EnterCell(piece, targetX, targetY))
+        {
+            return ResolveKingLoss();
+        }
+
         if (promote)
         {
             piece.Promote();
@@ -657,7 +674,8 @@ public class GameSystem : MonoBehaviour
         targetPlayer.RemovePieceFromHand(type);
         var hand = targetPlayer.Hand;
 
-        gameBoard.SpawnPiece(type, activePlayer, toX, toY);
+        GamePiece dropped = gameBoard.SpawnPiece(type, activePlayer, toX, toY);
+        if (dropped != null) EnterCell(dropped, toX, toY); // 炎上のマスに打ったら消失する
 
         if (HandUIManager.Instance != null)
         {
@@ -773,8 +791,95 @@ public class GameSystem : MonoBehaviour
         PieceDefeated?.Invoke(defeat);
     }
 
-    // 王将が全部いなくなったプレイヤーがいれば対局を終える（両方なら引き分け）。終わったら true
-    bool ResolveKingLoss()
+    // ------------------------------------------------------------
+    //  マスの状態（破壊・炎上・落とし穴）の共通入口
+    //  Prototype の effects.js の breakCell / setBurning / setTrap / enterCell。
+    //  データは GameBoard.Cells（BoardCells）が持ち、見た目は BoardCellView が Cells.Changed を受けて更新する
+    // ------------------------------------------------------------
+
+    public BoardCells Cells => gameBoard != null ? gameBoard.Cells : null;
+
+    // マスを破壊する（対局終了まで戻らない）。そこにいた駒は消失する。破壊したら true。
+    // 王将が消えることもあるので、呼び出し側で ResolveKingLoss を呼ぶこと（スキルなら ExecuteSkill が呼ぶ）
+    public bool BreakCell(int x, int y)
+    {
+        BoardCells cells = Cells;
+        if (cells == null) return false;
+        GamePiece piece = gameBoard.GetPieceAt(x, y);
+        if (!cells.Break(x, y)) return false;
+        if (piece != null) VanishPiece(piece, BoardCells.ReasonBroken);
+        return true;
+    }
+
+    // マスを turns ターンのあいだ炎上させる（今のターンを 1 ターン目として数え、最後のターンの終わりに鎮火）。
+    // すでにいる駒には影響せず、あとから入った駒が消失する。破壊マスは炎上しない。炎上させたら true
+    public bool SetBurning(int x, int y, int turns)
+    {
+        BoardCells cells = Cells;
+        if (cells == null || match == null) return false;
+        return cells.SetBurning(x, y, turns, match.Turn.TurnNumber);
+    }
+
+    // 落とし穴を仕掛ける（owner は仕掛けたプレイヤー。穴は両プレイヤーに見える）。
+    // 駒がいるマス・破壊マス・炎上のマスには置けない。仕掛けたら true
+    public bool SetTrap(int x, int y, PlayerType owner)
+    {
+        BoardCells cells = Cells;
+        if (cells == null || gameBoard.HasPieceAt(x, y)) return false;
+        return cells.SetTrap(x, y, owner);
+    }
+
+    // 駒 piece が (x, y) に入ったときのマスの効果（移動・持ち駒を打つ・スキルで動かしたあとに呼ぶ）。
+    //  落とし穴：敵味方に関係なく消失し、穴も消える
+    //  炎上    ：消失する
+    //  破壊    ：消失する（通常は入れない。念のため）
+    // そのマスに残れたら true（false = 消失した）。消失は VanishPiece を通すので、盾などの割り込みで残ることもある
+    public bool EnterCell(GamePiece piece, int x, int y)
+    {
+        BoardCells cells = Cells;
+        BoardCell cell = cells != null ? cells.At(x, y) : null;
+        if (piece == null || cell == null) return true;
+
+        string reason = null;
+        if (cell.HasTrap)
+        {
+            cells.SpringTrap(x, y);
+            reason = BoardCells.ReasonTrap;
+        }
+        else if (cell.IsBurning)
+        {
+            reason = BoardCells.ReasonBurning;
+        }
+        else if (cell.IsBroken)
+        {
+            reason = BoardCells.ReasonBroken;
+        }
+        if (reason == null) return true;
+
+        VanishPiece(piece, reason);
+        return IsOnBoard(piece);
+    }
+
+    // 指し手・スキル以外で盤面が変わったあと（デバッグでマスを変えたときなど）に、勝敗・王手の表示を更新する
+    public void RefreshAfterBoardChange()
+    {
+        if (!IsInTurn) return;
+        if (ResolveKingLoss()) return;
+        PlayerType side = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
+        isActivePlayerInCheck = CheckRules.IsInCheck(gameBoard, side);
+    }
+
+    // 操作中でないときのステータス表示に、一時的なお知らせを添えて出す（デバッグ表示など）
+    public void ShowIdleStatus(string message)
+    {
+        if (HandUIManager.Instance == null) return;
+        string idle = IdleStatusText;
+        HandUIManager.Instance.SetStatusText(string.IsNullOrEmpty(idle) ? message : message + "\n" + idle);
+    }
+
+    // 王将が全部いなくなったプレイヤーがいれば対局を終える（両方なら引き分け）。終わったら true。
+    // 指し手・スキルのあとは GameSystem が呼ぶ。それ以外で駒を消したとき（マスの破壊など）は呼び出し側で呼ぶ
+    public bool ResolveKingLoss()
     {
         bool p1Alive = IsKingAlive(PlayerType.Player1);
         bool p2Alive = IsKingAlive(PlayerType.Player2);
@@ -874,7 +979,8 @@ public class GameSystem : MonoBehaviour
         CurrentPlayer.RemovePieceFromHand(type);
         var hand = CurrentPlayer.Hand;
 
-        gameBoard.SpawnPiece(type, activePlayer, x, y);
+        GamePiece dropped = gameBoard.SpawnPiece(type, activePlayer, x, y);
+        if (dropped != null) EnterCell(dropped, x, y); // 炎上のマスに打ったら消失する
 
         if (HandUIManager.Instance != null)
         {
@@ -1060,10 +1166,15 @@ public class GameSystem : MonoBehaviour
     }
 
     // 1ターンの終わり（後手の手番が終わったとき。手番交代の前）。
-    // 今は何もしない。炎上の鎮火・世界の終わりなど「ターンの終わりに起きること」はここに足す
+    // 期限切れの炎上を鎮火する。世界の終わりなど「ターンの終わりに起きること」はここに足す
     void OnRoundEnd(int turnNumber)
     {
         Debug.Log($"第{turnNumber}ターン終了");
+        if (Cells != null)
+        {
+            List<Vector2Int> ended = Cells.ExtinguishExpired(turnNumber);
+            if (ended.Count > 0) Debug.Log($"{ended.Count} マスの炎が鎮火した");
+        }
         RoundEnded?.Invoke(turnNumber);
     }
 
@@ -1173,6 +1284,7 @@ public class GameSystem : MonoBehaviour
             }
         }
         sb.Append(sideToMove == PlayerType.Player1 ? '1' : '2');
+        gameBoard.Cells.AppendKey(sb); // マスの状態（破壊・炎上・落とし穴）も局面に含める
         return sb.ToString();
     }
 

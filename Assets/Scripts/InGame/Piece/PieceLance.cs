@@ -2,7 +2,7 @@ using UnityEngine;
 
 public class PieceLance : GamePiece
 {
-    public override bool CanMove(int toX, int toY)
+    protected override bool CanMoveByPattern(int toX, int toY)
     {
         int dx = toX - X;
         int dy = toY - Y;
