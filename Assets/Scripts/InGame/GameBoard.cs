@@ -21,6 +21,10 @@ public class GameBoard : MonoBehaviour
 
     private GamePiece[] boardData = new GamePiece[81]; // 9x9の盤面を想定
 
+    // マスの状態（破壊・炎上・落とし穴）。駒の配列とは別のプレーンなクラスで持つ（添字は駒の配列と同じ）。
+    // 書き換えは GameSystem.BreakCell / SetBurning / SetTrap / EnterCell を通すこと
+    public BoardCells Cells { get; } = new BoardCells();
+
 
     [SerializeField] private List<PieceMap> pieceMapList = new List<PieceMap>();
 
@@ -82,6 +86,7 @@ public class GameBoard : MonoBehaviour
             piece.X = item.X; // 座標も忘れずにセット
             piece.Y = item.Y;
             piece.IsInitial = true; // 初期配置の駒（倒されるとプレイヤーごとに記録される）
+            piece.Cells = Cells;
 
             piece.transform.localPosition = GameHelper.CalcPanelLocation(item.X, item.Y);
 
@@ -133,16 +138,18 @@ public class GameBoard : MonoBehaviour
         return false;
     }
 
-    public void SpawnPiece(PieceType type, PlayerType player, int x, int y)
+    // 駒を作って (x, y) に置く（盤面の操作だけ）。作った駒を返す（置けなければ null）。
+    // 対局中に持ち駒を打つときは、置いたあとに GameSystem.EnterCell を呼ぶこと（炎上のマスなら消失する）
+    public GamePiece SpawnPiece(PieceType type, PlayerType player, int x, int y)
     {
         int index = GameHelper.CalcPanelNum(x, y);
-        if (index == -1) return;
+        if (index == -1) return null;
 
         GameObject prefab = GetPrefabByType(type);
         if (prefab == null)
         {
             Debug.LogError($"Prefab not found for type: {type}");
-            return;
+            return null;
         }
 
         GameObject obj = Instantiate(prefab, transform);
@@ -150,6 +157,7 @@ public class GameBoard : MonoBehaviour
         piece.player = player;
         piece.X = x;
         piece.Y = y;
+        piece.Cells = Cells;
         piece.transform.localPosition = GameHelper.CalcPanelLocation(x, y);
 
         if (piece.player == PlayerType.Player2)
@@ -157,6 +165,7 @@ public class GameBoard : MonoBehaviour
             piece.transform.localRotation = Quaternion.Euler(0, 0, 180);
         }
         boardData[index] = piece;
+        return piece;
     }
 
     private GameObject GetPrefabByType(PieceType type)

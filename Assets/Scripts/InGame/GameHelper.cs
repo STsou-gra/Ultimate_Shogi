@@ -40,6 +40,15 @@ public static class GameHelper
 
     public static bool IsPathBlocked(GamePiece[] boardData, int fromX, int fromY, int toX, int toY)
     {
+        return IsPathBlocked(boardData, null, fromX, fromY, toX, toY);
+    }
+
+    // 走り駒（香・角・飛・竜・馬）の通り道の判定（Prototype の moves.js の getMoves の slides）。
+    // 移動先の手前までのマスに、駒・破壊マス・炎上・落とし穴があれば通れない
+    // （破壊マスの手前で止まる／炎上・落とし穴のマスには入れるが、そこで止まるので先へは行けない）。
+    // cells が null ならマスの状態は見ない
+    public static bool IsPathBlocked(GamePiece[] boardData, BoardCells cells, int fromX, int fromY, int toX, int toY)
+    {
         int dx = toX - fromX;
         int dy = toY - fromY;
 
@@ -62,6 +71,10 @@ public static class GameHelper
             if (index != -1 && boardData[index] != null)
             {
                 return true; // 途中に駒があった！
+            }
+            if (cells != null && (cells.IsBroken(checkX, checkY) || cells.IsHazard(checkX, checkY)))
+            {
+                return true; // 途中に破壊マス・炎上・落とし穴があった
             }
 
             checkX += stepX;

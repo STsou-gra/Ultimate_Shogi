@@ -24,7 +24,19 @@ public abstract class GamePiece : MonoBehaviour
     public bool hasFuse = false;        // 火薬の導火線（先端で火花が散る）
     public Vector2 fuseOffset = new Vector2(0.06f, 0.6f); // 導火線の先端の位置（駒のローカル座標）
 
-    public abstract bool CanMove(int toX, int toY);
+    // マスの状態（破壊・炎上・落とし穴）。GameBoard が駒を置くときに設定する
+    public BoardCells Cells { get; set; }
+
+    // 駒の動きで (toX, toY) へ行けるか。破壊マスには行けない（駒の種類に関係なく、ここで判定する）。
+    // 途中のマス（走り駒の通り道）は BaseMoveRule / CheckRules が GameHelper.IsPathBlocked で調べる
+    public bool CanMove(int toX, int toY)
+    {
+        if (Cells != null && Cells.IsBroken(toX, toY)) return false;
+        return CanMoveByPattern(toX, toY);
+    }
+
+    // 駒ごとの動きの形（向き・距離だけ。マスの状態や途中の駒は見ない）
+    protected abstract bool CanMoveByPattern(int toX, int toY);
 
     // 駒を移動させるメソッド
     public void MoveTo(Vector2 targetLocation)

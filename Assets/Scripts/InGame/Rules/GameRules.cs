@@ -8,19 +8,21 @@ public interface IGameRule
 }
 
 /// <summary>
-/// 駒自体の動き、進路上に障害物がないか、移動先に自分の駒がないかなどの基本移動ルール
+/// 駒自体の動き、進路上に障害物がないか、移動先に自分の駒がないかなどの基本移動ルール。
+/// 破壊マスは移動先にも通過にもできない（移動先は各駒の CanMove、通り道は IsPathBlocked で判定）。
+/// 炎上・落とし穴のマスは移動先に選べる（入った駒は消失する）が、走り駒はそこで止まる
 /// </summary>
 public class BaseMoveRule : IGameRule
 {
     public bool IsLegalMove(GamePiece piece, int toX, int toY, GameBoard board)
     {
-        // 基本の動き（各駒の子クラスの CanMove）
+        // 基本の動き（各駒の CanMove。破壊マスには行けない）
         if (!piece.CanMove(toX, toY)) return false;
 
-        // 障害物チェック（桂馬以外）
+        // 障害物チェック（桂馬以外）：途中の駒・破壊マス・炎上・落とし穴
         if (piece.type != PieceType.Knight)
         {
-            if (GameHelper.IsPathBlocked(board.GetBoardData(), piece.X, piece.Y, toX, toY))
+            if (GameHelper.IsPathBlocked(board.GetBoardData(), board.Cells, piece.X, piece.Y, toX, toY))
             {
                 return false;
             }
@@ -57,6 +59,24 @@ public class EmptyCellDropRule : IGameRule
     public bool IsLegalDrop(PieceType type, PlayerType player, int toX, int toY, GameBoard board)
     {
         return !board.HasPieceAt(toX, toY);
+    }
+}
+
+/// <summary>
+/// 破壊マス・落とし穴のマスには持ち駒を打てないルール（Prototype の moves.js の getDropSquares）。
+/// 炎上のマスには打てる（打った駒はすぐ消失する）
+/// </summary>
+public class CellStateDropRule : IGameRule
+{
+    public bool IsLegalMove(GamePiece piece, int toX, int toY, GameBoard board)
+    {
+        return true; // 配置ルールなのでMove判定は常にパス
+    }
+
+    public bool IsLegalDrop(PieceType type, PlayerType player, int toX, int toY, GameBoard board)
+    {
+        BoardCell cell = board.Cells.At(toX, toY);
+        return cell != null && !cell.IsBroken && !cell.HasTrap;
     }
 }
 
@@ -172,7 +192,8 @@ public class UchifuzumeRule : IGameRule
 
 /// <summary>
 /// 王手・打ち歩詰めの判定。実際の駒は動かさず、盤面の配列をコピーして「動かした後」を調べる。
-/// 王将が2枚以上ある間は、そのプレイヤーに王手・詰みは発生しない（1枚のときのみ適用）
+/// 王将が2枚以上ある間は、そのプレイヤーに王手・詰みは発生しない（1枚のときのみ適用）。
+/// マスの状態も見る：走り駒の利きは破壊マス・炎上・落とし穴で止まり、炎上・落とし穴に入った駒・打った駒は消失する
 /// </summary>
 public static class CheckRules
 {
@@ -186,13 +207,14 @@ public static class CheckRules
     // 指定プレイヤーが王手されているか
     public static bool IsInCheck(GameBoard board, PlayerType player)
     {
-        return IsInCheck(board.GetBoardData(), NONE, NONE, player);
+        return IsInCheck(board.GetBoardData(), board.Cells, NONE, NONE, player);
     }
 
     // その移動の後に、自分の王将が取られる状態にならないか（詰みの判定で、王手を防げる手かを調べる）
     public static bool IsMoveSafe(GameBoard board, GamePiece piece, int toX, int toY)
     {
         GamePiece[] cells = board.GetBoardData();
+        BoardCells cellStates = board.Cells;
         if (CountKings(cells, piece.player) != 1) return true;
 
         int from = GameHelper.CalcPanelNum(piece.X, piece.Y);
@@ -206,10 +228,11 @@ public static class CheckRules
             return true;
         }
 
-        GamePiece[] sim = (GamePiece[])cells.Clone();
-        sim[to] = piece;
-        sim[from] = null;
-        return !IsInCheck(sim, NONE, NONE, piece.player);
+        // 最後の王将が炎上・落とし穴のマスに入ると消失して負けになる
+        if (piece.type == PieceType.King && cellStates.IsHazard(toX, toY)) return false;
+
+        GamePiece[] sim = SimulateMove(cells, cellStates, piece, from, to);
+        return !IsInCheck(sim, cellStates, NONE, NONE, piece.player);
     }
 
     // 持ち駒を打った後に、自分の王将が取られる状態にならないか（詰みの判定で、合駒で王手を防げるかを調べる）
@@ -218,16 +241,23 @@ public static class CheckRules
         GamePiece[] cells = board.GetBoardData();
         if (CountKings(cells, player) != 1) return true;
 
+        // 炎上のマスに打った駒はすぐ消失するので、通り道をふさげない
+        if (board.Cells.IsHazard(x, y)) return !IsInCheck(cells, board.Cells, NONE, NONE, player);
+
         // 打った駒は利きの通り道をふさぐ「仮の駒」として扱う
-        return !IsInCheck(cells, GameHelper.CalcPanelNum(x, y), NONE, player);
+        return !IsInCheck(cells, board.Cells, GameHelper.CalcPanelNum(x, y), NONE, player);
     }
 
     // 歩を打って相手を詰ませる手か（打ち歩詰め）
     public static bool IsUchifuzume(GameBoard board, PlayerType player, int x, int y)
     {
         GamePiece[] cells = board.GetBoardData();
+        BoardCells cellStates = board.Cells;
         PlayerType opponent = Opponent(player);
         if (CountKings(cells, opponent) != 1) return false;
+
+        // 炎上のマスに打った歩はすぐ消失するので、王手にならない
+        if (cellStates.IsHazard(x, y)) return false;
 
         // 打った歩のすぐ前に相手の王将がいなければ王手ではない
         int forwardX = (player == PlayerType.Player1) ? 1 : -1;
@@ -237,12 +267,12 @@ public static class CheckRules
         if (king == null || king.player != opponent || king.type != PieceType.King) return false;
 
         int pawn = GameHelper.CalcPanelNum(x, y);
-        return !CanEscapePawnCheck(cells, pawn, front, opponent);
+        return !CanEscapePawnCheck(cells, cellStates, pawn, front, opponent);
     }
 
     // 歩で王手された側が、駒を動かして王手を回避できるか
     // （歩の王手は王将に隣接しているので、持ち駒を打って防ぐことはできない）
-    static bool CanEscapePawnCheck(GamePiece[] cells, int pawn, int pawnAttack, PlayerType defender)
+    static bool CanEscapePawnCheck(GamePiece[] cells, BoardCells cellStates, int pawn, int pawnAttack, PlayerType defender)
     {
         for (int from = 0; from < cells.Length; from++)
         {
@@ -254,15 +284,18 @@ public static class CheckRules
                 if (to == from) continue;
                 GamePiece target = cells[to];
                 if (target != null && target.player == defender) continue;
-                if (!CanAttack(cells, pawn, from, to)) continue;
+                if (!CanAttack(cells, cellStates, pawn, from, to)) continue;
 
-                GamePiece[] sim = (GamePiece[])cells.Clone();
-                sim[to] = piece;
-                sim[from] = null;
+                // 王将が炎上・落とし穴のマスへ逃げても消失するだけなので、回避にならない
+                int toX, toY;
+                GameHelper.CalcPanelPosition(out toX, out toY, to);
+                if (piece.type == PieceType.King && cellStates.IsHazard(toX, toY)) continue;
+
+                GamePiece[] sim = SimulateMove(cells, cellStates, piece, from, to);
 
                 // 打った歩を取ったら、仮の歩は盤上から消える
                 bool capturedPawn = (to == pawn);
-                if (!IsInCheck(sim, capturedPawn ? NONE : pawn, capturedPawn ? NONE : pawnAttack, defender))
+                if (!IsInCheck(sim, cellStates, capturedPawn ? NONE : pawn, capturedPawn ? NONE : pawnAttack, defender))
                 {
                     return true;
                 }
@@ -271,9 +304,20 @@ public static class CheckRules
         return false;
     }
 
+    // 盤面の配列をコピーして、from の駒を to へ動かした後の配列を作る（炎上・落とし穴のマスに入った駒は消失する）
+    static GamePiece[] SimulateMove(GamePiece[] cells, BoardCells cellStates, GamePiece piece, int from, int to)
+    {
+        int toX, toY;
+        GameHelper.CalcPanelPosition(out toX, out toY, to);
+        GamePiece[] sim = (GamePiece[])cells.Clone();
+        sim[to] = (cellStates != null && cellStates.IsHazard(toX, toY)) ? null : piece;
+        sim[from] = null;
+        return sim;
+    }
+
     // blocker: 駒オブジェクトのない仮の駒（打つ駒）がいるマス
     // blockerAttack: その仮の駒が利きを持つマス（打ち歩詰めの判定で、歩が王将を狙うマス）
-    static bool IsInCheck(GamePiece[] cells, int blocker, int blockerAttack, PlayerType player)
+    static bool IsInCheck(GamePiece[] cells, BoardCells cellStates, int blocker, int blockerAttack, PlayerType player)
     {
         if (CountKings(cells, player) != 1) return false;
 
@@ -284,7 +328,7 @@ public static class CheckRules
         PlayerType attacker = Opponent(player);
         for (int i = 0; i < cells.Length; i++)
         {
-            if (cells[i] != null && cells[i].player == attacker && CanAttack(cells, blocker, i, king))
+            if (cells[i] != null && cells[i].player == attacker && CanAttack(cells, cellStates, blocker, i, king))
             {
                 return true;
             }
@@ -293,7 +337,7 @@ public static class CheckRules
     }
 
     // cells[from] の駒が to のマスに利いているか（駒の動きと、途中に駒がないか）
-    static bool CanAttack(GamePiece[] cells, int blocker, int from, int to)
+    static bool CanAttack(GamePiece[] cells, BoardCells cellStates, int blocker, int from, int to)
     {
         GamePiece piece = cells[from];
         if (piece == null || from == to) return false;
@@ -313,16 +357,16 @@ public static class CheckRules
         if (!canMove) return false;
 
         // 障害物チェック（桂馬以外）
-        if (piece.type != PieceType.Knight && IsPathBlocked(cells, blocker, fromX, fromY, toX, toY))
+        if (piece.type != PieceType.Knight && IsPathBlocked(cells, cellStates, blocker, fromX, fromY, toX, toY))
         {
             return false;
         }
         return true;
     }
 
-    static bool IsPathBlocked(GamePiece[] cells, int blocker, int fromX, int fromY, int toX, int toY)
+    static bool IsPathBlocked(GamePiece[] cells, BoardCells cellStates, int blocker, int fromX, int fromY, int toX, int toY)
     {
-        if (GameHelper.IsPathBlocked(cells, fromX, fromY, toX, toY)) return true;
+        if (GameHelper.IsPathBlocked(cells, cellStates, fromX, fromY, toX, toY)) return true;
         if (blocker == NONE) return false;
 
         int dx = toX - fromX;
