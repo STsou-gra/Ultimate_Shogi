@@ -102,6 +102,14 @@ public class GameSystem : MonoBehaviour
     }
     public bool IsInTurn => currentState == GameState.Player1Turn || currentState == GameState.Player2Turn;
 
+    // ターン数（1P・2P が1回ずつ行動して1ターン。先手の手番が始まるときに進む）。マスの炎上の期限に使う
+    // TODO: ①（ターン数・陣地・エナジー）の実装と合わせるときは、そちらのターン数・ターン終了処理に置き換える
+    public int TurnNumber { get; private set; } = 0;
+    private PlayerType firstPlayer = PlayerType.Player1; // 先手（DecideTurn で決まる）
+
+    [Header("Debug")]
+    [SerializeField] private bool enableCellDebugKeys = true; // カーソル位置のマスの状態を数字キーで切り替える（エディタ・開発ビルドのみ）
+
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
@@ -116,6 +124,15 @@ public class GameSystem : MonoBehaviour
 
         gameCursor = Object.FindObjectsByType<GameCursor>(FindObjectsSortMode.None)[0];
 
+        // マスの効果（炎上・落とし穴・マス破壊）で駒が消えたときの勝敗判定
+        gameBoard.PieceVanished += OnPieceVanished;
+
+        // 動作確認用：カーソル位置のマスの状態をキーで切り替える（魔法が入るまでの仮）
+        if (enableCellDebugKeys && (Application.isEditor || Debug.isDebugBuild) && FindAnyObjectByType<CellDebugInput>() == null)
+        {
+            gameObject.AddComponent<CellDebugInput>();
+        }
+
         if (moveAnimator == null) moveAnimator = FindAnyObjectByType<PieceMoveAnimator>();
         if (moveAnimator == null) moveAnimator = new GameObject("PieceMoveAnimator").AddComponent<PieceMoveAnimator>();
 
@@ -128,6 +145,7 @@ public class GameSystem : MonoBehaviour
         // ルールの登録
         gameRules.Add(new BaseMoveRule());
         gameRules.Add(new EmptyCellDropRule());
+        gameRules.Add(new CellDropRule());
         gameRules.Add(new NoLegalMoveDropRule());
         gameRules.Add(new NifuDropRule());
         gameRules.Add(new UchifuzumeRule()); // 他のルールを満たした手だけを調べるので最後に置く
@@ -587,7 +605,10 @@ public class GameSystem : MonoBehaviour
         piece.Y = targetY;
         AnimatePieceMove(piece, GameHelper.CalcPanelLocation(targetX, targetY));
 
-        if (promote)
+        // 移動先のマスの効果（炎上・落とし穴なら消失）。相手の最後の王将を取った手なら、その時点で勝ち
+        bool survived = isGameOver || gameBoard.EnterCell(piece, targetX, targetY);
+
+        if (promote && survived)
         {
             piece.Promote();
         }
@@ -598,6 +619,7 @@ public class GameSystem : MonoBehaviour
             currentState = GameState.GameOver;
             return;
         }
+        if (currentState == GameState.GameOver) return; // 自分の最後の王将が消失した（OnPieceVanished）
         selectedPiece = null;
         gameBoard.AllDeactivePanel();
         ClearBoardHighlight();
@@ -652,7 +674,10 @@ public class GameSystem : MonoBehaviour
         piece.Y = toY;
         AnimatePieceMove(piece, GameHelper.CalcPanelLocation(toX, toY));
 
-        if (promote)
+        // 移動先のマスの効果（炎上・落とし穴なら消失）
+        bool survived = isGameOver || gameBoard.EnterCell(piece, toX, toY);
+
+        if (promote && survived)
         {
             piece.Promote();
         }
@@ -663,6 +688,7 @@ public class GameSystem : MonoBehaviour
             currentState = GameState.GameOver;
             return;
         }
+        if (currentState == GameState.GameOver) return; // 自分の最後の王将が消失した（OnPieceVanished）
 
         selectedPiece = null;
         gameBoard.AllDeactivePanel();
@@ -679,6 +705,7 @@ public class GameSystem : MonoBehaviour
         var hand = targetPlayer.Hand;
 
         gameBoard.SpawnPiece(type, activePlayer, toX, toY);
+        gameBoard.EnterCell(gameBoard.GetPieceAt(toX, toY), toX, toY); // 炎上マスに打った駒は消失する
 
         if (HandUIManager.Instance != null)
         {
@@ -808,6 +835,7 @@ public class GameSystem : MonoBehaviour
         var hand = CurrentPlayer.Hand;
 
         gameBoard.SpawnPiece(type, activePlayer, x, y);
+        gameBoard.EnterCell(gameBoard.GetPieceAt(x, y), x, y); // 炎上マスに打った駒は消失する
 
         if (HandUIManager.Instance != null)
         {
@@ -892,6 +920,14 @@ public class GameSystem : MonoBehaviour
             HandUIManager.Instance.UpdateActiveHandDisplay(activePlayer, hand);
         }
 
+        // 後手の手番が終わったら1ターン終了（炎上の鎮火など）→ 次のターンへ
+        PlayerType endingPlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
+        if (IsInTurn && endingPlayer != firstPlayer)
+        {
+            OnRoundEnd();
+            TurnNumber++;
+        }
+
         switch (currentState)
         {
             case GameState.Preparation:
@@ -920,18 +956,48 @@ public class GameSystem : MonoBehaviour
         // ランダムにプレイヤー1かプレイヤー2のどちらが先攻かを決定する処理
         if (Random.value < 0.5f)
         {
+            firstPlayer = PlayerType.Player1;
             currentState = GameState.Player1Turn;
             Debug.Log("プレイヤー1のターンです！");
             gameCamera.RotateToPlayer(PlayerType.Player1);
         }
         else
         {
+            firstPlayer = PlayerType.Player2;
             currentState = GameState.Player2Turn;
             Debug.Log("プレイヤー2のターンです！");
             gameCamera.RotateToPlayer(PlayerType.Player2);
         }
+        TurnNumber = 1;
         UpdateActivePlayerSkillUI();
         OnTurnStarted();
+    }
+
+    // 1ターン（1P・2P が1回ずつ行動）の終わり：期限が来た炎上マスを通常に戻す
+    void OnRoundEnd()
+    {
+        gameBoard.OnRoundEnd(TurnNumber);
+    }
+
+    // マスの効果（炎上・落とし穴・マス破壊）で駒が消えたとき：最後の王将が消えたら、その持ち主の負け
+    void OnPieceVanished(GamePiece piece, string reason)
+    {
+        if (piece == null || piece.type != PieceType.King) return;
+        if (currentState == GameState.GameOver || IsKingAlive(piece.player)) return;
+        Debug.Log($"{piece.player} の最後の王将が {reason} で消失");
+        EndGame(CheckRules.Opponent(piece.player));
+    }
+
+    /// <summary>マスの状態を変えたあと、手番中の表示（王手など）を更新する（デバッグキーから呼ぶ）</summary>
+    public void RefreshAfterCellChange()
+    {
+        if (!IsInTurn) return;
+        PlayerType side = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
+        isActivePlayerInCheck = CheckRules.IsInCheck(gameBoard, side);
+        if (HandUIManager.Instance != null)
+        {
+            HandUIManager.Instance.SetStatusText(IdleStatusText);
+        }
     }
 
     // 手番が始まったときの判定（詰み・千日手・王手の表示）

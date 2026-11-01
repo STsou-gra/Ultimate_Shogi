@@ -24,8 +24,27 @@ public class GameBoard : MonoBehaviour
 
     [SerializeField] private List<PieceMap> pieceMapList = new List<PieceMap>();
 
+    // 消失の理由（PieceVanished・演出で使う）
+    public const string ReasonBurning = "炎上";
+    public const string ReasonTrap = "落とし穴";
+    public const string ReasonBroken = "マス破壊";
+
+    /// <summary>マスの状態（破壊・炎上・落とし穴）。駒の配列 boardData とは別に持つ</summary>
+    public BoardCells Cells { get; } = new BoardCells();
+
+    /// <summary>駒が消失した（盤のデータからはもう外れている）。引数は消えた駒と理由（Reason〜）</summary>
+    public event System.Action<GamePiece, string> PieceVanished;
+
+    private BoardCellView cellView;
+    private GameSystem gameSystem;
+
+    // マスの炎上の期限を数えるターン数（1P・2P が1回ずつ行動して1ターン）
+    private int CurrentTurnNumber => gameSystem != null ? gameSystem.TurnNumber : 1;
+
     void Start()
     {
+        gameSystem = FindAnyObjectByType<GameSystem>();
+
         GameSelectPanel[] foundPanels = GetComponentsInChildren<GameSelectPanel>(true);
         selectPanelArray.AddRange(foundPanels);
         Debug.Log($"{selectPanelArray.Count}");
@@ -41,6 +60,9 @@ public class GameBoard : MonoBehaviour
         }
         AllDeactivePanel();
         SetupInitialPieces();
+
+        cellView = gameObject.AddComponent<BoardCellView>();
+        cellView.Init(this);
     }
 
     public void ActivePanel(int num)
@@ -162,6 +184,116 @@ public class GameBoard : MonoBehaviour
             if (map.type == type) return map.prefab;
         }
         return null;
+    }
+
+    // ========================================================
+    // マスの状態（プロトタイプ src/core/effects.js の breakCell / setBurning / setTrap / enterCell の移植）
+    // ========================================================
+
+    /// <summary>
+    /// マスを破壊する（対局終了まで戻らない）。そこにいた駒は消失する。
+    /// 戻り値: 破壊したか（盤外・すでに破壊されていれば false）
+    /// </summary>
+    public bool BreakCell(int x, int y)
+    {
+        if (!Cells.Break(x, y)) return false;
+        if (cellView != null) cellView.PlayBreak(x, y);
+        GamePiece piece = GetPieceAt(x, y);
+        if (piece != null) VanishPiece(piece, ReasonBroken);
+        return true;
+    }
+
+    /// <summary>
+    /// マスを turns ターンのあいだ炎上させる（いまのターンを 1 ターン目として数え、ターンの終わりに期限が来たら鎮火）。
+    /// すでにいる駒には影響せず、あとから入った駒が消失する。破壊マスは炎上しない。戻り値: 炎上させたか
+    /// </summary>
+    public bool SetBurning(int x, int y, int turns)
+    {
+        if (!Cells.SetBurning(x, y, turns, CurrentTurnNumber)) return false;
+        if (cellView != null) cellView.PlayBurning(x, y);
+        return true;
+    }
+
+    /// <summary>
+    /// 落とし穴を仕掛ける（両プレイヤーに見える）。駒がいるマス・破壊マス・炎上マス・すでに落とし穴があるマスには置けない。
+    /// 敵味方に関係なく、入った駒は消失して穴も消える。戻り値: 仕掛けたか
+    /// </summary>
+    public bool SetTrap(int x, int y, PlayerType owner)
+    {
+        if (HasPieceAt(x, y)) return false;
+        if (!Cells.SetTrap(x, y, owner)) return false;
+        if (cellView != null) cellView.PlayTrapSet(x, y);
+        return true;
+    }
+
+    /// <summary>
+    /// 駒 piece が (x,y) に入ったときのマスの効果（移動・持ち駒を打つ・スキルで置く、のあとに呼ぶ）。
+    /// 駒はもう boardData の (x,y) に置かれている前提。落とし穴なら消失して穴も消える、炎上なら消失する。
+    /// 戻り値: そのマスに残れたか（false = 消失した）
+    /// </summary>
+    public bool EnterCell(GamePiece piece, int x, int y)
+    {
+        CellData cell = Cells.Get(x, y);
+        if (piece == null || cell == null) return true;
+
+        if (cell.HasTrap)
+        {
+            Cells.ClearTrap(x, y); // 穴の表示は、駒が吸い込まれ終わってから閉じる
+            VanishPiece(piece, ReasonTrap);
+            return false;
+        }
+        if (cell.IsBurning)
+        {
+            VanishPiece(piece, ReasonBurning);
+            return false;
+        }
+        if (cell.IsBroken)
+        {
+            VanishPiece(piece, ReasonBroken); // 通常は入れない（念のため）
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// ターンの終わり（1P・2P の両方が行動し終えたとき）に GameSystem から呼ぶ。
+    /// finishedTurn までで炎上が終わるマスを鎮火する。戻り値: 鎮火したマス
+    /// </summary>
+    public List<Vector2Int> OnRoundEnd(int finishedTurn)
+    {
+        List<Vector2Int> ended = Cells.ExtinguishExpired(finishedTurn);
+        if (ended.Count > 0)
+        {
+            Debug.Log($"{ended.Count} マスの炎が鎮火した");
+            if (cellView != null) cellView.PlayFireOut(ended);
+        }
+        return ended;
+    }
+
+    /// <summary>
+    /// 駒の消失（マスの効果による。持ち駒にならず、ポイントも入らない）。
+    /// 盤のデータからはすぐに外し、見た目は移動のアニメーションが終わってから消えて破棄される
+    /// </summary>
+    public void VanishPiece(GamePiece piece, string reason)
+    {
+        if (piece == null) return;
+        int index = System.Array.IndexOf(boardData, piece);
+        if (index == -1) return; // すでに盤から外れている
+        boardData[index] = null;
+
+        int x, y;
+        GameHelper.CalcPanelPosition(out x, out y, index);
+        Debug.Log($"{piece.player} の {piece.type} が {reason} で消失 ({x},{y})");
+        PieceVanished?.Invoke(piece, reason);
+
+        if (cellView != null) cellView.PlayVanish(piece, reason, x, y);
+        else Destroy(piece.gameObject);
+    }
+
+    /// <summary>デバッグ用：マスを通常に戻す（破壊マスも戻る。対局のルールでは使わない）</summary>
+    public void DebugResetCell(int x, int y)
+    {
+        Cells.DebugReset(x, y);
     }
 
     // ========================================================

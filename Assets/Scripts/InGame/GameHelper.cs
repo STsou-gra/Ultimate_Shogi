@@ -38,7 +38,11 @@ public static class GameHelper
         Y = Num / GAME_LOCATION_WIDTH;
     }
 
-    public static bool IsPathBlocked(GamePiece[] boardData, int fromX, int fromY, int toX, int toY)
+    /// <summary>
+    /// 走り駒の通り道がふさがれているか（移動先の手前まで）。途中に駒がある、または cells を渡したときは
+    /// 途中に破壊マス（通れない）・炎上/落とし穴のマス（走り駒はそこで止まる）がある場合にふさがれている
+    /// </summary>
+    public static bool IsPathBlocked(GamePiece[] boardData, int fromX, int fromY, int toX, int toY, BoardCells cells = null)
     {
         int dx = toX - fromX;
         int dy = toY - fromY;
@@ -62,6 +66,10 @@ public static class GameHelper
             if (index != -1 && boardData[index] != null)
             {
                 return true; // 途中に駒があった！
+            }
+            if (cells != null && (cells.IsBroken(checkX, checkY) || cells.IsHazard(checkX, checkY)))
+            {
+                return true; // 破壊マスは通れない／炎上・落とし穴のマスで止まる
             }
 
             checkX += stepX;
