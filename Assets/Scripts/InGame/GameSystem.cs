@@ -17,6 +17,7 @@ public class GameSystem : MonoBehaviour
     private GamePiece selectedPiece; // 現在選択されている駒
     public GameSceneManager sceneManager;
     [SerializeField] private GameController gameController;
+    [SerializeField] private PieceMoveAnimator moveAnimator; // 未設定ならシーンから探す（無ければ自動で作る）
 
     [Header("Players")]
     [SerializeField] private Player player1;
@@ -103,6 +104,9 @@ public class GameSystem : MonoBehaviour
         sceneManager = FindAnyObjectByType<GameSceneManager>();
 
         gameCursor = Object.FindObjectsByType<GameCursor>(FindObjectsSortMode.None)[0];
+
+        if (moveAnimator == null) moveAnimator = FindAnyObjectByType<PieceMoveAnimator>();
+        if (moveAnimator == null) moveAnimator = new GameObject("PieceMoveAnimator").AddComponent<PieceMoveAnimator>();
 
         // ルールの登録
         gameRules.Add(new BaseMoveRule());
@@ -564,7 +568,7 @@ public class GameSystem : MonoBehaviour
 
         piece.X = targetX;
         piece.Y = targetY;
-        piece.MoveTo(GameHelper.CalcPanelLocation(targetX, targetY));
+        AnimatePieceMove(piece, GameHelper.CalcPanelLocation(targetX, targetY));
 
         if (promote)
         {
@@ -583,6 +587,18 @@ public class GameSystem : MonoBehaviour
         SetDarkOverlayActive(false);
         currentMovablePositions.Clear();
         NextState();
+    }
+
+    // 指し手の見た目の移動（盤面データは即時に更新済み。アニメーションは見た目だけ）
+    void AnimatePieceMove(GamePiece piece, Vector2 location)
+    {
+        if (moveAnimator == null)
+        {
+            piece.MoveTo(location);
+            return;
+        }
+        // 成る前の状態で動き方を決める（成っていない桂馬は跳ぶ）
+        moveAnimator.PlayMove(piece, location, PieceMoveAnimator.StyleFor(piece));
     }
 
     public void OnServerMovePiece(int fromX, int fromY, int toX, int toY, PlayerType activePlayer, bool promote)
@@ -617,7 +633,7 @@ public class GameSystem : MonoBehaviour
 
         piece.X = toX;
         piece.Y = toY;
-        piece.MoveTo(GameHelper.CalcPanelLocation(toX, toY));
+        AnimatePieceMove(piece, GameHelper.CalcPanelLocation(toX, toY));
 
         if (promote)
         {
