@@ -11,6 +11,7 @@ public class HandUIManager : MonoBehaviour
     [SerializeField] private TextMeshProUGUI playerHandPieceText; // 操作している側の持ち駒をUIで表示するテキスト
     [SerializeField] private TextMeshProUGUI statusText;       // 操作ステータス表示テキスト
     [SerializeField] private GameObject darkOverlay; // 画面を暗くする半透明パネル
+    [SerializeField] private TextMeshProUGUI turnText; // 「第Nターン（第M手）」（未設定なら手番テキストの先頭に付ける）
 
     [Header("Animation Settings")]
     [SerializeField] private float hiddenY = 350f;
@@ -20,6 +21,9 @@ public class HandUIManager : MonoBehaviour
     private static HandUIManager instance;
     public static HandUIManager Instance => instance;
     public TextMeshProUGUI ActivePlayerText => activePlayerText;
+
+    private string turnLabel = "";        // 「第Nターン（第M手）」
+    private string activePlayerLabel = ""; // 「【先手（プレイヤー1）の手番】」
 
     void Awake()
     {
@@ -66,14 +70,32 @@ public class HandUIManager : MonoBehaviour
     // 現在操作しているプレイヤーの持ち駒情報だけを更新して表示する
     public void UpdateActiveHandDisplay(PlayerType activePlayer, Dictionary<PieceType, int> activeHand)
     {
-        if (activePlayerText != null)
-        {
-            activePlayerText.text = activePlayer == PlayerType.Player1 ? "【先手（プレイヤー1）の手番】" : "【後手（プレイヤー2）の手番】";
-        }
+        activePlayerLabel = activePlayer == PlayerType.Player1 ? "【先手（プレイヤー1）の手番】" : "【後手（プレイヤー2）の手番】";
+        RefreshTurnTexts();
 
         if (playerHandPieceText != null)
         {
             playerHandPieceText.text = "持ち駒： " + FormatHand(activeHand);
+        }
+    }
+
+    // ターン数・手数の表示を更新する
+    public void SetTurnInfo(string label)
+    {
+        turnLabel = label ?? "";
+        RefreshTurnTexts();
+    }
+
+    private void RefreshTurnTexts()
+    {
+        if (turnText != null)
+        {
+            turnText.text = turnLabel;
+            if (activePlayerText != null) activePlayerText.text = activePlayerLabel;
+        }
+        else if (activePlayerText != null)
+        {
+            activePlayerText.text = string.IsNullOrEmpty(turnLabel) ? activePlayerLabel : $"{turnLabel}　{activePlayerLabel}";
         }
     }
 

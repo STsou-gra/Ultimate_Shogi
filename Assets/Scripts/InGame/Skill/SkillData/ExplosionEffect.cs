@@ -52,9 +52,11 @@ public class ExplosionEffect : SkillEffect
           continue;
         }
 
-        // AddPieceToHand を呼ばずに直接消去することで「誰も駒を取得できない」状態にする
-        board.RemovePieceAt(x, y);
-        Debug.Log($"({x}, {y}) の駒が爆発に巻き込まれて消滅した。");
+        // 「消失」：エナジー・持ち駒化なし（誰も駒を取得できない）
+        if (context.GameSystem.VanishPiece(piece, "爆発"))
+        {
+          Debug.Log($"({x}, {y}) の駒が爆発に巻き込まれて消滅した。");
+        }
       }
     }
   }

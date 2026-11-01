@@ -6,7 +6,10 @@ public class Player : MonoBehaviour
     [Header("Player Configurations")]
     [SerializeField] private PlayerType playerType;
     [SerializeField] private SkillDeck skillDeck;
-    [SerializeField] private PointManager pointManager;
+    [SerializeField] private PointManager pointManager; // エナジーの表示
+
+    // エナジーの値（GameSystem が BindEnergy で渡す。値は MatchState 側に持つ）
+    private EnergyState energy;
 
     // 持ち駒のデータ
     private Dictionary<PieceType, int> hand = new Dictionary<PieceType, int>()
@@ -25,15 +28,42 @@ public class Player : MonoBehaviour
     public PointManager PointManager => pointManager;
     public Dictionary<PieceType, int> Hand => hand;
 
-    // コストの確認・消費処理
+    // エナジーの値と表示を繋ぐ
+    public void BindEnergy(EnergyState state)
+    {
+        if (energy != null) energy.Changed -= OnEnergyChanged;
+        energy = state;
+        if (energy == null) return;
+        energy.Changed += OnEnergyChanged;
+        if (pointManager != null) pointManager.CurrentPoint = energy.Get(playerType);
+    }
+
+    void OnDestroy()
+    {
+        if (energy != null) energy.Changed -= OnEnergyChanged;
+    }
+
+    void OnEnergyChanged(PlayerType owner, int value, int delta)
+    {
+        if (owner != playerType || pointManager == null) return;
+        pointManager.CurrentPoint = value;
+    }
+
+    // エナジー（旧ポイント）の確認・消費・加算
+    public int Energy => energy != null ? energy.Get(playerType) : (pointManager != null ? pointManager.CurrentPoint : 0);
+
     public bool HasEnoughPoint(int amount)
     {
-        return pointManager != null && pointManager.CurrentPoint >= amount;
+        return Energy >= amount;
     }
 
     public void ConsumePoint(int amount)
     {
-        if (pointManager != null)
+        if (energy != null)
+        {
+            energy.Spend(playerType, amount);
+        }
+        else if (pointManager != null)
         {
             pointManager.CurrentPoint -= amount;
         }
@@ -41,7 +71,11 @@ public class Player : MonoBehaviour
 
     public void AddPoint(int amount)
     {
-        if (pointManager != null)
+        if (energy != null)
+        {
+            energy.Gain(playerType, amount);
+        }
+        else if (pointManager != null)
         {
             pointManager.AddPoint(amount);
         }

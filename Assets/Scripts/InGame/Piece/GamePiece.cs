@@ -6,10 +6,13 @@ public abstract class GamePiece : MonoBehaviour
 {
     public PieceType type;
     public PlayerType player;
-    public int piecePoint;
+    public int piecePoint; // 今は使っていない（駒の価値・エナジー配分は Match/PieceValues.cs）
 
     public int X { get; set; }
     public int Y { get; set; }
+
+    // 初期配置の駒か（打った駒・スキルで出した駒は false）。倒されると MatchState.FallenInitial に記録される
+    public bool IsInitial { get; set; }
 
     [Header("Promotion Visuals")]
     [SerializeField] protected GameObject normalVisual;
