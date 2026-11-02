@@ -271,7 +271,7 @@ public class NewPieceFx : MonoBehaviour
     }
 
     // 着弾の小さな爆発（火球・衝撃波・火花・煙）
-    void Impact(Vector3 pos, Color color)
+    public void Impact(Vector3 pos, Color color)
     {
         GlowBall(pos, Hex(0xffab40), 0.3f, 1.5f, 0.25f, 0.4f, 0.05f);
         fx.Shockwave(pos, color, 1.8f, 0.35f);
@@ -390,8 +390,8 @@ public class NewPieceFx : MonoBehaviour
         seq.OnComplete(() => Destroy(ghost));
     }
 
-    // 駒の見た目だけの写しを作る（moving：移動の途中なら、その位置から始める）
-    GameObject CreateGhost(GamePiece source, bool moving)
+    // 駒の見た目だけの写しを作る（moving：移動の途中なら、その位置から始める）。必殺技の演出（SpecialMoveFx）からも使う
+    public GameObject CreateGhost(GamePiece source, bool moving)
     {
         Transform st = source.transform;
         Vector3 from = st.localPosition;
@@ -417,7 +417,7 @@ public class NewPieceFx : MonoBehaviour
     // ------------------------------------------------------------
 
     // 画面全体の閃光（Prototype の fx.flash）
-    void Flash(Color color, float alpha, float duration)
+    public void Flash(Color color, float alpha, float duration)
     {
         if (flashImage == null) return;
         flashImage.DOKill();
@@ -454,7 +454,7 @@ public class NewPieceFx : MonoBehaviour
     }
 
     // 飛び出して上へ流れて消える文字（Prototype の fx.popText。size は Prototype のピクセル）
-    void PopText(string text, Vector3 pos, float size, Color top, Color bottom, Color outline, float rise, float duration)
+    public void PopText(string text, Vector3 pos, float size, Color top, Color bottom, Color outline, float rise, float duration)
     {
         GameObject obj = new GameObject("PopText", typeof(RectTransform));
         obj.transform.position = new Vector3(pos.x, pos.y, pos.z - 0.5f);

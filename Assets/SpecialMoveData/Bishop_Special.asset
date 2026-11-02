@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 423174ae5acf4ceab1e0d1380f302cdf, type: 3}
+  m_Name: Bishop_Special
+  m_EditorClassIdentifier: Assembly-CSharp::BishopBeamSpecial
+  moveName: "\u5149\u8292\u56DB\u5C04"
+  requiredMoves: 3
+  color: {r: 0.9176471, g: 0.5019608, b: 0.9882353, a: 1}
+  description: "\u659C\u30814\u65B9\u5411\u306B\u5149\u7DDA\u3092\u653E\u3061\u3001\u5404\u65B9\u5411\u3067\u6700\u521D\u306B\u5F53\u305F\u3063\u305F\u76F8\u624B\u306E\u99D2\u3092\u53D6\u308B\u3002"

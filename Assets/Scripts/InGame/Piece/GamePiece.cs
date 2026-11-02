@@ -21,8 +21,13 @@ public abstract class GamePiece : MonoBehaviour
     [SerializeField] protected GameObject promotedVisual;
     public bool isPromoted = false;
 
+    // 盤上で動いた回数（必殺技のチャージ。Prototype の moveCount）。
+    // 駒ごとに数え、通常の移動のたびに +1（GameSystem.ApplyMove）。必殺技を使うと 0 に戻る。
+    // 打った駒は 0 から。成っても数え直さない（成った駒も同じ必殺技を使える）
+    public int moveCount = 0;
+
     [Header("Tick Effects")]
-    public bool isSpecialReady = false; // 必殺技を発動できる（オーラが光り、光の粒が立ち上る）
+    public bool isSpecialReady = false; // 必殺技を発動できる（オーラが光り、光の粒が立ち上る）。moveCount から GameSystem が設定する
     public bool hasFuse = false;        // 火薬の導火線（先端で火花が散る）
     public Vector2 fuseOffset = new Vector2(0.06f, 0.6f); // 導火線の先端の位置（駒のローカル座標）
     public bool hasScope = false;       // 狙撃手のスコープ（赤い光が明滅する）

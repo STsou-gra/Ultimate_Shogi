@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d641d7c4809240819cca1cef5deb4bb2, type: 3}
+  m_Name: Lance_Special
+  m_EditorClassIdentifier: Assembly-CSharp::LancePierceSpecial
+  moveName: "\u8CAB\u901A\u69CD"
+  requiredMoves: 2
+  color: {r: 0.5019608, g: 0.8470588, b: 1, a: 1}
+  description: "\u524D\u65B9\u3078\u7A81\u304D\u629C\u3051\u3001\u901A\u904E\u3057\u305F\u76F8\u624B\u306E\u99D2\u3092\u3059\u3079\u3066\u53D6\u308B\u3002\u5473\u65B9\u306E\u99D2\u304B\u76E4\u7AEF\u3067\u6B62\u307E\u308B\u3002"
