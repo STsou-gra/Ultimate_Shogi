@@ -9,7 +9,8 @@ using System.Threading;
 
 namespace ShogiServer
 {
-    public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn }
+    // クライアント（Assets/Scripts/InGame/Piece/GamePiece.cs）と同じ並び。火薬・狙撃手の錬成・狙撃・爆発はまだ同期していない
+    public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn, Gunpowder, Sniper }
     public enum PlayerType { Player1, Player2 }
 
     public class GamePieceData

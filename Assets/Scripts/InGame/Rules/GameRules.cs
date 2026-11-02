@@ -10,7 +10,8 @@ public interface IGameRule
 /// <summary>
 /// 駒自体の動き、進路上に障害物がないか、移動先に自分の駒がないかなどの基本移動ルール。
 /// 破壊マスは移動先にも通過にもできない（移動先は各駒の CanMove、通り道は IsPathBlocked で判定）。
-/// 炎上・落とし穴のマスは移動先に選べる（入った駒は消失する）が、走り駒はそこで止まる
+/// 炎上・落とし穴のマスは移動先に選べる（入った駒は消失する）が、走り駒はそこで止まる。
+/// 火薬のマスには、敵味方に関係なく入れる（入ると爆発する）
 /// </summary>
 public class BaseMoveRule : IGameRule
 {
@@ -28,14 +29,11 @@ public class BaseMoveRule : IGameRule
             }
         }
 
-        // 移動先に自分の駒があるか
+        // 移動先に自分の駒があるか（自分の火薬には入れる）
         GamePiece targetPiece = board.GetPieceAt(toX, toY);
-        if (targetPiece != null)
+        if (targetPiece == piece || !PieceRules.CanLandOn(piece, targetPiece))
         {
-            if (targetPiece.player == piece.player)
-            {
-                return false; // 自分の駒があるので移動できない
-            }
+            return false; // 自分の駒があるので移動できない
         }
         return true;
     }
@@ -193,7 +191,8 @@ public class UchifuzumeRule : IGameRule
 /// <summary>
 /// 王手・打ち歩詰めの判定。実際の駒は動かさず、盤面の配列をコピーして「動かした後」を調べる。
 /// 王将が2枚以上ある間は、そのプレイヤーに王手・詰みは発生しない（1枚のときのみ適用）。
-/// マスの状態も見る：走り駒の利きは破壊マス・炎上・落とし穴で止まり、炎上・落とし穴に入った駒・打った駒は消失する
+/// マスの状態も見る：走り駒の利きは破壊マス・炎上・落とし穴で止まり、炎上・落とし穴に入った駒・打った駒は消失する。
+/// 火薬のマスに入る手は爆発（3×3 の駒が消える。王将は残る）まで読む。火薬・狙撃手は動けないので利きはない
 /// </summary>
 public static class CheckRules
 {
@@ -233,6 +232,27 @@ public static class CheckRules
 
         GamePiece[] sim = SimulateMove(cells, cellStates, piece, from, to);
         return !IsInCheck(sim, cellStates, NONE, NONE, piece.player);
+    }
+
+    // 狙撃した後に、自分の王将が取られる状態にならないか（詰みの判定で、王手をかけている駒を撃てるかを調べる）
+    public static bool IsSnipeSafe(GameBoard board, GamePiece sniper, int targetX, int targetY)
+    {
+        GamePiece[] cells = board.GetBoardData();
+        if (CountKings(cells, sniper.player) != 1) return true;
+
+        int target = GameHelper.CalcPanelNum(targetX, targetY);
+        if (target == NONE || cells[target] == null) return true;
+
+        GamePiece[] sim = (GamePiece[])cells.Clone();
+        if (PieceRules.IsExplosive(sim[target].type))
+        {
+            Explode(sim, targetX, targetY);
+        }
+        else
+        {
+            sim[target] = null;
+        }
+        return !IsInCheck(sim, board.Cells, NONE, NONE, sniper.player);
     }
 
     // 持ち駒を打った後に、自分の王将が取られる状態にならないか（詰みの判定で、合駒で王手を防げるかを調べる）
@@ -279,11 +299,15 @@ public static class CheckRules
             GamePiece piece = cells[from];
             if (piece == null || piece.player != defender) continue;
 
+            // 狙撃手がいれば、打った歩を撃ち抜いて王手を外せる
+            if (PieceRules.IsSniper(piece.type)) return true;
+
             for (int to = 0; to < cells.Length; to++)
             {
                 if (to == from) continue;
                 GamePiece target = cells[to];
-                if (target != null && target.player == defender) continue;
+                bool intoBomb = target != null && PieceRules.IsExplosive(target.type);
+                if (target != null && target.player == defender && !intoBomb) continue;
                 if (!CanAttack(cells, cellStates, pawn, from, to)) continue;
 
                 // 王将が炎上・落とし穴のマスへ逃げても消失するだけなので、回避にならない
@@ -293,8 +317,10 @@ public static class CheckRules
 
                 GamePiece[] sim = SimulateMove(cells, cellStates, piece, from, to);
 
-                // 打った歩を取ったら、仮の歩は盤上から消える
-                bool capturedPawn = (to == pawn);
+                // 打った歩を取ったら（火薬の爆発に巻き込んだら）、仮の歩は盤上から消える
+                int pawnX, pawnY;
+                GameHelper.CalcPanelPosition(out pawnX, out pawnY, pawn);
+                bool capturedPawn = (to == pawn) || (intoBomb && PieceRules.IsInExplosion(toX, toY, pawnX, pawnY));
                 if (!IsInCheck(sim, cellStates, capturedPawn ? NONE : pawn, capturedPawn ? NONE : pawnAttack, defender))
                 {
                     return true;
@@ -304,15 +330,41 @@ public static class CheckRules
         return false;
     }
 
-    // 盤面の配列をコピーして、from の駒を to へ動かした後の配列を作る（炎上・落とし穴のマスに入った駒は消失する）
+    // 盤面の配列をコピーして、from の駒を to へ動かした後の配列を作る（炎上・落とし穴のマスに入った駒は消失する）。
+    // 火薬のマスに入ったら爆発させる（範囲の駒と入った駒が消える。王将は残って、そのマスに入る）
     static GamePiece[] SimulateMove(GamePiece[] cells, BoardCells cellStates, GamePiece piece, int from, int to)
     {
         int toX, toY;
         GameHelper.CalcPanelPosition(out toX, out toY, to);
         GamePiece[] sim = (GamePiece[])cells.Clone();
-        sim[to] = (cellStates != null && cellStates.IsHazard(toX, toY)) ? null : piece;
+        GamePiece target = sim[to];
         sim[from] = null;
+        bool landed = true;
+        if (target != null && target != piece && PieceRules.IsExplosive(target.type))
+        {
+            Explode(sim, toX, toY);
+            landed = !PieceRules.IsDestroyedByExplosion(piece.type) && sim[to] == null;
+        }
+        if (landed) sim[to] = (cellStates != null && cellStates.IsHazard(toX, toY)) ? null : piece;
         return sim;
+    }
+
+    // 盤面の配列の上で爆発させる（GameSystem.Explode と同じ範囲・同じ王将の扱い。誘爆は MatchConfig.ChainExplosion のときだけ）
+    static void Explode(GamePiece[] sim, int cx, int cy)
+    {
+        int r = MatchConfig.ExplosionRadius;
+        List<Vector2Int> chain = new List<Vector2Int>();
+        for (int x = cx - r; x <= cx + r; x++)
+        {
+            for (int y = cy - r; y <= cy + r; y++)
+            {
+                int i = GameHelper.CalcPanelNum(x, y);
+                if (i == NONE || sim[i] == null || !PieceRules.IsDestroyedByExplosion(sim[i].type)) continue;
+                if (MatchConfig.ChainExplosion && PieceRules.IsExplosive(sim[i].type) && (x != cx || y != cy)) chain.Add(new Vector2Int(x, y));
+                sim[i] = null;
+            }
+        }
+        foreach (Vector2Int c in chain) Explode(sim, c.x, c.y);
     }
 
     // blocker: 駒オブジェクトのない仮の駒（打つ駒）がいるマス

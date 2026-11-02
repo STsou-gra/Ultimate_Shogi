@@ -11,17 +11,15 @@ public class Player : MonoBehaviour
     // エナジーの値（GameSystem が BindEnergy で渡す。値は MatchState 側に持つ）
     private EnergyState energy;
 
-    // 持ち駒のデータ
-    private Dictionary<PieceType, int> hand = new Dictionary<PieceType, int>()
+    // 持ち駒のデータ（PieceRules.HandOrder の順に並べる。火薬・狙撃手は錬成で増える）
+    private Dictionary<PieceType, int> hand = CreateEmptyHand();
+
+    static Dictionary<PieceType, int> CreateEmptyHand()
     {
-        { PieceType.Pawn, 0 },
-        { PieceType.Lance, 0 },
-        { PieceType.Knight, 0 },
-        { PieceType.SilverGeneral, 0 },
-        { PieceType.GoldGeneral, 0 },
-        { PieceType.Bishop, 0 },
-        { PieceType.Rook, 0 }
-    };
+        Dictionary<PieceType, int> empty = new Dictionary<PieceType, int>();
+        foreach (PieceType type in PieceRules.HandOrder) empty.Add(type, 0);
+        return empty;
+    }
 
     public PlayerType PlayerType => playerType;
     public SkillDeck SkillDeck => skillDeck;

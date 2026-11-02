@@ -1,5 +1,6 @@
 // 対局ルールの数値（Prototype の src/config.js の CONFIG に当たる）
 // MonoBehaviour に依存しないので、棋譜の再生・CPU・サーバーからも同じ値を使える
+// （true / false の切り替えは static readonly にしている。const だと使う側で「到達できないコード」の警告が出るため）
 public static class MatchConfig
 {
     // 手番開始時に得るエナジー
@@ -10,6 +11,19 @@ public static class MatchConfig
 
     // エナジーの上限（0 = 上限なし）。DEVELOPMENT_PLAN の A-3 が決まったら値を入れる
     public const int EnergyMax = 0;
+
+    // true にすると駒錬成で手番を消費する（Prototype の CONFIG.FORGE_ENDS_TURN）
+    public static readonly bool ForgeEndsTurn = false;
+
+    // true にすると爆発範囲内の火薬も誘爆する（Prototype の CONFIG.CHAIN_EXPLOSION）
+    public static readonly bool ChainExplosion = false;
+
+    // 爆発の範囲（1 = 中心を含む 3×3。Prototype の CONFIG.EXPLOSION_RADIUS）
+    public const int ExplosionRadius = 1;
+
+    // 爆発（火薬・爆発スキル）に巻き込まれた王将は残る。
+    // Prototype の explode は王将も消すが、DEVELOPMENT_PLAN の「爆発では王将を倒せない」に揃えた
+    public static readonly bool ExplosionSparesKing = true;
 
     // 先手（最初に指すプレイヤー）。Player1 = 盤の手前（X = 0〜2 が自陣）
     public const PlayerType FirstPlayer = PlayerType.Player1;

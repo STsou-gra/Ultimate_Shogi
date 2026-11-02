@@ -83,11 +83,6 @@ public class GameSystem : MonoBehaviour
     }
     private List<PositionRecord> positionHistory = new List<PositionRecord>();
     private Dictionary<string, int> positionCounts = new Dictionary<string, int>();
-    private static readonly PieceType[] HandOrder =
-    {
-        PieceType.Pawn, PieceType.Lance, PieceType.Knight, PieceType.SilverGeneral,
-        PieceType.GoldGeneral, PieceType.Bishop, PieceType.Rook
-    };
 
     // スキルの対象選択（爆発の中心・駒入替の駒など）
     private bool isSelectingSkillTarget = false;
@@ -96,6 +91,47 @@ public class GameSystem : MonoBehaviour
     private Vector2Int lastPreviewCursor;
 
     public bool IsSelectingSkillTarget => isSelectingSkillTarget;
+
+    // ------------------------------------------------------------
+    //  駒錬成・火薬・狙撃手（Prototype の forge.js / effects.js の explode / play.js の snipe）
+    // ------------------------------------------------------------
+    [Header("Forge")]
+    [SerializeField] private ForgeRecipeBook forgeRecipeBook; // 未設定なら Resources/ForgeRecipeBook を読む
+
+    private static readonly List<ForgeRecipe> NoRecipes = new List<ForgeRecipe>();
+    public IReadOnlyList<ForgeRecipe> ForgeRecipes
+    {
+        get
+        {
+            if (forgeRecipeBook == null) forgeRecipeBook = ForgeRecipeBook.LoadDefault();
+            return forgeRecipeBook != null ? forgeRecipeBook.recipes : NoRecipes;
+        }
+    }
+
+    // 錬成した（演出用）
+    public event System.Action<PlayerType, ForgeRecipe> Forged;
+    // 爆発が起きた（範囲の駒が消失する前に呼ばれる。演出用）
+    public event System.Action<ExplosionInfo> Exploded;
+    // 狙撃した（撃たれた駒が取られる・爆発する前に呼ばれる。演出用）
+    public event System.Action<SnipeShot> Sniped;
+
+    public const string ReasonExplosion = "爆発";
+
+    // 演出の長さ（秒）。盤面はすぐ変わるので、手番の交代をこの分だけ遅らせて演出を見せる
+    public const float SnipeImpactDelay = 0.85f;  // 照準が合ってビームが着弾するまで
+    public const float SnipeAfterDelay = 0.6f;    // 着弾してから手番が替わるまで（「SNIPE!」を見せる）
+    public const float ExplosionFxDuration = 0.9f; // 爆発が始まってから手番が替わるまで
+
+    // 狙撃の対象選択
+    private bool isSelectingSnipeTarget = false;
+    private GamePiece snipingPiece;
+    private readonly List<Vector2Int> snipeTargets = new List<Vector2Int>();
+    public bool IsSelectingSnipeTarget => isSelectingSnipeTarget;
+
+    // 行動の演出を見せている間（手番の交代待ち）は操作できない
+    private bool isResolvingAction = false;
+    private float pendingActionFxTime = 0f; // この行動の演出があと何秒かかるか（爆発・狙撃で増える）
+    public bool IsResolvingAction => isResolvingAction;
 
     [System.Serializable]
     public struct SkillButtonUI
@@ -155,6 +191,17 @@ public class GameSystem : MonoBehaviour
         if (FindAnyObjectByType<CellDebugTool>() == null)
         {
             gameObject.AddComponent<CellDebugTool>();
+        }
+
+        // 駒錬成のレシピ、錬成・狙撃のボタン、爆発・狙撃の演出（シーンに置かれていなければ自動で追加する）
+        if (ForgeRecipes.Count == 0) Debug.LogWarning("駒錬成のレシピ（Resources/ForgeRecipeBook）が見つかりません");
+        if (FindAnyObjectByType<ForgePanelView>() == null)
+        {
+            gameObject.AddComponent<ForgePanelView>();
+        }
+        if (FindAnyObjectByType<NewPieceFx>() == null)
+        {
+            gameObject.AddComponent<NewPieceFx>();
         }
 
         // 対局の状態（ターン数・エナジー）
@@ -247,6 +294,9 @@ public class GameSystem : MonoBehaviour
         var keyboard = Keyboard.current;
         if (keyboard == null) return;
 
+        // 爆発・狙撃の演出が終わって手番が替わるまでは操作しない
+        if (isResolvingAction) return;
+
         // 成り確認ダイアログの応答待ち中のキー操作
         if (isWaitingForPromoteChoice)
         {
@@ -294,6 +344,15 @@ public class GameSystem : MonoBehaviour
             HandleSkillTargetSelection();
             return;
         }
+
+        if (isSelectingSnipeTarget)
+        {
+            HandleSnipeTargetSelection();
+            return;
+        }
+
+        // 錬成のキー操作（Z・X …：レシピの順。ボタンでも錬成できる）
+        HandleForgeKeys(keyboard);
 
         if (isSelectingHand)
         {
@@ -357,7 +416,8 @@ public class GameSystem : MonoBehaviour
                     else
                     {
                         DropPiece(selectedHandType, x, y);
-                        NextState();
+                        if (ResolveKingLoss()) return;
+                        EndActionTurn();
                     }
                 }
                 else
@@ -396,6 +456,10 @@ public class GameSystem : MonoBehaviour
                 }
                 SetDarkOverlayActive(true);
             }
+            else if (keyboard.gKey.wasPressedThisFrame && selectedPiece != null && PieceRules.IsSniper(selectedPiece.type))
+            {
+                BeginSnipe();
+            }
             else if (gameController.IsOkTrigger())
             {
                 HandlePieceSelection();
@@ -403,6 +467,7 @@ public class GameSystem : MonoBehaviour
             else if (gameController.IsCancelTrigger())
             {
                 selectedPiece = null;
+                if (HandUIManager.Instance != null) HandUIManager.Instance.SetStatusText(IdleStatusText);
                 gameBoard.AllDeactivePanel();
                 ClearBoardHighlight();
                 SetDarkOverlayActive(false);
@@ -428,15 +493,25 @@ public class GameSystem : MonoBehaviour
                 selectedPiece = piece;
                 gameBoard.ActivePanel(GameHelper.CalcPanelNum(x, y)); // 選択した足元を光らせる
                 ShowMovablePanels(selectedPiece); // 移動可能なマスを光らせる
+                if (PieceRules.IsSniper(piece.type) && HandUIManager.Instance != null)
+                {
+                    // 狙撃手は動けない。「狙撃」ボタン（または G・もう一度 F）で狙撃の対象選択へ
+                    HandUIManager.Instance.SetStatusText("【狙撃手】 狙撃: G / もう一度 F /「狙撃」ボタン (取消: Space)");
+                }
             }
+        }
+        else if (PieceRules.IsSniper(selectedPiece.type) && x == selectedPiece.X && y == selectedPiece.Y)
+        {
+            // 選んだ狙撃手の上でもう一度決定 → 狙撃
+            BeginSnipe();
         }
         else
         {
             // --- 駒を移動させるフェーズ ---
             if (CanPieceMoveTo(selectedPiece, x, y))
             {
-                // 成り判定
-                if (CanPromote(selectedPiece, selectedPiece.X, x))
+                // 成り判定（火薬のマスに入って吹き飛ぶ駒には聞かない）
+                if (CanPromote(selectedPiece, selectedPiece.X, x) && !WillBeDestroyedEntering(selectedPiece, x, y))
                 {
                     if (MustPromote(selectedPiece, x))
                     {
@@ -562,7 +637,7 @@ public class GameSystem : MonoBehaviour
 
     bool CanPromote(GamePiece piece, int fromX, int toX)
     {
-        if (piece.isPromoted || piece.type == PieceType.King || piece.type == PieceType.GoldGeneral)
+        if (piece.isPromoted || !PieceRules.CanPromote(piece.type))
         {
             return false;
         }
@@ -606,13 +681,17 @@ public class GameSystem : MonoBehaviour
         ClearBoardHighlight();
         SetDarkOverlayActive(false);
         currentMovablePositions.Clear();
-        NextState();
+        EndActionTurn();
     }
 
     // 駒の移動（相手の駒がいれば取り）。盤面のデータを変え、見た目の移動を始める。対局が終わったら true
     bool ApplyMove(GamePiece piece, int targetX, int targetY, bool promote)
     {
         GamePiece targetPiece = gameBoard.GetPieceAt(targetX, targetY);
+        if (targetPiece != null && targetPiece != piece && PieceRules.IsExplosive(targetPiece.type))
+        {
+            return EnterGunpowder(piece, targetX, targetY, promote);
+        }
         if (targetPiece != null && targetPiece.player != piece.player)
         {
             if (!CapturePiece(targetPiece, piece.player))
@@ -641,6 +720,346 @@ public class GameSystem : MonoBehaviour
         return ResolveKingLoss();
     }
 
+    // 火薬のマスに入る（Prototype の play.js の stepPiece）：重なった瞬間に爆発する。
+    // 取りではないので、エナジー・持ち駒化はなし。入った駒も吹き飛ぶ（王将だけは爆発に耐えて、そのマスに残る）。対局が終わったら true
+    bool EnterGunpowder(GamePiece piece, int x, int y, bool promote)
+    {
+        Explode(x, y, MoveArrivalDelay(piece), piece);
+
+        // 爆発に耐えた（王将）：火薬が消えたマスへ進む
+        if (IsOnBoard(piece) && !gameBoard.HasPieceAt(x, y))
+        {
+            gameBoard.UpdateBoardData(piece.X, piece.Y, x, y);
+            piece.X = x;
+            piece.Y = y;
+            AnimatePieceMove(piece, GameHelper.CalcPanelLocation(x, y));
+            if (EnterCell(piece, x, y) && promote) piece.Promote();
+        }
+        return ResolveKingLoss();
+    }
+
+    // 駒 piece が (x, y) に入ると、火薬の爆発で吹き飛ぶか（成りの確認を出さないために使う）
+    bool WillBeDestroyedEntering(GamePiece piece, int x, int y)
+    {
+        GamePiece target = gameBoard.GetPieceAt(x, y);
+        return target != null && target != piece && PieceRules.IsExplosive(target.type) && PieceRules.IsDestroyedByExplosion(piece.type);
+    }
+
+    // 駒が移動先に着くまでの秒数（爆発の見た目を合わせる。PieceMoveAnimator の既定の長さ）
+    static float MoveArrivalDelay(GamePiece piece)
+    {
+        return PieceMoveAnimator.StyleFor(piece) == PieceMoveStyle.Jump ? 0.35f : 0.28f;
+    }
+
+    // 爆発（Prototype の effects.js の explode）：中心 (cx, cy) の 3×3（MatchConfig.ExplosionRadius）の駒をすべて消失させる。
+    // 消失なので、エナジー・持ち駒化はなし。王将は爆発では倒せない（MatchConfig.ExplosionSparesKing）。
+    // entering は火薬のマスに入った駒（範囲の外から来ても一緒に吹き飛ぶ）。fxDelay は見た目を始めるまでの秒数。
+    // 火薬・爆発スキル共通。王将が消えることはないが、呼び出し側で ResolveKingLoss を呼ぶこと
+    public void Explode(int cx, int cy, float fxDelay = 0f, GamePiece entering = null)
+    {
+        Debug.Log($"({cx}, {cy}) で爆発！");
+        Exploded?.Invoke(new ExplosionInfo(cx, cy, fxDelay, entering));
+        pendingActionFxTime = Mathf.Max(pendingActionFxTime, fxDelay + ExplosionFxDuration);
+
+        List<GamePiece> victims = new List<GamePiece>();
+        int r = MatchConfig.ExplosionRadius;
+        for (int x = cx - r; x <= cx + r; x++)
+        {
+            for (int y = cy - r; y <= cy + r; y++)
+            {
+                GamePiece piece = gameBoard.GetPieceAt(x, y);
+                if (piece != null) victims.Add(piece);
+            }
+        }
+        if (entering != null && !victims.Contains(entering)) victims.Add(entering);
+
+        List<Vector2Int> chain = new List<Vector2Int>();
+        foreach (GamePiece piece in victims)
+        {
+            if (!IsOnBoard(piece)) continue;
+            if (!PieceRules.IsDestroyedByExplosion(piece.type))
+            {
+                Debug.Log($"({piece.X}, {piece.Y}) の王将は爆発に耐えた。");
+                continue;
+            }
+            bool isOtherBomb = PieceRules.IsExplosive(piece.type) && (piece.X != cx || piece.Y != cy);
+            int px = piece.X;
+            int py = piece.Y;
+            if (VanishPiece(piece, ReasonExplosion) && MatchConfig.ChainExplosion && isOtherBomb)
+            {
+                chain.Add(new Vector2Int(px, py));
+            }
+        }
+
+        // 誘爆（MatchConfig.ChainExplosion のときだけ）
+        foreach (Vector2Int c in chain)
+        {
+            Explode(c.x, c.y, fxDelay + 0.3f);
+        }
+    }
+
+    // ------------------------------------------------------------
+    //  狙撃（Prototype の play.js の snipe）
+    //  狙撃手を選んで「狙撃」→ 王将以外の相手の駒（火薬を含む）を選ぶ。射程は無制限で、間の駒も無視する。
+    //  撃った駒は「取り」（エナジー配分・持ち駒化あり）、火薬ならその場で爆発。手番を消費する
+    // ------------------------------------------------------------
+
+    // 狙撃手 sniper が撃てるマス
+    public List<Vector2Int> GetSnipeTargets(GamePiece sniper)
+    {
+        List<Vector2Int> targets = new List<Vector2Int>();
+        if (sniper == null || !PieceRules.IsSniper(sniper.type)) return targets;
+        for (int x = 0; x < 9; x++)
+        {
+            for (int y = 0; y < 9; y++)
+            {
+                GamePiece q = gameBoard.GetPieceAt(x, y);
+                if (q != null && q.player != sniper.player && q.type != PieceType.King) targets.Add(new Vector2Int(x, y));
+            }
+        }
+        return targets;
+    }
+
+    // 選んでいる狙撃手で狙撃できるか（「狙撃」ボタンを出すか）
+    public bool CanBeginSnipe
+    {
+        get
+        {
+            return CanActNow && !isSelectingHand && !isDroppingHand && !isSelectingSnipeTarget
+                && selectedPiece != null && IsMyPiece(selectedPiece) && PieceRules.IsSniper(selectedPiece.type)
+                && !IsOnlineMatch;
+        }
+    }
+
+    // 「狙撃」ボタン・G キー：狙撃の対象選択を始める
+    public void BeginSnipe()
+    {
+        if (!CanBeginSnipe) return;
+        List<Vector2Int> targets = GetSnipeTargets(selectedPiece);
+        if (targets.Count == 0)
+        {
+            if (HandUIManager.Instance != null) HandUIManager.Instance.SetStatusText("【狙撃】 撃てる相手の駒がありません (取消: Space)");
+            return;
+        }
+
+        snipingPiece = selectedPiece;
+        snipeTargets.Clear();
+        snipeTargets.AddRange(targets);
+        isSelectingSnipeTarget = true;
+
+        gameBoard.AllDeactivePanel();
+        ClearBoardHighlight();
+        SetDarkOverlayActive(true);
+        currentMovablePositions.Clear();
+        currentMovablePositions.AddRange(snipeTargets);
+        gameBoard.ActivePanel(GameHelper.CalcPanelNum(snipingPiece.X, snipingPiece.Y));
+        snipingPiece.SetHighlight(true);
+        highlightedPieces.Add(snipingPiece);
+        foreach (Vector2Int t in snipeTargets)
+        {
+            gameBoard.ActivePanel(GameHelper.CalcPanelNum(t.x, t.y));
+            GamePiece q = gameBoard.GetPieceAt(t.x, t.y);
+            if (q != null)
+            {
+                q.SetHighlight(true);
+                highlightedPieces.Add(q);
+            }
+        }
+        if (HandUIManager.Instance != null)
+        {
+            HandUIManager.Instance.SetStatusText("【狙撃】 撃つ駒を選択（王将以外。火薬は撃つと爆発） (決定: F / 取消: Space)");
+        }
+    }
+
+    // 「狙撃をやめる」ボタン・Space：駒を選ぶ前の状態に戻す
+    public void CancelSnipe()
+    {
+        if (!isSelectingSnipeTarget) return;
+        EndSnipeTargetSelection();
+        if (HandUIManager.Instance != null) HandUIManager.Instance.SetStatusText(IdleStatusText);
+    }
+
+    void EndSnipeTargetSelection()
+    {
+        isSelectingSnipeTarget = false;
+        snipingPiece = null;
+        snipeTargets.Clear();
+        selectedPiece = null;
+        gameBoard.AllDeactivePanel();
+        ClearBoardHighlight();
+        SetDarkOverlayActive(false);
+        currentMovablePositions.Clear();
+    }
+
+    void HandleSnipeTargetSelection()
+    {
+        if (gameController.IsOkTrigger())
+        {
+            Vector2Int cursor = new Vector2Int(gameCursor.X, gameCursor.Y);
+            if (!snipeTargets.Contains(cursor))
+            {
+                Debug.Log("そこは狙撃できません");
+                return;
+            }
+            GamePiece sniper = snipingPiece;
+            EndSnipeTargetSelection();
+            ExecuteSnipe(sniper, cursor.x, cursor.y);
+        }
+        else if (gameController.IsCancelTrigger())
+        {
+            CancelSnipe();
+        }
+    }
+
+    void ExecuteSnipe(GamePiece sniper, int tx, int ty)
+    {
+        GamePiece target = gameBoard.GetPieceAt(tx, ty);
+        if (sniper == null || target == null || !IsOnBoard(sniper)) return;
+
+        bool explosive = PieceRules.IsExplosive(target.type);
+        Debug.Log($"狙撃！ ({sniper.X}, {sniper.Y}) → ({tx}, {ty}) の {HandUIManager.GetJapaneseName(target.type)}");
+        pendingActionFxTime = Mathf.Max(pendingActionFxTime, SnipeImpactDelay + SnipeAfterDelay);
+        Sniped?.Invoke(new SnipeShot(sniper.player, sniper, new Vector2Int(sniper.X, sniper.Y), new Vector2Int(tx, ty), target.type, explosive, SnipeImpactDelay));
+
+        if (explosive)
+        {
+            Explode(tx, ty, SnipeImpactDelay);
+        }
+        else
+        {
+            CapturePiece(target, sniper.player);
+        }
+        if (HandUIManager.Instance != null)
+        {
+            HandUIManager.Instance.SetStatusText(explosive ? "【狙撃】 火薬を撃ち抜いた！ 大爆発！" : $"【狙撃】 {HandUIManager.GetJapaneseName(target.type)}を撃ち抜いた！");
+        }
+        if (ResolveKingLoss()) return;
+        EndActionTurn();
+    }
+
+    // ------------------------------------------------------------
+    //  駒錬成（Prototype の effects.js の forge）
+    //  エナジーを払って駒を作り、持ち駒に加える。MatchConfig.ForgeEndsTurn が false なら手番は続く
+    // ------------------------------------------------------------
+
+    // 今、手番のプレイヤーが操作できるか（演出中・成りの確認中・オンラインの相手の手番は不可）
+    bool CanActNow
+    {
+        get
+        {
+            if (!IsInTurn || isResolvingAction || isWaitingForPromoteChoice || isSelectingSkillTarget) return false;
+            if (IsOnlineMatch && CurrentPlayer.PlayerType != NetworkManager.Instance.MyPlayerType) return false;
+            return true;
+        }
+    }
+
+    // オンライン対戦中か（錬成・狙撃はまだ通信に乗せていないので、オンラインでは使えない）
+    bool IsOnlineMatch => NetworkManager.Instance != null && NetworkManager.Instance.IsOnlineMatch;
+
+    public bool CanForge(ForgeRecipe recipe)
+    {
+        if (recipe == null || !CanActNow || isSelectingSnipeTarget || IsOnlineMatch) return false;
+        return CurrentPlayer != null && CurrentPlayer.HasEnoughPoint(recipe.cost);
+    }
+
+    // 錬成する。できたら true
+    public bool Forge(ForgeRecipe recipe)
+    {
+        if (!CanForge(recipe)) return false;
+
+        Player player = CurrentPlayer;
+        PlayerType side = player.PlayerType;
+        player.ConsumePoint(recipe.cost);
+        player.AddPieceToHand(recipe.pieceType);
+        Debug.Log($"{side}：エナジーを {recipe.cost} 消費して「{recipe.label}」を錬成した！");
+
+        if (HandUIManager.Instance != null)
+        {
+            HandUIManager.Instance.UpdateActiveHandDisplay(side, player.Hand);
+        }
+        if (isSelectingHand)
+        {
+            UpdateHandList();
+            UpdateSelectingHandUI();
+        }
+        else if (!isDroppingHand && selectedPiece == null && HandUIManager.Instance != null)
+        {
+            HandUIManager.Instance.SetStatusText($"【錬成】 {recipe.label}を持ち駒に加えた（エナジー -{recipe.cost}）" +
+                (string.IsNullOrEmpty(IdleStatusText) ? "" : "\n" + IdleStatusText));
+        }
+        UpdateActivePlayerSkillUI();
+        Forged?.Invoke(side, recipe);
+
+        if (MatchConfig.ForgeEndsTurn)
+        {
+            ResetSelectionState();
+            EndActionTurn();
+        }
+        return true;
+    }
+
+    // キーボードで錬成（Z = 1つ目のレシピ、X = 2つ目、C = 3つ目）
+    static readonly Key[] ForgeKeys = { Key.Z, Key.X, Key.C, Key.V };
+    public static string ForgeKeyLabel(int index)
+    {
+        return index >= 0 && index < ForgeKeys.Length ? ForgeKeys[index].ToString() : "";
+    }
+
+    void HandleForgeKeys(Keyboard keyboard)
+    {
+        IReadOnlyList<ForgeRecipe> recipes = ForgeRecipes;
+        for (int i = 0; i < recipes.Count && i < ForgeKeys.Length; i++)
+        {
+            if (keyboard[ForgeKeys[i]].wasPressedThisFrame)
+            {
+                if (!Forge(recipes[i]) && recipes[i] != null && CurrentPlayer != null && !CurrentPlayer.HasEnoughPoint(recipes[i].cost))
+                {
+                    Debug.Log($"「{recipes[i].label}」の錬成にはエナジーが {recipes[i].cost} 必要です");
+                }
+                return;
+            }
+        }
+    }
+
+    // 駒・持ち駒・狙撃の選択を全部やめる
+    void ResetSelectionState()
+    {
+        selectedPiece = null;
+        isSelectingHand = false;
+        isDroppingHand = false;
+        isSelectingSnipeTarget = false;
+        snipingPiece = null;
+        snipeTargets.Clear();
+        currentMovablePositions.Clear();
+        gameBoard.AllDeactivePanel();
+        ClearBoardHighlight();
+        SetDarkOverlayActive(false);
+        if (HandUIManager.Instance != null) HandUIManager.Instance.HidePanel();
+    }
+
+    // ------------------------------------------------------------
+    //  行動（移動・打つ・狙撃）のあとの手番の交代。爆発・狙撃の演出があれば、終わるまで待ってから交代する
+    // ------------------------------------------------------------
+    void EndActionTurn()
+    {
+        float wait = pendingActionFxTime;
+        pendingActionFxTime = 0f;
+        if (wait <= 0f)
+        {
+            NextState();
+            return;
+        }
+        StartCoroutine(EndTurnAfter(wait));
+    }
+
+    System.Collections.IEnumerator EndTurnAfter(float seconds)
+    {
+        isResolvingAction = true;
+        yield return new WaitForSeconds(seconds);
+        isResolvingAction = false;
+        if (IsInTurn) NextState();
+    }
+
     // 指し手の見た目の移動（盤面データは即時に更新済み。アニメーションは見た目だけ）
     void AnimatePieceMove(GamePiece piece, Vector2 location)
     {
@@ -665,7 +1084,7 @@ public class GameSystem : MonoBehaviour
         ClearBoardHighlight();
         SetDarkOverlayActive(false);
         currentMovablePositions.Clear();
-        NextState();
+        EndActionTurn();
     }
 
     public void OnServerDropPiece(PieceType type, int toX, int toY, PlayerType activePlayer)
@@ -701,7 +1120,7 @@ public class GameSystem : MonoBehaviour
 
     void AddPieceToHand(PlayerType player, PieceType type)
     {
-        if (type == PieceType.King) return;
+        if (!PieceRules.GoesToHand(type)) return; // 王将・火薬は持ち駒にならない
 
         Player targetPlayer = (player == PlayerType.Player1) ? player1 : player2;
         targetPlayer.AddPieceToHand(type);
@@ -737,7 +1156,7 @@ public class GameSystem : MonoBehaviour
     }
 
     // 取り：by が piece を取る。エナジーは取られた側が駒の価値の全額、取った側が半分（切り捨て）を得る。
-    // 取った駒は by の持ち駒になる（王将は持ち駒にならない）。取れたら true（盾などで防がれたら false）。
+    // 取った駒は by の持ち駒になる（王将・火薬は持ち駒にならない）。取れたら true（盾などで防がれたら false）。
     // 王将が全部取られたかの判定は呼び出し側で行う（ResolveKingLoss）
     public bool CapturePiece(GamePiece piece, PlayerType by)
     {
@@ -1055,6 +1474,9 @@ public class GameSystem : MonoBehaviour
         // ターン切り替え時に状態をクリア
         isSelectingHand = false;
         isDroppingHand = false;
+        isSelectingSnipeTarget = false;
+        snipingPiece = null;
+        snipeTargets.Clear();
         if (HandUIManager.Instance != null)
         {
             HandUIManager.Instance.SetStatusText("");
@@ -1178,7 +1600,7 @@ public class GameSystem : MonoBehaviour
         RoundEnded?.Invoke(turnNumber);
     }
 
-    // 王手を回避できる手（駒の移動・持ち駒を打つ）が1つもないか。スキルは判定に含めない
+    // 王手を回避できる手（駒の移動・狙撃・持ち駒を打つ）が1つもないか。スキル・駒錬成は判定に含めない
     // 王手放置は禁止していないので、「指せる手」のうち王将が取られなくなる手があるかを調べる
     bool IsCheckmated(PlayerType side)
     {
@@ -1194,6 +1616,17 @@ public class GameSystem : MonoBehaviour
                 {
                     if (CanPieceMoveTo(piece, x, y) && CheckRules.IsMoveSafe(gameBoard, piece, x, y)) return false;
                 }
+            }
+        }
+
+        // 狙撃（通常の行動なので含める。王手をかけている駒を撃つ・火薬を撃って爆発させる）
+        for (int i = 0; i < cells.Length; i++)
+        {
+            GamePiece sniper = cells[i];
+            if (sniper == null || sniper.player != side || !PieceRules.IsSniper(sniper.type)) continue;
+            foreach (Vector2Int t in GetSnipeTargets(sniper))
+            {
+                if (CheckRules.IsSnipeSafe(gameBoard, sniper, t.x, t.y)) return false;
             }
         }
 
@@ -1276,7 +1709,7 @@ public class GameSystem : MonoBehaviour
         {
             sb.Append('|');
             if (p == null) continue;
-            foreach (PieceType type in HandOrder)
+            foreach (PieceType type in PieceRules.HandOrder)
             {
                 int num;
                 p.Hand.TryGetValue(type, out num);
@@ -1302,8 +1735,8 @@ public class GameSystem : MonoBehaviour
 
     public void UseSkill(PlayerType player, int slotIndex)
     {
-        // 成りの選択中・スキルの対象選択中は使えない
-        if (isWaitingForPromoteChoice || isSelectingSkillTarget) return;
+        // 成りの選択中・スキルや狙撃の対象選択中・演出中は使えない
+        if (isWaitingForPromoteChoice || isSelectingSkillTarget || isSelectingSnipeTarget || isResolvingAction) return;
 
         // 自分のターンであるかチェック
         PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
@@ -1355,8 +1788,9 @@ public class GameSystem : MonoBehaviour
         //コスト消費・効果実行
         targetPlayer.ConsumePoint(skill.cost);
         skill.Use(context);
+        pendingActionFxTime = 0f; // スキルでは手番が替わらないので、演出を待たない
         UpdateActivePlayerSkillUI();
-        if (ResolveKingLoss()) return; // スキルで王将が全部いなくなった（今のスキルでは起きない）
+        if (ResolveKingLoss()) return; // スキルで王将が全部いなくなった（爆発では王将は倒せないので、今のスキルでは起きない）
         isActivePlayerInCheck = CheckRules.IsInCheck(gameBoard, player);
 
         Debug.Log($"プレイヤー {(player == PlayerType.Player1 ? "1" : "2")} がスキル「{skill.skillName}」を使用しました。");
@@ -1515,7 +1949,7 @@ public class GameSystem : MonoBehaviour
         foreach (var pos in movablePos)
         {
             GamePiece target = gameBoard.GetPieceAt(pos.x, pos.y);
-            if (target != null && selected != null && target.player != selected.player)
+            if (target != null && selected != null && target != selected && (target.player != selected.player || PieceRules.IsExplosive(target.type)))
             {
                 target.SetHighlight(true);
                 highlightedPieces.Add(target);

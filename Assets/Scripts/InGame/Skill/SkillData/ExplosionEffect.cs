@@ -29,35 +29,13 @@ public class ExplosionEffect : SkillEffect
 
   public override void Execute(SkillContext context)
   {
-    GameBoard board = context.GameBoard;
     Vector2Int center = context.Targets[0];
 
     Debug.Log($"中心位置 ({center.x}, {center.y}) で大爆発が発生！");
 
-    // 中心から3x3マスの範囲をループ処理
-    for (int x = center.x - 1; x <= center.x + 1; x++)
-    {
-      for (int y = center.y - 1; y <= center.y + 1; y++)
-      {
-        // 盤面の外（マイナス座標や9マス以上）はスルーする
-        if (x < 0 || x >= 9 || y < 0 || y >= 9) continue;
-
-        GamePiece piece = board.GetPieceAt(x, y);
-        if (piece == null) continue;
-
-        // このスキルでは王将を撃破できない
-        if (piece.type == PieceType.King)
-        {
-          Debug.Log($"({x}, {y}) の王将は爆発に耐えた。");
-          continue;
-        }
-
-        // 「消失」：エナジー・持ち駒化なし（誰も駒を取得できない）
-        if (context.GameSystem.VanishPiece(piece, "爆発"))
-        {
-          Debug.Log($"({x}, {y}) の駒が爆発に巻き込まれて消滅した。");
-        }
-      }
-    }
+    // 火薬の爆発と同じ処理（中心から3x3の駒が「消失」：エナジー・持ち駒化なし）。
+    // このスキルでも王将は撃破できない（範囲内の王将は残る。MatchConfig.ExplosionSparesKing）。
+    // 範囲内の火薬は誘爆せずに消える（MatchConfig.ChainExplosion が false のとき）
+    context.GameSystem.Explode(center.x, center.y);
   }
 }

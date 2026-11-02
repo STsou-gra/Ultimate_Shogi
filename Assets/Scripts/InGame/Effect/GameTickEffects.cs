@@ -5,7 +5,7 @@ using TMPro;
 
 // 毎フレームの演出（プロトタイプ index.html の Game.tick の移植）
 // ・sin(t*5) のパルスで 必殺技オーラ・スキルパネルの枠・使えるスキルボタン・手番テキストを明滅
-// ・オーラ中の駒から光の粒、火薬の導火線から火花、背景を漂う火の粉
+// ・オーラ中の駒から光の粒、火薬の導火線から火花、狙撃手のスコープの赤い光の明滅、背景を漂う火の粉
 // ・盤の外周の発光 sin(t*1.5)、移動先ハイライトの明滅 sin(t*6)
 // 粒の発生は Random.value < dt * N の確率方式（フレームレートに依存しない）
 // シーンに置かなくても GameSystem が自動で追加する。参照を指定しなければシーンから探す
@@ -35,6 +35,7 @@ public class GameTickEffects : MonoBehaviour
     private static readonly Color[] AuraParticleColors = { Hex(0xffd54a), Hex(0xfff59d) };
     private static readonly Color SparkColor = Hex(0xffa000);
     private static readonly Color[] SparkParticleColors = { Hex(0xffa000), Hex(0xff3d00) };
+    private static readonly Color ScopeColor = Hex(0xff1744);
     private static readonly Color[] EmberColors = { Hex(0xff8a3d), Hex(0xffd54a), Hex(0xb388ff), Hex(0xff5277) };
     private static readonly Color SkillGlowColor = Hex(0xffd54a);
     private static readonly Color BoardGlowColor = Hex(0xffb74d);
@@ -46,6 +47,7 @@ public class GameTickEffects : MonoBehaviour
         public SpriteRenderer auraGlow;
         public SpriteRenderer auraRing;
         public SpriteRenderer spark;
+        public SpriteRenderer scope;
     }
 
     private GameSystem gameSystem;
@@ -150,7 +152,7 @@ public class GameTickEffects : MonoBehaviour
         foreach (GamePiece piece in gameBoard.GetBoardData())
         {
             if (piece == null) continue;
-            bool needsFx = piece.isSpecialReady || piece.hasFuse;
+            bool needsFx = piece.isSpecialReady || piece.hasFuse || piece.hasScope;
             PieceFx fx;
             if (!pieceFx.TryGetValue(piece, out fx))
             {
@@ -201,6 +203,22 @@ public class GameTickEffects : MonoBehaviour
             else if (fx.spark != null)
             {
                 fx.spark.gameObject.SetActive(false);
+            }
+
+            // 狙撃手のスコープの赤い光（ゆっくり明滅し、ときどき鋭く光る）
+            if (piece.hasScope)
+            {
+                if (fx.scope == null) CreateScope(piece, fx);
+                fx.scope.gameObject.SetActive(true);
+                fx.scope.transform.localPosition = piece.scopeOffset;
+                float glint = 0.35f + 0.45f * (0.5f + 0.5f * Mathf.Sin(time * 3f + piece.X * 0.7f + piece.Y));
+                if (Random.value < dt * 0.6f) glint = 1f;
+                fx.scope.color = WithAlpha(ScopeColor, glint);
+                fx.scope.transform.localScale = Vector3.one * GlowScale(0.16f + 0.08f * glint);
+            }
+            else if (fx.scope != null)
+            {
+                fx.scope.gameObject.SetActive(false);
             }
         }
 
@@ -349,6 +367,12 @@ public class GameTickEffects : MonoBehaviour
     {
         fx.spark = CreateChildSprite(piece.transform, "FuseSpark", glowSprite, MinSortingOrder(piece) + 1, Vector2.one);
         fx.spark.transform.localPosition = piece.fuseOffset;
+    }
+
+    void CreateScope(GamePiece piece, PieceFx fx)
+    {
+        fx.scope = CreateChildSprite(piece.transform, "ScopeGlint", glowSprite, MinSortingOrder(piece) + 1, Vector2.one);
+        fx.scope.transform.localPosition = piece.scopeOffset;
     }
 
     SpriteRenderer CreateChildSprite(Transform parent, string name, Sprite sprite, int order, Vector2 scale)

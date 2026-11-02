@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8a236487169742b6b3ce56f3c66bfc14, type: 3}
+  m_Name: Sniper_Recipe
+  m_EditorClassIdentifier: Assembly-CSharp::ForgeRecipe
+  pieceType: 9
+  label: "\u72D9\u6483\u624B"
+  cost: 5
+  icon: {fileID: -3619594889555320616, guid: cd32486927464bdebb0f74e3b6084af6, type: 3}
+  description: "\u81EA\u5206\u3067\u306F\u52D5\u3051\u305A\u3001\u6210\u3089\u306A\u3044\u3002\u624B\u756A\u3092\u4F7F\u3063\u3066\u300C\u72D9\u6483\u300D\u3059\u308B\u3068\u3001\u738B\u5C06\u4EE5\u5916\u306E\u76F8\u624B\u306E\u99D2\u30921\u3064\u53D6\u308B\uFF08\u5C04\u7A0B\u7121\u5236\u9650\u30FB\u9593\u306B\u99D2\u304C\u3042\u3063\u3066\u3082\u6483\u3066\u308B\uFF09\u3002"

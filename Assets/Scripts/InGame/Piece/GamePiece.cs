@@ -1,6 +1,8 @@
 using UnityEngine;
 
-public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn }
+// 末尾に足していく（シーン・プレハブ・通信では数値で保存しているため、途中に入れると既存の値がずれる）
+// Gunpowder（火薬）・Sniper（狙撃手）は錬成で作るオリジナル駒（Prototype の src/defs/pieces.js の KAYAKU・SNIPER）
+public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn, Gunpowder, Sniper }
 public enum PlayerType { Player1, Player2 }
 public abstract class GamePiece : MonoBehaviour
 {
@@ -23,6 +25,8 @@ public abstract class GamePiece : MonoBehaviour
     public bool isSpecialReady = false; // 必殺技を発動できる（オーラが光り、光の粒が立ち上る）
     public bool hasFuse = false;        // 火薬の導火線（先端で火花が散る）
     public Vector2 fuseOffset = new Vector2(0.06f, 0.6f); // 導火線の先端の位置（駒のローカル座標）
+    public bool hasScope = false;       // 狙撃手のスコープ（赤い光が明滅する）
+    public Vector2 scopeOffset = new Vector2(0f, 0.55f);  // スコープの光の位置（駒のローカル座標）
 
     // マスの状態（破壊・炎上・落とし穴）。GameBoard が駒を置くときに設定する
     public BoardCells Cells { get; set; }
