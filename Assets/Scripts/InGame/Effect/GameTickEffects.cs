@@ -9,6 +9,7 @@ using TMPro;
 // ・盾状態の駒に水色のバリア（六角形。現れるときは大きく出て縮み、sin(t*3) でゆらめく）
 // ・ファランクス状態の駒に金色の槍（前方 1×3 へ構えた穂先。現れるときは小さく出て広がり、sin(t*4) で光りながら前へ小さく突き出す）
 // ・盤の外周の発光 sin(t*1.5)、移動先ハイライトの明滅 sin(t*6)
+// ・世界の終わり（超常魔法）の進行中は、盤の外周の発光が赤く速く sin(t*4) 脈打ち、背景の火の粉が赤くなる
 // 粒の発生は Random.value < dt * N の確率方式（フレームレートに依存しない）
 // シーンに置かなくても GameSystem が自動で追加する。参照を指定しなければシーンから探す
 public class GameTickEffects : MonoBehaviour
@@ -41,6 +42,8 @@ public class GameTickEffects : MonoBehaviour
     private static readonly Color[] EmberColors = { Hex(0xff8a3d), Hex(0xffd54a), Hex(0xb388ff), Hex(0xff5277) };
     private static readonly Color SkillGlowColor = Hex(0xffd54a);
     private static readonly Color BoardGlowColor = Hex(0xffb74d);
+    private static readonly Color DoomGlowColor = Hex(0xff2a2a);
+    private static readonly Color[] DoomEmberColors = { Hex(0xff1744), Hex(0xd50000), Hex(0xff6d00), Hex(0x8d6e63) };
     private static readonly Color BarrierColor = Hex(0x4fc3f7);
     private static readonly Color SpearColor = Hex(0xffc400);
 
@@ -135,11 +138,12 @@ public class GameTickEffects : MonoBehaviour
             sr.color = c;
         }
 
-        // 盤の外周の発光
+        // 盤の外周の発光（世界の終わりの進行中は赤く速く脈打つ）
+        bool doom = gameSystem != null && gameSystem.IsWorldEndActive;
         if (boardGlow != null)
         {
-            Color c = BoardGlowColor;
-            c.a = 0.4f * (0.6f + 0.4f * Mathf.Sin(t * 1.5f));
+            Color c = doom ? DoomGlowColor : BoardGlowColor;
+            c.a = 0.4f * (0.6f + 0.4f * Mathf.Sin(t * (doom ? 4f : 1.5f)));
             boardGlow.color = c;
         }
 
@@ -152,7 +156,7 @@ public class GameTickEffects : MonoBehaviour
             float halfW = halfH * cam.aspect;
             Vector2 pos = new Vector2(Random.Range(-halfW, halfW), -halfH - 10f * PX);
             particles.Spawn(bgLayer, pos, LocalVelocity(Random.Range(-15f, 15f), Random.Range(-70f, -25f)),
-                Pick(EmberColors), Random.Range(5f, 10f), GlowScale(Random.Range(0.08f, 0.25f)), ORDER_BG,
+                Pick(doom ? DoomEmberColors : EmberColors), Random.Range(5f, 10f), GlowScale(Random.Range(0.08f, 0.25f)), ORDER_BG,
                 drag: 1f, alpha: 0.5f, shrink: false);
         }
     }

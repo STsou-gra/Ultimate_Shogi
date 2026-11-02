@@ -29,6 +29,9 @@ public static class MatchConfig
     // Prototype の explode は王将も消すが、DEVELOPMENT_PLAN の「爆発では王将を倒せない」に揃えた
     public static readonly bool ExplosionSparesKing = true;
 
+    // 超常魔法「世界の終わり」で 1 ターンに崩れるマスの数（Prototype の CONFIG.WORLD_END_CELLS。両者が発動すると重なる）
+    public const int WorldEndCells = 3;
+
     // 先手（最初に指すプレイヤー）。Player1 = 盤の手前（X = 0〜2 が自陣）
     public const PlayerType FirstPlayer = PlayerType.Player1;
 }

@@ -11,6 +11,7 @@ using TMPro;
 //  炎上   … 焦げ跡＋揺らめく炎＋立ち上る火の粉。マスの右上に残りターン数
 //  落とし穴 … 仕掛けたプレイヤーの色で縁取った暗い穴と、回る渦
 //  炎上・落とし穴・破壊で消えた駒は、そのマスで燃え尽きる／穴に吸い込まれる／マスと一緒に落ちる
+//  天変地異でマスの状態が入れ替わったら、マスごとの表示も新しいマスへ付け替える（飛ばす演出は MagicFx.Cataclysm）
 //
 // データは GameBoard.Cells（BoardCells）が持ち、ここは Cells.Changed と GameSystem.PieceDefeated を受けて表示を変えるだけ。
 // 見た目は実行時に GameBoard の子として作る（駒・マスのハイライトと同じ座標系。1マス = 1）。
@@ -143,12 +144,17 @@ public class BoardCellView : MonoBehaviour
         }
 
         cells.Changed += OnCellChanged;
+        cells.Rearranged += OnCellsRearranged;
         if (gameSystem != null) gameSystem.PieceDefeated += OnPieceDefeated;
     }
 
     void OnDestroy()
     {
-        if (cells != null) cells.Changed -= OnCellChanged;
+        if (cells != null)
+        {
+            cells.Changed -= OnCellChanged;
+            cells.Rearranged -= OnCellsRearranged;
+        }
         if (gameSystem != null) gameSystem.PieceDefeated -= OnPieceDefeated;
         if (root != null) Destroy(root.gameObject);
     }
@@ -296,6 +302,56 @@ public class BoardCellView : MonoBehaviour
             default:
                 Refresh(x, y);
                 break;
+        }
+    }
+
+    // ------------------------------------------------------------
+    //  マスの状態が入れ替わった（天変地異）：from[i] の表示を to[i] へ付け替えて、新しいマスに置く。
+    //  演出で飛ばすときは MagicFx が VisualRoot で表示を受け取り、元のマスから動かして、最後に SnapVisuals で戻す
+    // ------------------------------------------------------------
+    void OnCellsRearranged(IReadOnlyList<Vector2Int> from, IReadOnlyList<Vector2Int> to)
+    {
+        CellVisual[] before = (CellVisual[])visuals.Clone();
+        foreach (Vector2Int t in to) visuals[Index(t.x, t.y)] = null;
+        for (int i = 0; i < from.Count && i < to.Count; i++)
+        {
+            CellVisual v = before[Index(from[i].x, from[i].y)];
+            if (v == null) continue;
+            v.x = to[i].x;
+            v.y = to[i].y;
+            v.root.name = $"Cell_{v.x}_{v.y}";
+            // 破壊マスは動かないので、動いた表示に穴があれば（デバッグで戻したマスの残り）作り直せるように捨てる
+            if (v.hole != null)
+            {
+                Destroy(v.hole);
+                v.hole = null;
+            }
+            v.shownRemaining = int.MinValue;
+            visuals[Index(v.x, v.y)] = v;
+        }
+        foreach (Vector2Int t in to) Refresh(t.x, t.y);
+        SnapVisuals();
+    }
+
+    // (x, y) のマスの炎上・落とし穴の表示（マスの中心。なければ null）。天変地異の演出で、駒と一緒に飛ばす
+    public Transform VisualRoot(int x, int y)
+    {
+        if (!BoardCells.InBounds(x, y)) return null;
+        CellVisual v = visuals[Index(x, y)];
+        if (v == null) return null;
+        bool shown = (v.burning != null && v.burning.activeSelf) || (v.trap != null && v.trap.activeSelf);
+        return shown ? v.root : null;
+    }
+
+    // マスごとの表示を、すべて自分のマスの位置・大きさに戻す（天変地異の演出の終わり）
+    public void SnapVisuals()
+    {
+        foreach (CellVisual v in visuals)
+        {
+            if (v == null) continue;
+            Vector2 location = GameHelper.CalcPanelLocation(v.x, v.y);
+            v.root.localPosition = new Vector3(location.x, location.y, 0f);
+            v.root.localScale = Vector3.one;
         }
     }
 

@@ -13,10 +13,11 @@ using DG.Tweening;
 //  ファランクス … 魔法陣・衝撃波・「ファランクス！」。槍のマーカーは GameTickEffects。自動行動では槍が弾む → 前進 → 槍の突き
 //  隕石     … 落下予告（範囲が赤く明滅）→ 斜め上から光の尾を引いて落下 → 着弾（爆発・閃光・衝撃波・土くれ・「隕石落下!!」）
 //  破壊砲   … 充填（範囲が明滅・発射口に光が集まる）→ 盤の端から端へ極太の破壊光線 →「破壊!!」
+//  天変地異・世界の終わり（超常魔法）… MagicFx.Transcendent.cs
 //
 // 盤面のデータはすぐ変わるので、見た目は SkillContext.Timeline の時刻（発動からの秒数）に合わせて再生する。
 // シーンに置かなくても GameSystem が自動で追加する
-public class MagicFx : MonoBehaviour
+public partial class MagicFx : MonoBehaviour
 {
     private const float PX = 1f / 66f; // プロトタイプの1マス(66px) = Unity の1マス
 

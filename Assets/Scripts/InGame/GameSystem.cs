@@ -181,11 +181,38 @@ public class GameSystem : MonoBehaviour
     public event System.Action<GamePiece> PhalanxGiven;
 
     // ------------------------------------------------------------
+    //  超常魔法（Prototype の turn.js の checkTranscendentUnlock・skills.js の magicStatus）
+    //  解放条件（TranscendentRules）を満たすと解放され（一度解放されたらそのまま）、1 対局に 1 回だけ使える。
+    //  解放したら「超常魔法 解放！」のカットインを出す（その間は操作できない）
+    // ------------------------------------------------------------
+
+    // 超常魔法が解放された（カットインのあと。スキルボタンの「解放！」の演出用）
+    public event System.Action<PlayerType> TranscendentUnlocked;
+    // 超常魔法「世界の終わり」が始まった（盤の下の「進行中」表示・背景の赤み）
+    public event System.Action<PlayerType> WorldEndStarted;
+
+    private readonly Queue<PlayerType> unlockQueue = new Queue<PlayerType>(); // 解放の演出待ち
+    private bool isShowingUnlock = false;
+
+    // ------------------------------------------------------------
     //  手番交代の前の自動行動（Prototype の turn.js の afterAction：ファランクス → アンデッド → …）
     //  手番を終える行動（移動・打つ・手番を使う魔法・必殺技・狙撃）のあと、手番を相手に渡す前に、
     //  手番側の自動行動をこの順に 1 つずつ行う（演出を見せ終わってから次へ）。2回行動で手番が続くときは行わない
     // ------------------------------------------------------------
     private readonly List<TurnEndAction> turnEndActions = new List<TurnEndAction> { new PhalanxAdvance() };
+
+    // 1 ターンの終わり（後手の手番の終わり）に起きること（Prototype の turn.js の roundEnd のうち、演出を見せるもの）。
+    // 手番側の自動行動（ファランクス・アンデッド …）のあと、OnRoundEnd（手番交代）の直前に、同じ仕組みで 1 つずつ行う。
+    // 世界の終わりの崩壊は「赤く点滅 → 崩落」を見せてから手番を渡したいので、OnRoundEnd の中ではなくここで行う
+    private readonly List<TurnEndAction> roundEndActions = new List<TurnEndAction> { new WorldEndCollapse() };
+
+    // 手番交代の前に行う自動行動を、行う順に並べたもの（手番側の自動行動 → 1 ターンの終わり）
+    List<TurnEndAction> TurnEndActionsInOrder()
+    {
+        List<TurnEndAction> all = new List<TurnEndAction>(turnEndActions);
+        all.AddRange(roundEndActions);
+        return all;
+    }
     private bool isRunningTurnEnd = false;
     public bool IsRunningTurnEnd => isRunningTurnEnd;
 
@@ -202,7 +229,10 @@ public class GameSystem : MonoBehaviour
     // 行動の演出を見せている間（手番の交代待ち）は操作できない
     private bool isResolvingAction = false;
     private float pendingActionFxTime = 0f; // この行動の演出があと何秒かかるか（爆発・狙撃で増える）
-    public bool IsResolvingAction => isResolvingAction;
+    public bool IsResolvingAction => IsBusy;
+
+    // 演出の途中（行動の演出・超常魔法の解放の演出）で、操作を受け付けないか
+    bool IsBusy => isResolvingAction || isShowingUnlock;
 
     [System.Serializable]
     public struct SkillButtonUI
@@ -286,8 +316,21 @@ public class GameSystem : MonoBehaviour
         skillAreaView = FindAnyObjectByType<SkillAreaView>();
         if (skillAreaView == null) skillAreaView = gameObject.AddComponent<SkillAreaView>();
 
+        // 超常魔法の解放条件の表示と、世界の終わりの「進行中」表示（シーンに置かれていなければ自動で追加する）
+        if (FindAnyObjectByType<TranscendentStatusView>() == null)
+        {
+            gameObject.AddComponent<TranscendentStatusView>();
+        }
+        if (FindAnyObjectByType<WorldEndView>() == null)
+        {
+            gameObject.AddComponent<WorldEndView>();
+        }
+
         // 対局の状態（ターン数・エナジー）
-        match = new MatchState(MatchConfig.FirstPlayer);
+        // 乱数のシードは対局ごとに決める（後で棋譜に残し、オンラインでは両者で同じ値を使う）
+        uint seed = GameRng.NewSeed();
+        match = new MatchState(MatchConfig.FirstPlayer, seed);
+        Debug.Log($"対局の乱数のシード: {seed}");
         match.Turn.RoundEnded += OnRoundEnd;
         if (player1 != null) player1.BindEnergy(match.Energy);
         if (player2 != null) player2.BindEnergy(match.Energy);
@@ -376,8 +419,8 @@ public class GameSystem : MonoBehaviour
         var keyboard = Keyboard.current;
         if (keyboard == null) return;
 
-        // 爆発・狙撃の演出が終わって手番が替わるまでは操作しない
-        if (isResolvingAction) return;
+        // 爆発・狙撃の演出が終わって手番が替わるまで・超常魔法の解放の演出の間は操作しない
+        if (IsBusy) return;
 
         // 成り確認ダイアログの応答待ち中のキー操作
         if (isWaitingForPromoteChoice)
@@ -1260,7 +1303,7 @@ public class GameSystem : MonoBehaviour
     {
         get
         {
-            if (!IsInTurn || isResolvingAction || isWaitingForPromoteChoice || IsSelectingSkillTarget) return false;
+            if (!IsInTurn || IsBusy || isWaitingForPromoteChoice || IsSelectingSkillTarget) return false;
             if (IsOnlineMatch && CurrentPlayer.PlayerType != NetworkManager.Instance.MyPlayerType) return false;
             return true;
         }
@@ -1824,6 +1867,7 @@ public class GameSystem : MonoBehaviour
             isDroppingHand = false;
             Debug.Log("追加行動権により、同じプレイヤーのターンが続きます。");
             UpdateActivePlayerSkillUI(); // 獲得したポイントをスキルボタンに反映
+            CheckTranscendentUnlock();   // 手番を続ける行動のあとも解放を判定する
             return; // ターンを切り替えずに同じプレイヤーのターンを続ける
         }
 
@@ -1841,7 +1885,7 @@ public class GameSystem : MonoBehaviour
 
     bool HasTurnEndWork(PlayerType side)
     {
-        foreach (TurnEndAction action in turnEndActions)
+        foreach (TurnEndAction action in TurnEndActionsInOrder())
         {
             if (action.HasWork(this, side)) return true;
         }
@@ -1857,7 +1901,7 @@ public class GameSystem : MonoBehaviour
         ResetSelectionState();
         try
         {
-            foreach (TurnEndAction action in turnEndActions.ToArray())
+            foreach (TurnEndAction action in TurnEndActionsInOrder())
             {
                 if (!IsInTurn) return;
                 if (!action.HasWork(this, side)) continue;
@@ -2010,6 +2054,9 @@ public class GameSystem : MonoBehaviour
         {
             HandUIManager.Instance.SetStatusText(IdleStatusText);
         }
+
+        // 超常魔法の解放判定（両プレイヤー分。解放したらカットイン）
+        CheckTranscendentUnlock();
     }
 
     // 操作中でないときのステータス表示（王手中なら知らせる。手番の始まりのお知らせもここに出す）
@@ -2025,7 +2072,8 @@ public class GameSystem : MonoBehaviour
     }
 
     // 1ターンの終わり（後手の手番が終わったとき。手番交代の前）。
-    // 期限切れの炎上を鎮火する。世界の終わりなど「ターンの終わりに起きること」はここに足す
+    // 期限切れの炎上を鎮火する。演出を見せてから手番を渡したいもの（世界の終わりの崩壊）は、
+    // この直前に roundEndActions（WorldEndCollapse）として行っている
     void OnRoundEnd(int turnNumber)
     {
         Debug.Log($"第{turnNumber}ターン終了");
@@ -2160,6 +2208,7 @@ public class GameSystem : MonoBehaviour
         }
         sb.Append(sideToMove == PlayerType.Player1 ? '1' : '2');
         gameBoard.Cells.AppendKey(sb); // マスの状態（破壊・炎上・落とし穴）も局面に含める
+        match.AppendKey(sb);           // 超常魔法の解放・使用・世界の終わり（Prototype の hash.js と同じ）
         return sb.ToString();
     }
 
@@ -2187,6 +2236,164 @@ public class GameSystem : MonoBehaviour
         return type == PlayerType.Player1 ? player1 : player2;
     }
 
+    // ------------------------------------------------------------
+    //  超常魔法の解放（Prototype の turn.js の checkTranscendentUnlock・Game.js の showTranscendentUnlock）
+    // ------------------------------------------------------------
+
+    // owner が編成した超常魔法（なければ null）
+    public SkillDefinition GetTranscendentSkill(PlayerType owner)
+    {
+        Player p = PlayerOf(owner);
+        if (p == null || p.SkillDeck == null || p.SkillDeck.skills == null) return null;
+        foreach (SkillDefinition skill in p.SkillDeck.skills)
+        {
+            if (skill != null && skill.rank == SkillRank.Transcendent) return skill;
+        }
+        return null;
+    }
+
+    public bool IsTranscendentUnlocked(PlayerType owner) => match != null && match.IsTranscendentUnlocked(owner);
+    public bool IsTranscendentUsed(PlayerType owner) => match != null && match.IsTranscendentUsed(owner);
+
+    // 解放条件の達成状況（盤上の今の状態。魔法ボタンの下の表示用）
+    public TranscendentProgress GetTranscendentProgress(PlayerType owner)
+    {
+        return TranscendentRules.Progress(gameBoard, owner);
+    }
+
+    // 両プレイヤーの解放条件を調べ、満たしていれば解放する（以後は条件が崩れても解放のまま）。
+    // 超常魔法を編成していれば「超常魔法 解放！」のカットインを出す。
+    // 手番の始まりと、手番を続ける行動（2回行動・手番を使わない魔法）のあとに呼ぶ
+    void CheckTranscendentUnlock()
+    {
+        if (match == null || gameBoard == null || !IsInTurn) return;
+        foreach (PlayerType owner in new[] { PlayerType.Player1, PlayerType.Player2 })
+        {
+            if (match.IsTranscendentUnlocked(owner) || !TranscendentRules.Progress(gameBoard, owner).Met) continue;
+            match.UnlockTranscendent(owner);
+            SkillDefinition skill = GetTranscendentSkill(owner);
+            Debug.Log($"{TurnEndAction.SideName(owner)}：超常魔法の解放条件を満たした" + (skill != null ? $"（「{skill.skillName}」が使える。1対局に1回だけ）" : ""));
+            if (skill != null) unlockQueue.Enqueue(owner);
+        }
+        UpdateActivePlayerSkillUI();
+        if (unlockQueue.Count > 0 && !isShowingUnlock) ShowTranscendentUnlocks();
+    }
+
+    // 解放の演出：カットイン →（TranscendentUnlocked でスキルボタンに「解放！」）→ 少し待つ。その間は操作できない
+    async void ShowTranscendentUnlocks()
+    {
+        isShowingUnlock = true;
+        try
+        {
+            while (unlockQueue.Count > 0 && IsInTurn)
+            {
+                PlayerType owner = unlockQueue.Dequeue();
+                SkillDefinition skill = GetTranscendentSkill(owner);
+                if (skill == null) continue;
+                if (HandUIManager.Instance != null)
+                {
+                    HandUIManager.Instance.SetStatusText($"【超常魔法 解放！】 {TurnEndAction.SideName(owner)}の「{skill.skillName}」が使えるようになった（1対局に1回だけ）");
+                }
+                Color color = SkillRanks.ColorOf(SkillRank.Transcendent);
+                await CutInEffect.Instance.PlayAsync("超常魔法 解放！", $"{TurnEndAction.SideName(owner)}・「{skill.skillName}」が使えるようになった", color, destroyCancellationToken);
+                UpdateActivePlayerSkillUI();
+                TranscendentUnlocked?.Invoke(owner);
+                await Awaitable.WaitForSecondsAsync(0.8f, destroyCancellationToken);
+            }
+        }
+        catch (System.OperationCanceledException)
+        {
+            return; // シーンを離れた
+        }
+        finally
+        {
+            isShowingUnlock = false;
+        }
+        unlockQueue.Clear();
+        if (!IsInTurn) return;
+        UpdateActivePlayerSkillUI();
+        if (HandUIManager.Instance != null) HandUIManager.Instance.SetStatusText(IdleStatusText);
+    }
+
+    // ------------------------------------------------------------
+    //  天変地異・世界の終わり（Prototype の effects.js の shuffleCells・play.js の startWorldEnd・worldEndCollapse）
+    //  乱数は対局の乱数（match.Rng）を使う
+    // ------------------------------------------------------------
+
+    // 破壊されていないすべてのマスを、駒・マスの状態（炎上と残りターン・落とし穴）ごとランダムに入れ替える。
+    // 破壊マスは動かない。マスごとの移動なので、成り・火薬の爆発・炎上・落とし穴は発動しない（盾・必殺技の移動回数なども、そのまま駒と一緒に動く）。
+    // 盤面のデータだけ変える（見た目は呼び出し側が MagicFx.Cataclysm で飛ばす）。入れ替えの一覧を返す
+    public List<CellMove> ShuffleCells()
+    {
+        List<CellMove> moves = new List<CellMove>();
+        if (gameBoard == null || match == null) return moves;
+
+        List<Vector2Int> squares = new List<Vector2Int>();
+        for (int x = 0; x < BoardCells.Size; x++)
+        {
+            for (int y = 0; y < BoardCells.Size; y++)
+            {
+                if (!Cells.IsBroken(x, y)) squares.Add(new Vector2Int(x, y));
+            }
+        }
+        // squares[i] には、シャッフルした from[i] にあった駒・マスの状態が入る
+        List<Vector2Int> from = match.Rng.Shuffle(squares);
+        for (int i = 0; i < squares.Count; i++)
+        {
+            BoardCell cell = Cells.At(from[i].x, from[i].y);
+            moves.Add(new CellMove
+            {
+                From = from[i],
+                To = squares[i],
+                Piece = gameBoard.GetPieceAt(from[i].x, from[i].y),
+                Burning = cell != null && cell.IsBurning,
+                Trap = cell != null && cell.HasTrap,
+            });
+        }
+        gameBoard.RearrangePieces(from, squares);
+        Cells.Rearrange(from, squares);
+        return moves;
+    }
+
+    // 世界の終わりが進行中か（どちらかが発動した）
+    public bool IsWorldEndActive => match != null && match.IsWorldEndActive;
+
+    // 世界の終わりを始める（今のターンから。以後、ターンの終わりごとに WorldEndCollapse が崩す）
+    public void StartWorldEnd(PlayerType owner)
+    {
+        if (match == null) return;
+        match.StartWorldEnd(owner);
+        Debug.Log($"世界の終わりが始まった…… 1ターンごとに {MatchConfig.WorldEndCells} マスが崩れ落ちる（{TurnEndAction.SideName(owner)}が発動）");
+        WorldEndStarted?.Invoke(owner);
+    }
+
+    // 世界の終わりで崩れる候補：破壊されていないマスのうち、王将がいないマス
+    public List<Vector2Int> WorldEndCandidates()
+    {
+        List<Vector2Int> pool = new List<Vector2Int>();
+        if (gameBoard == null) return pool;
+        for (int x = 0; x < BoardCells.Size; x++)
+        {
+            for (int y = 0; y < BoardCells.Size; y++)
+            {
+                if (Cells.IsBroken(x, y)) continue;
+                GamePiece q = gameBoard.GetPieceAt(x, y);
+                if (q != null && q.type == PieceType.King) continue;
+                pool.Add(new Vector2Int(x, y));
+            }
+        }
+        return pool;
+    }
+
+    // 候補から n マスをランダムに選ぶ（対局の乱数。候補が n マス未満なら候補全部）
+    public List<Vector2Int> PickWorldEndCells(int n)
+    {
+        List<Vector2Int> pool = WorldEndCandidates();
+        if (match == null || pool.Count == 0 || n <= 0) return new List<Vector2Int>();
+        List<Vector2Int> shuffled = match.Rng.Shuffle(pool);
+        return shuffled.GetRange(0, Mathf.Min(n, shuffled.Count));
+    }
+
     // スキルを今の盤面で使えるか（エナジー・オンライン・効果の対象。手番中の操作の状態は UseSkill が見る）。スキルボタンの押せる／押せないにも使う
     public bool CanUseSkill(PlayerType player, SkillDefinition skill)
     {
@@ -2199,6 +2406,12 @@ public class GameSystem : MonoBehaviour
         if (skill == null || skill.effect == null) return "効果が設定されていません";
         Player owner = PlayerOf(player);
         if (owner == null) return "プレイヤーがいません";
+        if (skill.rank == SkillRank.Transcendent && match != null)
+        {
+            // 超常魔法：1 対局に 1 回だけ・解放条件を満たすまで使えない
+            if (match.IsTranscendentUsed(player)) return "使用済み：1対局に1回だけ";
+            if (!match.IsTranscendentUnlocked(player)) return "未解放：相手の駒が自陣にいて、盤上の駒数が相手より少ないときに解放";
+        }
         if (!owner.HasEnoughPoint(skill.cost)) return $"エナジー不足：あと {skill.cost - owner.Energy}";
         // 手番を使う魔法・剣などの演出は、まだオンライン対戦の通信に乗せていない
         if (skill.EndsTurn && IsOnlineMatch) return "オンライン対戦ではまだ使えません";
@@ -2209,7 +2422,7 @@ public class GameSystem : MonoBehaviour
     public void UseSkill(PlayerType player, int slotIndex)
     {
         // 成りの選択中・スキルや狙撃の対象選択中・演出中は使えない
-        if (isWaitingForPromoteChoice || IsSelectingSkillTarget || isSelectingSnipeTarget || isResolvingAction) return;
+        if (isWaitingForPromoteChoice || IsSelectingSkillTarget || isSelectingSnipeTarget || IsBusy) return;
         if (!IsInTurn) return;
 
         // 自分のターンであるかチェック
@@ -2271,6 +2484,7 @@ public class GameSystem : MonoBehaviour
 
         // コスト消費（発動の時点で払う。対象選択を取り消したときは払わない）
         targetPlayer.ConsumePoint(skill.cost);
+        if (skill.rank == SkillRank.Transcendent) match.MarkTranscendentUsed(player); // 超常魔法は 1 対局に 1 回
         UpdateActivePlayerSkillUI();
         Debug.Log($"プレイヤー {(player == PlayerType.Player1 ? "1" : "2")} が{rankLabel}「{skill.skillName}」を発動！（エナジー -{skill.cost}）");
         if (HandUIManager.Instance != null)
@@ -2351,6 +2565,7 @@ public class GameSystem : MonoBehaviour
             HandUIManager.Instance.SetStatusText($"【{rankLabel}】 {skill.skillName} 発動！" +
                 (string.IsNullOrEmpty(IdleStatusText) ? "" : "\n" + IdleStatusText));
         }
+        CheckTranscendentUnlock(); // 手番を続ける行動のあとも解放を判定する（Prototype の afterAction）
     }
 
     void BeginSkillTargetSelection(SkillDefinition skill, SkillContext context)

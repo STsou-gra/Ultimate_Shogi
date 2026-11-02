@@ -202,6 +202,34 @@ public class GameBoard : MonoBehaviour
     }
 
     // ========================================================
+    // 超常魔法「天変地異」用：駒をまとめて並べ替える（データだけ。見た目は MagicFx が飛ばす）。
+    // from[i] にいた駒が to[i] へ移る（from と to は同じマスの集まりを並べ替えたもの）。駒の X・Y も更新する
+    // ========================================================
+    public void RearrangePieces(IReadOnlyList<Vector2Int> from, IReadOnlyList<Vector2Int> to)
+    {
+        if (from == null || to == null || from.Count != to.Count) return;
+        GamePiece[] before = (GamePiece[])boardData.Clone();
+        foreach (Vector2Int f in from)
+        {
+            int index = GameHelper.CalcPanelNum(f.x, f.y);
+            if (index >= 0) boardData[index] = null;
+        }
+        for (int i = 0; i < from.Count; i++)
+        {
+            int src = GameHelper.CalcPanelNum(from[i].x, from[i].y);
+            int dst = GameHelper.CalcPanelNum(to[i].x, to[i].y);
+            if (src < 0 || dst < 0) continue;
+            GamePiece piece = before[src];
+            boardData[dst] = piece;
+            if (piece != null)
+            {
+                piece.X = to[i].x;
+                piece.Y = to[i].y;
+            }
+        }
+    }
+
+    // ========================================================
     // スキル用：盤面上の2つの座標にある駒を「データ」も「見た目」も入れ替える
     // ========================================================
     public void SwapPiecePosition(Vector2Int posA, Vector2Int posB)
