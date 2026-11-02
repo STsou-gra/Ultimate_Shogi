@@ -42,6 +42,16 @@ public class SpecialContext
         Fx = fx;
     }
 
+    // 発動する駒がない行動（魔法スキル）の時間軸。Caster は null
+    public SpecialContext(GameSystem system, GameBoard board, PlayerType owner, SpecialMoveFx fx)
+    {
+        GameSystem = system;
+        Board = board;
+        Caster = null;
+        Owner = owner;
+        Fx = fx;
+    }
+
     // ------------------------------------------------------------
     //  盤面を見る（判定だけ。CanUse・GetTargets からも使う）
     // ------------------------------------------------------------
@@ -151,7 +161,7 @@ public class SpecialContext
 
             HitTime = arrive;
             HitDirection = dir;
-            if (!GameSystem.CapturePiece(target, p.player))
+            if (!GameSystem.CapturePiece(target, p.player, p))
             {
                 // 取りが防がれた（盾など）：ぶつかって元のマスへ戻る
                 if (Fx != null) Fx.Bump(p, dir, Time);
@@ -167,13 +177,14 @@ public class SpecialContext
         return EnterCell(p, tx, ty);
     }
 
-    // 相手の駒 target を取る（CapturePiece）。dir は飛ばされる向き（演出用）。取れたら true
-    public bool Capture(GamePiece target, Vector2Int dir)
+    // 相手の駒 target を取る（CapturePiece）。dir は飛ばされる向き（演出用）。attacker は取ろうとした駒（省略すると Caster）。
+    // 取れたら true（盾で防がれたら false）
+    public bool Capture(GamePiece target, Vector2Int dir, GamePiece attacker = null)
     {
         if (!IsAlive(target)) return false;
         HitTime = Time;
         HitDirection = dir;
-        return GameSystem.CapturePiece(target, Owner);
+        return GameSystem.CapturePiece(target, Owner, attacker != null ? attacker : Caster);
     }
 
     // (x, y) の火薬を爆発させる（爆発の演出は今の時刻から）

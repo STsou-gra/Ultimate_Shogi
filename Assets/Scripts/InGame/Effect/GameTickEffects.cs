@@ -6,6 +6,7 @@ using TMPro;
 // 毎フレームの演出（プロトタイプ index.html の Game.tick の移植）
 // ・sin(t*5) のパルスで 必殺技オーラ・スキルパネルの枠・使えるスキルボタン・手番テキストを明滅
 // ・オーラ中の駒から光の粒、火薬の導火線から火花、狙撃手のスコープの赤い光の明滅、背景を漂う火の粉
+// ・盾状態の駒に水色のバリア（六角形。現れるときは大きく出て縮み、sin(t*3) でゆらめく）
 // ・盤の外周の発光 sin(t*1.5)、移動先ハイライトの明滅 sin(t*6)
 // 粒の発生は Random.value < dt * N の確率方式（フレームレートに依存しない）
 // シーンに置かなくても GameSystem が自動で追加する。参照を指定しなければシーンから探す
@@ -39,6 +40,7 @@ public class GameTickEffects : MonoBehaviour
     private static readonly Color[] EmberColors = { Hex(0xff8a3d), Hex(0xffd54a), Hex(0xb388ff), Hex(0xff5277) };
     private static readonly Color SkillGlowColor = Hex(0xffd54a);
     private static readonly Color BoardGlowColor = Hex(0xffb74d);
+    private static readonly Color BarrierColor = Hex(0x4fc3f7);
 
     // 駒ごとの演出オブジェクト（駒の子に作るので、駒と一緒に破棄される）
     private class PieceFx
@@ -48,6 +50,10 @@ public class GameTickEffects : MonoBehaviour
         public SpriteRenderer auraRing;
         public SpriteRenderer spark;
         public SpriteRenderer scope;
+        public Transform barrier;
+        public SpriteRenderer barrierGlow;
+        public SpriteRenderer barrierFace;
+        public float barrierAge; // バリアが現れてからの秒数（現れる演出用）
     }
 
     private GameSystem gameSystem;
@@ -152,7 +158,8 @@ public class GameTickEffects : MonoBehaviour
         foreach (GamePiece piece in gameBoard.GetBoardData())
         {
             if (piece == null) continue;
-            bool needsFx = piece.isSpecialReady || piece.hasFuse || piece.hasScope;
+            bool shielded = piece.hasShield || Time.time < piece.barrierHoldUntil;
+            bool needsFx = piece.isSpecialReady || piece.hasFuse || piece.hasScope || shielded;
             PieceFx fx;
             if (!pieceFx.TryGetValue(piece, out fx))
             {
@@ -219,6 +226,30 @@ public class GameTickEffects : MonoBehaviour
             else if (fx.scope != null)
             {
                 fx.scope.gameObject.SetActive(false);
+            }
+
+            // 盾のバリア（Prototype の pieceView.js の barrier・Game.tick のゆらめき・events.js の shieldGiven）
+            if (shielded)
+            {
+                if (fx.barrier == null) CreateBarrier(piece, fx);
+                if (!fx.barrier.gameObject.activeSelf)
+                {
+                    fx.barrier.gameObject.SetActive(true);
+                    fx.barrierAge = 0f;
+                }
+                fx.barrierAge += dt;
+                // 大きく出て縮む（0.45 秒・back.out(2.5)）、0.3 秒でフェードイン
+                float k = Mathf.Clamp01(fx.barrierAge / 0.45f);
+                float back = 1f + 3.5f * Mathf.Pow(k - 1f, 3f) + 2.5f * Mathf.Pow(k - 1f, 2f);
+                fx.barrier.localScale = Vector3.one * Mathf.LerpUnclamped(1.8f, 1f, back);
+                float appear = Mathf.Clamp01(fx.barrierAge / 0.3f);
+                float flicker = 0.55f + 0.45f * Mathf.Sin(time * 3f + piece.GetInstanceID() * 0.37f);
+                fx.barrierGlow.color = WithAlpha(BarrierColor, appear * flicker);
+                fx.barrierFace.color = WithAlpha(Color.white, appear);
+            }
+            else if (fx.barrier != null && fx.barrier.gameObject.activeSelf)
+            {
+                fx.barrier.gameObject.SetActive(false);
             }
         }
 
@@ -363,6 +394,17 @@ public class GameTickEffects : MonoBehaviour
         fx.auraRing = CreateChildSprite(fx.aura, "Ring", ringSprite, order, new Vector2(0.95f, 1.03f));
     }
 
+    // 盾のバリア：駒の上に重ねる（面はうっすらしているので駒は透けて見える）
+    void CreateBarrier(GamePiece piece, PieceFx fx)
+    {
+        int order = MaxSortingOrder(piece) + 1;
+        fx.barrier = new GameObject("ShieldBarrier").transform;
+        fx.barrier.SetParent(piece.transform, false);
+        fx.barrierGlow = CreateChildSprite(fx.barrier, "Glow", MagicSprites.BarrierGlow, order, Vector2.one);
+        fx.barrierFace = CreateChildSprite(fx.barrier, "Face", MagicSprites.BarrierFace, order + 1, Vector2.one);
+        fx.barrier.gameObject.SetActive(false);
+    }
+
     void CreateSpark(GamePiece piece, PieceFx fx)
     {
         fx.spark = CreateChildSprite(piece.transform, "FuseSpark", glowSprite, MinSortingOrder(piece) + 1, Vector2.one);
@@ -384,6 +426,17 @@ public class GameTickEffects : MonoBehaviour
         sr.sprite = sprite;
         sr.sortingOrder = order;
         return sr;
+    }
+
+    static int MaxSortingOrder(GamePiece piece)
+    {
+        int order = int.MinValue;
+        foreach (SpriteRenderer sr in piece.GetComponentsInChildren<SpriteRenderer>(true))
+        {
+            if (sr.gameObject.name == "ShieldBarrier" || (sr.transform.parent != null && sr.transform.parent.name == "ShieldBarrier")) continue;
+            order = Mathf.Max(order, sr.sortingOrder);
+        }
+        return order == int.MinValue ? 10 : order;
     }
 
     static int MinSortingOrder(GamePiece piece)

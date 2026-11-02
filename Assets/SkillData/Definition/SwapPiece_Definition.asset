@@ -9,11 +9,14 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 0}
+  m_Script: {fileID: 11500000, guid: 587807e885a34223916094a16ba027e7, type: 3}
   m_Name: SwapPiece_Definition
   m_EditorClassIdentifier: Assembly-CSharp::SkillDefinition
-  skillName: Swap Piece
+  skillName: "\u99D2\u5165\u66FF"
   icon: {fileID: -4706692235080993762, guid: 542c1c406ec714741b50b50b292d2b48, type: 3}
   cost: 4
-  description: "\u99D2\u306E\u4F4D\u7F6E\u3092\u4EA4\u63DB\u3059\u308B\u3002"
+  description: "\u81EA\u5206\u306E\u99D2\u30922\u3064\u9078\u3073\u3001\u4F4D\u7F6E\u3092\u5165\u308C\u66FF\u3048\u308B\u3002"
   effect: {fileID: 11400000, guid: f88fa6a1a396e41a59001cb953bcbf9f, type: 2}
+  rank: 0
+  endsTurn: 0
+  color: {r: 0.7019608, g: 0.5333333, b: 1, a: 1}

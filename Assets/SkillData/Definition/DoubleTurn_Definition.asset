@@ -9,11 +9,14 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 0}
+  m_Script: {fileID: 11500000, guid: 587807e885a34223916094a16ba027e7, type: 3}
   m_Name: DoubleTurn_Definition
   m_EditorClassIdentifier: Assembly-CSharp::SkillDefinition
-  skillName: Double Turn
+  skillName: "2\u56DE\u884C\u52D5"
   icon: {fileID: 7242056650679447746, guid: ea3d86418c607456691f196c1e02b32a, type: 3}
   cost: 2
-  description: "2\u56DE\u884C\u52D5\u3067\u304D\u308B"
+  description: "\u3053\u306E\u30BF\u30FC\u30F3\u3001\u3082\u30461\u56DE\u7D9A\u3051\u3066\u884C\u52D5\u3067\u304D\u308B\u3002"
   effect: {fileID: 11400000, guid: e40ed614f0a64456b98276d2d3e176f6, type: 2}
+  rank: 0
+  endsTurn: 0
+  color: {r: 1, g: 0.8352941, b: 0.2901961, a: 1}

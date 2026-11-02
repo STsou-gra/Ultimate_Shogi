@@ -15,6 +15,10 @@ public static class MatchConfig
     // true にすると駒錬成で手番を消費する（Prototype の CONFIG.FORGE_ENDS_TURN）
     public static readonly bool ForgeEndsTurn = false;
 
+    // true なら魔法スキルの発動で手番を消費する（Prototype の CONFIG.MAGIC_ENDS_TURN）。
+    // スキルごとの SkillDefinition.endsTurn が true のスキルだけが対象（2回行動など、今までのスキルは false のまま）
+    public static readonly bool MagicEndsTurn = true;
+
     // true にすると爆発範囲内の火薬も誘爆する（Prototype の CONFIG.CHAIN_EXPLOSION）
     public static readonly bool ChainExplosion = false;
 
