@@ -7,7 +7,9 @@ using TMPro;
 // ・sin(t*5) のパルスで 必殺技オーラ・スキルパネルの枠・使えるスキルボタン・手番テキストを明滅
 // ・オーラ中の駒から光の粒、火薬の導火線から火花、狙撃手のスコープの赤い光の明滅、背景を漂う火の粉
 // ・盾状態の駒に水色のバリア（六角形。現れるときは大きく出て縮み、sin(t*3) でゆらめく）
+// ・ファランクス状態の駒に金色の槍（前方 1×3 へ構えた穂先。現れるときは小さく出て広がり、sin(t*4) で光りながら前へ小さく突き出す）
 // ・盤の外周の発光 sin(t*1.5)、移動先ハイライトの明滅 sin(t*6)
+// ・世界の終わり（超常魔法）の進行中は、盤の外周の発光が赤く速く sin(t*4) 脈打ち、背景の火の粉が赤くなる
 // 粒の発生は Random.value < dt * N の確率方式（フレームレートに依存しない）
 // シーンに置かなくても GameSystem が自動で追加する。参照を指定しなければシーンから探す
 public class GameTickEffects : MonoBehaviour
@@ -40,7 +42,10 @@ public class GameTickEffects : MonoBehaviour
     private static readonly Color[] EmberColors = { Hex(0xff8a3d), Hex(0xffd54a), Hex(0xb388ff), Hex(0xff5277) };
     private static readonly Color SkillGlowColor = Hex(0xffd54a);
     private static readonly Color BoardGlowColor = Hex(0xffb74d);
+    private static readonly Color DoomGlowColor = Hex(0xff2a2a);
+    private static readonly Color[] DoomEmberColors = { Hex(0xff1744), Hex(0xd50000), Hex(0xff6d00), Hex(0x8d6e63) };
     private static readonly Color BarrierColor = Hex(0x4fc3f7);
+    private static readonly Color SpearColor = Hex(0xffc400);
 
     // 駒ごとの演出オブジェクト（駒の子に作るので、駒と一緒に破棄される）
     private class PieceFx
@@ -54,6 +59,10 @@ public class GameTickEffects : MonoBehaviour
         public SpriteRenderer barrierGlow;
         public SpriteRenderer barrierFace;
         public float barrierAge; // バリアが現れてからの秒数（現れる演出用）
+        public Transform spear;
+        public SpriteRenderer spearGlow;
+        public SpriteRenderer spearFace;
+        public float spearAge;   // 槍が現れてからの秒数（現れる演出用）
     }
 
     private GameSystem gameSystem;
@@ -129,11 +138,12 @@ public class GameTickEffects : MonoBehaviour
             sr.color = c;
         }
 
-        // 盤の外周の発光
+        // 盤の外周の発光（世界の終わりの進行中は赤く速く脈打つ）
+        bool doom = gameSystem != null && gameSystem.IsWorldEndActive;
         if (boardGlow != null)
         {
-            Color c = BoardGlowColor;
-            c.a = 0.4f * (0.6f + 0.4f * Mathf.Sin(t * 1.5f));
+            Color c = doom ? DoomGlowColor : BoardGlowColor;
+            c.a = 0.4f * (0.6f + 0.4f * Mathf.Sin(t * (doom ? 4f : 1.5f)));
             boardGlow.color = c;
         }
 
@@ -146,7 +156,7 @@ public class GameTickEffects : MonoBehaviour
             float halfW = halfH * cam.aspect;
             Vector2 pos = new Vector2(Random.Range(-halfW, halfW), -halfH - 10f * PX);
             particles.Spawn(bgLayer, pos, LocalVelocity(Random.Range(-15f, 15f), Random.Range(-70f, -25f)),
-                Pick(EmberColors), Random.Range(5f, 10f), GlowScale(Random.Range(0.08f, 0.25f)), ORDER_BG,
+                Pick(doom ? DoomEmberColors : EmberColors), Random.Range(5f, 10f), GlowScale(Random.Range(0.08f, 0.25f)), ORDER_BG,
                 drag: 1f, alpha: 0.5f, shrink: false);
         }
     }
@@ -159,7 +169,7 @@ public class GameTickEffects : MonoBehaviour
         {
             if (piece == null) continue;
             bool shielded = piece.hasShield || Time.time < piece.barrierHoldUntil;
-            bool needsFx = piece.isSpecialReady || piece.hasFuse || piece.hasScope || shielded;
+            bool needsFx = piece.isSpecialReady || piece.hasFuse || piece.hasScope || shielded || piece.hasPhalanx;
             PieceFx fx;
             if (!pieceFx.TryGetValue(piece, out fx))
             {
@@ -250,6 +260,42 @@ public class GameTickEffects : MonoBehaviour
             else if (fx.barrier != null && fx.barrier.gameObject.activeSelf)
             {
                 fx.barrier.gameObject.SetActive(false);
+            }
+
+            // ファランクスの槍（Prototype の pieceView.js の spear・Game.tick・events.js の phalanxGiven / phalanxStep）。
+            // 駒のローカルの +Y が前（後手の駒は 180°回っている）なので、槍はいつも駒の前方を向く
+            if (piece.hasPhalanx)
+            {
+                if (fx.spear == null) CreateSpear(piece, fx);
+                if (!fx.spear.gameObject.activeSelf)
+                {
+                    fx.spear.gameObject.SetActive(true);
+                    fx.spearAge = 0f;
+                }
+                fx.spearAge += dt;
+                // 小さく出て広がる（0.5 秒・back.out(2.5)）、0.3 秒でフェードイン
+                float k = Mathf.Clamp01(fx.spearAge / 0.5f);
+                float back = 1f + 3.5f * Mathf.Pow(k - 1f, 3f) + 2.5f * Mathf.Pow(k - 1f, 2f);
+                float scale = Mathf.LerpUnclamped(0.3f, 1f, back);
+                // 自動行動のときに弾む（1.3 倍から 0.35 秒・back.out(3)）
+                float pulseAge = Time.time - piece.spearPulseAt;
+                if (pulseAge >= 0f && pulseAge < 0.35f)
+                {
+                    float pk = pulseAge / 0.35f;
+                    float pback = 1f + 4f * Mathf.Pow(pk - 1f, 3f) + 3f * Mathf.Pow(pk - 1f, 2f);
+                    scale *= Mathf.LerpUnclamped(1.3f, 1f, pback);
+                }
+                fx.spear.localScale = Vector3.one * scale;
+                // 穂先が光りながら、前へ小さく突き出す
+                float s = Mathf.Sin(time * 4f + piece.GetInstanceID() * 0.37f);
+                fx.spear.localPosition = new Vector3(0f, (1.5f + 1.5f * s) * PX, 0f);
+                float appear = Mathf.Clamp01(fx.spearAge / 0.3f);
+                fx.spearGlow.color = WithAlpha(SpearColor, appear * (0.5f + 0.5f * s));
+                fx.spearFace.color = WithAlpha(Color.white, appear);
+            }
+            else if (fx.spear != null && fx.spear.gameObject.activeSelf)
+            {
+                fx.spear.gameObject.SetActive(false);
             }
         }
 
@@ -398,11 +444,22 @@ public class GameTickEffects : MonoBehaviour
     void CreateBarrier(GamePiece piece, PieceFx fx)
     {
         int order = MaxSortingOrder(piece) + 1;
-        fx.barrier = new GameObject("ShieldBarrier").transform;
+        fx.barrier = new GameObject(BarrierName).transform;
         fx.barrier.SetParent(piece.transform, false);
         fx.barrierGlow = CreateChildSprite(fx.barrier, "Glow", MagicSprites.BarrierGlow, order, Vector2.one);
         fx.barrierFace = CreateChildSprite(fx.barrier, "Face", MagicSprites.BarrierFace, order + 1, Vector2.one);
         fx.barrier.gameObject.SetActive(false);
+    }
+
+    // ファランクスの槍：駒の上に重ねる（バリアよりさらに手前）
+    void CreateSpear(GamePiece piece, PieceFx fx)
+    {
+        int order = MaxSortingOrder(piece) + 3;
+        fx.spear = new GameObject(SpearName).transform;
+        fx.spear.SetParent(piece.transform, false);
+        fx.spearGlow = CreateChildSprite(fx.spear, "Glow", MagicSprites.SpearGlow, order, Vector2.one);
+        fx.spearFace = CreateChildSprite(fx.spear, "Face", MagicSprites.SpearFace, order + 1, Vector2.one);
+        fx.spear.gameObject.SetActive(false);
     }
 
     void CreateSpark(GamePiece piece, PieceFx fx)
@@ -428,12 +485,21 @@ public class GameTickEffects : MonoBehaviour
         return sr;
     }
 
+    private const string BarrierName = "ShieldBarrier";
+    private const string SpearName = "PhalanxSpear";
+
+    // 駒に重ねる表示（バリア・槍）。駒の描画順を調べるときは数えない
+    static bool IsOverlay(Transform t)
+    {
+        return t.name == BarrierName || t.name == SpearName;
+    }
+
     static int MaxSortingOrder(GamePiece piece)
     {
         int order = int.MinValue;
         foreach (SpriteRenderer sr in piece.GetComponentsInChildren<SpriteRenderer>(true))
         {
-            if (sr.gameObject.name == "ShieldBarrier" || (sr.transform.parent != null && sr.transform.parent.name == "ShieldBarrier")) continue;
+            if (IsOverlay(sr.transform) || (sr.transform.parent != null && IsOverlay(sr.transform.parent))) continue;
             order = Mathf.Max(order, sr.sortingOrder);
         }
         return order == int.MinValue ? 10 : order;

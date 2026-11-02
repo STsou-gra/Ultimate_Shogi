@@ -67,6 +67,9 @@ public class BoardCells
     // マスの状態が変わった（x = 段, y = 筋, 変化の種類）
     public event System.Action<int, int, CellChange> Changed;
 
+    // マスの状態が入れ替わった（Rearrange。from[i] にあった状態が to[i] へ移った）。見た目もマスごと付け替える
+    public event System.Action<IReadOnlyList<Vector2Int>, IReadOnlyList<Vector2Int>> Rearranged;
+
     public BoardCells()
     {
         for (int i = 0; i < cells.Length; i++) cells[i] = new BoardCell();
@@ -167,6 +170,23 @@ public class BoardCells
             }
         }
         return ended;
+    }
+
+    // マスの状態（炎上と終わるターン・落とし穴）を丸ごと入れ替える（超常魔法「天変地異」。Prototype の effects.js の shuffleCells）。
+    // from[i] のマスの状態が to[i] へ移る（from と to は同じマスの集まりを並べ替えたもの）。
+    // マスごと動くので、炎上・落とし穴は発動しない（そこにいる駒は GameBoard.RearrangePieces で一緒に動かす）
+    public void Rearrange(IReadOnlyList<Vector2Int> from, IReadOnlyList<Vector2Int> to)
+    {
+        if (from == null || to == null || from.Count != to.Count) return;
+        BoardCell[] before = (BoardCell[])cells.Clone();
+        for (int i = 0; i < from.Count; i++)
+        {
+            int src = GameHelper.CalcPanelNum(from[i].x, from[i].y);
+            int dst = GameHelper.CalcPanelNum(to[i].x, to[i].y);
+            if (src < 0 || dst < 0) continue;
+            cells[dst] = before[src];
+        }
+        Rearranged?.Invoke(from, to);
     }
 
     // デバッグ用：マスを通常に戻す（破壊マスも戻る。対局のルールでは使わない）。変わったら true

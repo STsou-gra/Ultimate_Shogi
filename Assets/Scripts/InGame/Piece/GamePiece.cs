@@ -39,6 +39,13 @@ public abstract class GamePiece : MonoBehaviour
     // 盾が割れても、攻撃が届くこの時刻（Time.time）まではバリアを出しておく（MagicFx が設定する。見た目だけ）
     [System.NonSerialized] public float barrierHoldUntil = 0f;
 
+    // ファランクス状態（必殺魔法「ファランクス」。Prototype の phalanx）。盾状態の駒にだけ付けられる（盾が割れても続く）。
+    // 持ち主の手番の行動のあと・手番交代の前に自動で 1 マス前進し、前方 1×3 の相手の駒を取る（PhalanxAdvance）。
+    // 取られて持ち駒になると駒の GameObject ごと消えるので、打ち直した駒は普通の駒に戻る。金色の槍のマーカーが出る（GameTickEffects）
+    public bool hasPhalanx = false;
+    // 槍のマーカーが弾む演出を始めた時刻（Time.time。MagicFx が自動行動のときに設定する。見た目だけ）
+    [System.NonSerialized] public float spearPulseAt = -10f;
+
     // マスの状態（破壊・炎上・落とし穴）。GameBoard が駒を置くときに設定する
     public BoardCells Cells { get; set; }
 

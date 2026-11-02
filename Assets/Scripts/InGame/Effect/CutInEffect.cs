@@ -182,6 +182,72 @@ public class CutInEffect : MonoBehaviour
         linked.Token.ThrowIfCancellationRequested();
     }
 
+    /// <summary>
+    /// 小さなカットイン（画面を暗くしない細い帯＋名前。自動行動の合図など、短く軽い演出。Prototype の fx.miniCutIn）。
+    /// 演出が終わるまで待つ（約1.05秒）。y は帯の中心（画面の中央からの論理ピクセル。上が +）
+    /// </summary>
+    public async Awaitable PlayMiniAsync(string name, string sub, Color color, CancellationToken cancellationToken = default, float y = 0f)
+    {
+        const float BW = W * 1.5f;
+        var root = CreateRect("MiniCutIn", canvasRect);
+        Stretch(root, 300f);
+        var materials = new List<Material>();
+
+        // 細い帯（左の画面外からスタート。UI は y 上向きなので回転の符号はプロトタイプと逆）
+        var band = CreateRect("Band", root);
+        band.anchoredPosition = new Vector2(-W * 0.8f - W / 2f, y);
+        band.localRotation = Quaternion.Euler(0f, 0f, 0.06f * Mathf.Rad2Deg);
+        CreateImage("Back", band, new Color(0f, 0f, 0f, 0.8f)).rectTransform.sizeDelta = new Vector2(BW, 80f);
+        CreateImage("Tint", band, new Color(color.r, color.g, color.b, 0.45f)).rectTransform.sizeDelta = new Vector2(BW, 80f);
+        var edgeTop = CreateImage("EdgeTop", band, new Color(1f, 1f, 1f, 0.9f)).rectTransform;
+        edgeTop.sizeDelta = new Vector2(BW, 3f);
+        edgeTop.anchoredPosition = new Vector2(0f, 42.5f);
+        var edgeBottom = CreateImage("EdgeBottom", band, new Color(1f, 1f, 1f, 0.9f)).rectTransform;
+        edgeBottom.sizeDelta = new Vector2(BW, 3f);
+        edgeBottom.anchoredPosition = new Vector2(0f, -42.5f);
+
+        var subText = CreateText("Sub", band, sub, 15f, 3f);
+        subText.color = Color.white;
+        subText.rectTransform.anchoredPosition = new Vector2(0f, 24f);
+        materials.Add(SetupTextMaterial(subText, new Color(0f, 0f, 0f, 1f), 0.3f, null));
+
+        var nameText = CreateText("Name", band, name, 48f, 8f);
+        nameText.color = Color.white;
+        nameText.enableVertexGradient = true;
+        Color top = Color.white, bottom = new Color32(0xff, 0xf5, 0x9d, 0xff);
+        nameText.colorGradient = new VertexGradient(top, top, bottom, bottom);
+        nameText.rectTransform.anchoredPosition = new Vector2(0f, -8f);
+        nameText.rectTransform.localScale = Vector3.one * 1.8f;
+        materials.Add(SetupTextMaterial(nameText, new Color32(0x1a, 0x00, 0x00, 0xff), 0.25f, color));
+
+        var seq = DOTween.Sequence();
+        seq.Insert(0f, band.DOAnchorPosX(0f, 0.2f).SetEase(Ease.OutCubic));
+        seq.Insert(0.08f, nameText.rectTransform.DOScale(1f, 0.25f).SetEase(Ease.OutBack, 2f));
+        seq.InsertCallback(0.2f, () =>
+        {
+            Shake(root, 5f, 0.2f);
+            Burst(new Color[] { color, Color.white }, 24, 380f, 0.6f, new Vector2(0f, y));
+        });
+        seq.Insert(0.85f, band.DOAnchorPosX(W * 1.8f - W / 2f, 0.2f).SetEase(Ease.InCubic));
+
+        var completion = new AwaitableCompletionSource();
+        seq.OnKill(() => completion.TrySetResult());
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, destroyCancellationToken);
+        using var registration = linked.Token.Register(() => seq.Kill());
+        try
+        {
+            await completion.Awaitable;
+        }
+        finally
+        {
+            StopShake();
+            if (root != null) Destroy(root.gameObject);
+            foreach (var m in materials) Destroy(m);
+        }
+        linked.Token.ThrowIfCancellationRequested();
+    }
+
     // ---- 演出パーツ ---------------------------------------------------------
 
     /// <summary>減衰付きのランダム揺れ。カットイン自体とカメラ（盤面）を同時に揺らす</summary>
@@ -238,6 +304,12 @@ public class CutInEffect : MonoBehaviour
     /// <summary>画面中央から放射状に飛び散るパーティクル</summary>
     private void Burst(Color[] colors, int count, float speed, float life)
     {
+        Burst(colors, count, speed, life, Vector2.zero);
+    }
+
+    /// <summary>center（画面中央からの論理ピクセル）から放射状に飛び散るパーティクル</summary>
+    private void Burst(Color[] colors, int count, float speed, float life, Vector2 center)
+    {
         for (int i = 0; i < count; i++)
         {
             float a = Random.value * Mathf.PI * 2f;
@@ -248,6 +320,7 @@ public class CutInEffect : MonoBehaviour
             float scale = 0.25f * Random.Range(0.6f, 1.3f);
             image.rectTransform.localScale = Vector3.one * scale;
             float l = life * Random.Range(0.6f, 1.2f);
+            image.rectTransform.anchoredPosition = center;
             particles.Add(new Particle
             {
                 rect = image.rectTransform,

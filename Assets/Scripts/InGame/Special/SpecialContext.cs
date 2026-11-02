@@ -187,6 +187,16 @@ public class SpecialContext
         return GameSystem.CapturePiece(target, Owner, attacker != null ? attacker : Caster);
     }
 
+    // 駒 q を消失させる（VanishPiece。エナジー・持ち駒化なし。盾では防げない）。dir は飛ばされる向き（演出用。(0,0) ならその場で消える）。
+    // 隕石・破壊砲など。火薬もこれで消すと爆発しない。消えたら true
+    public bool Vanish(GamePiece q, string reason, Vector2Int dir)
+    {
+        if (!IsAlive(q)) return false;
+        HitTime = Time;
+        HitDirection = dir;
+        return GameSystem.VanishPiece(q, reason);
+    }
+
     // (x, y) の火薬を爆発させる（爆発の演出は今の時刻から）
     public void Explode(int x, int y)
     {
