@@ -297,7 +297,7 @@ public static class CheckRules
         for (int from = 0; from < cells.Length; from++)
         {
             GamePiece piece = cells[from];
-            if (piece == null || piece.player != defender) continue;
+            if (piece == null || piece.player != defender || piece.isUndead) continue; // アンデッドは持ち主が動かせない
 
             // 狙撃手がいれば、打った歩を撃ち抜いて王手を外せる
             if (PieceRules.IsSniper(piece.type)) return true;

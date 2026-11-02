@@ -14,6 +14,7 @@ using DG.Tweening;
 //  隕石     … 落下予告（範囲が赤く明滅）→ 斜め上から光の尾を引いて落下 → 着弾（爆発・閃光・衝撃波・土くれ・「隕石落下!!」）
 //  破壊砲   … 充填（範囲が明滅・発射口に光が集まる）→ 盤の端から端へ極太の破壊光線 →「破壊!!」
 //  天変地異・世界の終わり（超常魔法）… MagicFx.Transcendent.cs
+//  アンデッド・パラダイス（超常魔法）… MagicFx.Undead.cs
 //
 // 盤面のデータはすぐ変わるので、見た目は SkillContext.Timeline の時刻（発動からの秒数）に合わせて再生する。
 // シーンに置かなくても GameSystem が自動で追加する
@@ -62,6 +63,7 @@ public partial class MagicFx : MonoBehaviour
             gameSystem.ShieldGiven += OnShieldGiven;
             gameSystem.ShieldBroken += OnShieldBroken;
             gameSystem.PhalanxGiven += OnPhalanxGiven;
+            gameSystem.PieceDefeated += OnUndeadDefeated;
         }
     }
 
@@ -72,6 +74,7 @@ public partial class MagicFx : MonoBehaviour
             gameSystem.ShieldGiven -= OnShieldGiven;
             gameSystem.ShieldBroken -= OnShieldBroken;
             gameSystem.PhalanxGiven -= OnPhalanxGiven;
+            gameSystem.PieceDefeated -= OnUndeadDefeated;
         }
     }
 

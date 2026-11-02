@@ -18,7 +18,11 @@ public abstract class TurnEndAction
     // 小さなカットインの名前・サブタイトル・色（名前が空なら出さない）
     public virtual string CutInName => "";
     public virtual string GetCutInSub(PlayerType owner) => "";
+    // 盤面を見てサブタイトルを作るとき（「アンデッド 3 体」など）はこちらを書く
+    public virtual string GetCutInSub(GameSystem system, PlayerType owner) => GetCutInSub(owner);
     public virtual Color Color => Color.white;
+    // 小さなカットインの名前の色・粒の色（null なら既定の見た目）
+    public virtual MiniCutInStyle CutInStyle => null;
 
     // 動いている間の案内文
     public virtual string GetStatusText(PlayerType owner) => $"{SideName(owner)}の自動行動";

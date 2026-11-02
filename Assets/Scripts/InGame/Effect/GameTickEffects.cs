@@ -8,6 +8,8 @@ using TMPro;
 // ・オーラ中の駒から光の粒、火薬の導火線から火花、狙撃手のスコープの赤い光の明滅、背景を漂う火の粉
 // ・盾状態の駒に水色のバリア（六角形。現れるときは大きく出て縮み、sin(t*3) でゆらめく）
 // ・ファランクス状態の駒に金色の槍（前方 1×3 へ構えた穂先。現れるときは小さく出て広がり、sin(t*4) で光りながら前へ小さく突き出す）
+// ・アンデッドの駒に紫の瘴気（後ろでゆらめく。sin(t*2.2)）と緑の鬼火（2 つが周りを回り、明滅しながら漂う）、立ち上る緑の火の粉
+//   （駒の本体を紫がかった半透明にするのは GamePiece.MakeUndead）
 // ・盤の外周の発光 sin(t*1.5)、移動先ハイライトの明滅 sin(t*6)
 // ・世界の終わり（超常魔法）の進行中は、盤の外周の発光が赤く速く sin(t*4) 脈打ち、背景の火の粉が赤くなる
 // 粒の発生は Random.value < dt * N の確率方式（フレームレートに依存しない）
@@ -46,6 +48,10 @@ public class GameTickEffects : MonoBehaviour
     private static readonly Color[] DoomEmberColors = { Hex(0xff1744), Hex(0xd50000), Hex(0xff6d00), Hex(0x8d6e63) };
     private static readonly Color BarrierColor = Hex(0x4fc3f7);
     private static readonly Color SpearColor = Hex(0xffc400);
+    // アンデッド（Prototype の config.js の UNDEAD_COLORS）
+    public static readonly Color UndeadMiasmaColor = Hex(0x9c4dff);
+    public static readonly Color UndeadVeilColor = Hex(0x4a148c);
+    public static readonly Color[] UndeadFireColors = { Hex(0x76ff03), Hex(0xb2ff59), Hex(0x69f0ae), Hex(0xccff90) };
 
     // 駒ごとの演出オブジェクト（駒の子に作るので、駒と一緒に破棄される）
     private class PieceFx
@@ -63,6 +69,10 @@ public class GameTickEffects : MonoBehaviour
         public SpriteRenderer spearGlow;
         public SpriteRenderer spearFace;
         public float spearAge;   // 槍が現れてからの秒数（現れる演出用）
+        public SpriteRenderer miasma;      // アンデッドの瘴気（駒の後ろ）
+        public SpriteRenderer veil;        // 〃 足元の暗い紫のもや
+        public Transform wisps;            // 〃 鬼火（2 つ）
+        public SpriteRenderer[] wispSprites;
     }
 
     private GameSystem gameSystem;
@@ -169,7 +179,7 @@ public class GameTickEffects : MonoBehaviour
         {
             if (piece == null) continue;
             bool shielded = piece.hasShield || Time.time < piece.barrierHoldUntil;
-            bool needsFx = piece.isSpecialReady || piece.hasFuse || piece.hasScope || shielded || piece.hasPhalanx;
+            bool needsFx = piece.isSpecialReady || piece.hasFuse || piece.hasScope || shielded || piece.hasPhalanx || piece.isUndead;
             PieceFx fx;
             if (!pieceFx.TryGetValue(piece, out fx))
             {
@@ -297,6 +307,10 @@ public class GameTickEffects : MonoBehaviour
             {
                 fx.spear.gameObject.SetActive(false);
             }
+
+            // アンデッド（Prototype の pieceView.js の miasma・veil・wisps と Game.tick）：
+            // 紫の瘴気がゆらめき、緑の鬼火が周りを漂いながら立ち上る
+            if (piece.isUndead) UpdateUndead(piece, fx, dt);
         }
 
         // 盤から消えた駒の記録を捨てる
@@ -306,6 +320,54 @@ public class GameTickEffects : MonoBehaviour
             if (kvp.Key == null) deadPieces.Add(kvp.Key);
         }
         foreach (GamePiece dead in deadPieces) pieceFx.Remove(dead);
+    }
+
+    void UpdateUndead(GamePiece piece, PieceFx fx, float dt)
+    {
+        if (fx.miasma == null) CreateUndead(piece, fx);
+        int seed = piece.GetInstanceID();
+        float phase = (seed % 1000) * 0.37f;
+        fx.miasma.color = WithAlpha(UndeadMiasmaColor, 0.35f + 0.3f * Mathf.Sin(time * 2.2f + phase));
+        fx.veil.color = WithAlpha(UndeadVeilColor, 0.5f + 0.15f * Mathf.Sin(time * 1.6f + phase));
+        for (int i = 0; i < fx.wispSprites.Length; i++)
+        {
+            SpriteRenderer s = fx.wispSprites[i];
+            float a = time * 1.8f + phase + i * Mathf.PI;
+            // プロトタイプの駒は幅 0.8・高さ 0.9 マス。鬼火は横に w*0.62・縦に h*0.28 の楕円を回る
+            s.transform.localPosition = new Vector3(Mathf.Cos(a) * 0.8f * 0.62f, Mathf.Sin(a) * 0.9f * 0.28f, 0f);
+            s.color = WithAlpha(UndeadFireColors[i % UndeadFireColors.Length], 0.55f + 0.45f * Mathf.Sin(time * 6f + i * 2.1f + phase));
+            s.transform.localScale = Vector3.one * GlowScale(0.22f + 0.05f * Mathf.Sin(time * 5f + i));
+        }
+
+        // 立ち上る緑の火の粉（地面から這い上がっている途中など、駒が小さいときは出さない）
+        if (piece.transform.lossyScale.x > 0.5f && Random.value < dt * 6f)
+        {
+            Vector2 pos = (Vector2)piece.transform.position + ScreenOffset(Random.Range(-20f, 20f), Random.Range(-6f, 22f));
+            particles.Spawn(fxLayer, pos, ScreenVelocity(Random.Range(-10f, 10f), Random.Range(-55f, -25f)),
+                Pick(UndeadFireColors), Random.Range(0.6f, 1.1f), GlowScale(Random.Range(0.1f, 0.22f)), ORDER_FX,
+                drag: 1f);
+        }
+    }
+
+    // アンデッドの瘴気（駒の後ろ）と鬼火（駒の手前）
+    void CreateUndead(GamePiece piece, PieceFx fx)
+    {
+        int back = MinSortingOrder(piece) - 1;
+        int front = MaxSortingOrder(piece) + 2;
+        Transform root = new GameObject(UndeadName).transform;
+        root.SetParent(piece.transform, false);
+        // 瘴気：駒より一回り大きい紫の光（プロトタイプは駒の 1.25×1.2 倍をぼかしたもの）
+        fx.miasma = CreateChildSprite(root, "Miasma", glowSprite, back, new Vector2(1.6f, 1.75f));
+        // 足元のもや：暗い紫を少し下にずらして重ねる
+        fx.veil = CreateChildSprite(root, "Veil", glowSprite, back, new Vector2(1.3f, 0.7f));
+        fx.veil.transform.localPosition = new Vector3(0f, -0.3f, 0f);
+        fx.wisps = new GameObject("Wisps").transform;
+        fx.wisps.SetParent(root, false);
+        fx.wispSprites = new SpriteRenderer[2];
+        for (int i = 0; i < fx.wispSprites.Length; i++)
+        {
+            fx.wispSprites[i] = CreateChildSprite(fx.wisps, "Wisp", glowSprite, front, Vector2.one * GlowScale(0.24f));
+        }
     }
 
     void UpdateUI(bool inTurn, float pulse)
@@ -487,11 +549,23 @@ public class GameTickEffects : MonoBehaviour
 
     private const string BarrierName = "ShieldBarrier";
     private const string SpearName = "PhalanxSpear";
+    private const string UndeadName = "UndeadAura";
 
-    // 駒に重ねる表示（バリア・槍）。駒の描画順を調べるときは数えない
+    // 駒に重ねる表示（バリア・槍・アンデッドの瘴気と鬼火）。駒の描画順を調べるときは数えない
     static bool IsOverlay(Transform t)
     {
-        return t.name == BarrierName || t.name == SpearName;
+        return t.name == BarrierName || t.name == SpearName || t.name == UndeadName;
+    }
+
+    // t が駒に重ねた表示（またはその中）か。駒の本体のスプライトだけを触りたいとき（MagicFx の這い上がる演出など）に使う
+    public static bool IsPieceOverlay(Transform t)
+    {
+        for (Transform p = t; p != null; p = p.parent)
+        {
+            if (IsOverlay(p)) return true;
+            if (p.GetComponent<GamePiece>() != null) return false;
+        }
+        return false;
     }
 
     static int MaxSortingOrder(GamePiece piece)
@@ -499,7 +573,7 @@ public class GameTickEffects : MonoBehaviour
         int order = int.MinValue;
         foreach (SpriteRenderer sr in piece.GetComponentsInChildren<SpriteRenderer>(true))
         {
-            if (IsOverlay(sr.transform) || (sr.transform.parent != null && IsOverlay(sr.transform.parent))) continue;
+            if (IsPieceOverlay(sr.transform)) continue;
             order = Mathf.Max(order, sr.sortingOrder);
         }
         return order == int.MinValue ? 10 : order;

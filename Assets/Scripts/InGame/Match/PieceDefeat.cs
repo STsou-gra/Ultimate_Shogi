@@ -13,6 +13,7 @@ public class PieceDefeat
     public int Y { get; }
     public bool WasPromoted { get; }
     public bool WasInitial { get; }
+    public bool WasUndead { get; }   // アンデッドだった（倒されると「成仏」の演出）
 
     public PieceDefeat(GamePiece piece, DefeatKind kind, PlayerType? by, string reason)
     {
@@ -26,6 +27,7 @@ public class PieceDefeat
         Y = piece.Y;
         WasPromoted = piece.isPromoted;
         WasInitial = piece.IsInitial;
+        WasUndead = piece.isUndead;
     }
 }
 

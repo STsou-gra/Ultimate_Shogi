@@ -7,7 +7,7 @@ public enum DefeatKind
     Vanish,  // 消失：エナジー・持ち駒化なし（爆発など）
 }
 
-// 倒された初期配置の駒の記録（超常魔法「アンデッド・パラダイス」で使う予定）
+// 倒された初期配置の駒の記録（超常魔法「アンデッド・パラダイス」で復活させる）
 public struct FallenPieceRecord
 {
     public PieceType Type;
@@ -52,6 +52,12 @@ public class MatchState
     public void RecordFallenInitial(PlayerType owner, PieceType type, DefeatKind kind)
     {
         fallenInitial[(int)owner].Add(new FallenPieceRecord { Type = type, Kind = kind, TurnNumber = Turn.TurnNumber });
+    }
+
+    // 記録を消す（アンデッド・パラダイスで復活させたとき。空きマスが足りず復活できなかった駒の分も消える。Prototype と同じ）
+    public void ClearFallenInitial(PlayerType owner)
+    {
+        fallenInitial[(int)owner].Clear();
     }
 
     // ------------------------------------------------------------
@@ -115,7 +121,8 @@ public class MatchState
         }
     }
 
-    // 千日手の「同じ局面」の判定用に、超常魔法の状態を文字列にする（Prototype の hash.js と同じく、解放・使用・世界の終わり）
+    // 千日手の「同じ局面」の判定用に、超常魔法の状態を文字列にする
+    // （Prototype の hash.js と同じく、解放・使用・世界の終わり・倒された初期配置の駒の種類）
     public void AppendKey(System.Text.StringBuilder sb)
     {
         sb.Append('$');
@@ -124,6 +131,8 @@ public class MatchState
             sb.Append(transcendentUnlocked[i] ? 'u' : '-');
             sb.Append(transcendentUsed[i] ? 'x' : '-');
             sb.Append(worldEndSince[i].HasValue ? worldEndSince[i].Value.ToString() : "-").Append(',');
+            foreach (FallenPieceRecord f in fallenInitial[i]) sb.Append((int)f.Type).Append('.');
+            sb.Append(';');
         }
     }
 }

@@ -5,10 +5,11 @@ using UnityEngine;
 // Unity の盤は X が段（Player1 は +X へ進む）、Y が筋
 public static class MagicKit
 {
-    // 自分の魔法の対象・起点に選べる自分の駒か（Prototype の ownPieceSquares。アンデッドはまだないので、自分の駒なら選べる）
+    // 自分の魔法の対象・起点に選べる自分の駒か（Prototype の ownPieceSquares）。
+    // アンデッドは選べない（相手の魔法・駒の効果は通常どおり受ける）
     public static bool IsOwnPiece(SkillContext context, GamePiece piece)
     {
-        return piece != null && piece.player == context.Player;
+        return piece != null && piece.player == context.Player && !piece.isUndead;
     }
 
     // 駒がいない通常状態（破壊・炎上・落とし穴がない）のマスか（Prototype の emptyNormalSquares）
@@ -17,6 +18,34 @@ public static class MagicKit
         if (!BoardCells.InBounds(pos.x, pos.y) || board.HasPieceAt(pos.x, pos.y)) return false;
         BoardCell cell = board.Cells.At(pos.x, pos.y);
         return cell != null && cell.State == CellState.Normal && !cell.HasTrap;
+    }
+
+    // 自陣の、駒がいない通常状態（落とし穴なし）のマス（Prototype の ownZoneEmptySquares。アンデッド・パラダイスの復活先）
+    public static List<Vector2Int> OwnZoneEmptySquares(GameBoard board, PlayerType owner)
+    {
+        List<Vector2Int> result = new List<Vector2Int>();
+        for (int x = 0; x < BoardCells.Size; x++)
+        {
+            if (!BoardZones.IsOwnZone(owner, x)) continue;
+            for (int y = 0; y < BoardCells.Size; y++)
+            {
+                Vector2Int pos = new Vector2Int(x, y);
+                if (IsEmptyNormal(board, pos)) result.Add(pos);
+            }
+        }
+        return result;
+    }
+
+    // 倒された自分の初期配置の駒のうち、復活できるもの（Prototype の revivableFallen。王将は対象外）。倒された順
+    public static List<PieceType> RevivableFallen(MatchState match, PlayerType owner)
+    {
+        List<PieceType> result = new List<PieceType>();
+        if (match == null) return result;
+        foreach (FallenPieceRecord f in match.FallenInitial(owner))
+        {
+            if (f.Type != PieceType.King) result.Add(f.Type);
+        }
+        return result;
     }
 
     // 駒 p の前方 1×3 マス（左前・前・右前）。盤外・破壊マスは除く（Prototype の frontSquares）

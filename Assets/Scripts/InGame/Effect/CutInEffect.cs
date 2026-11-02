@@ -186,7 +186,7 @@ public class CutInEffect : MonoBehaviour
     /// 小さなカットイン（画面を暗くしない細い帯＋名前。自動行動の合図など、短く軽い演出。Prototype の fx.miniCutIn）。
     /// 演出が終わるまで待つ（約1.05秒）。y は帯の中心（画面の中央からの論理ピクセル。上が +）
     /// </summary>
-    public async Awaitable PlayMiniAsync(string name, string sub, Color color, CancellationToken cancellationToken = default, float y = 0f)
+    public async Awaitable PlayMiniAsync(string name, string sub, Color color, CancellationToken cancellationToken = default, float y = 0f, MiniCutInStyle style = null)
     {
         const float BW = W * 1.5f;
         var root = CreateRect("MiniCutIn", canvasRect);
@@ -214,11 +214,13 @@ public class CutInEffect : MonoBehaviour
         var nameText = CreateText("Name", band, name, 48f, 8f);
         nameText.color = Color.white;
         nameText.enableVertexGradient = true;
-        Color top = Color.white, bottom = new Color32(0xff, 0xf5, 0x9d, 0xff);
+        Color top = Color.white, bottom = style != null ? style.NameBottom : (Color)new Color32(0xff, 0xf5, 0x9d, 0xff);
         nameText.colorGradient = new VertexGradient(top, top, bottom, bottom);
         nameText.rectTransform.anchoredPosition = new Vector2(0f, -8f);
         nameText.rectTransform.localScale = Vector3.one * 1.8f;
-        materials.Add(SetupTextMaterial(nameText, new Color32(0x1a, 0x00, 0x00, 0xff), 0.25f, color));
+        Color outline = style != null ? style.Outline : (Color)new Color32(0x1a, 0x00, 0x00, 0xff);
+        materials.Add(SetupTextMaterial(nameText, outline, 0.25f, color));
+        Color[] burstColors = style != null && style.Burst != null && style.Burst.Length > 0 ? style.Burst : new Color[] { color, Color.white };
 
         var seq = DOTween.Sequence();
         seq.Insert(0f, band.DOAnchorPosX(0f, 0.2f).SetEase(Ease.OutCubic));
@@ -226,7 +228,7 @@ public class CutInEffect : MonoBehaviour
         seq.InsertCallback(0.2f, () =>
         {
             Shake(root, 5f, 0.2f);
-            Burst(new Color[] { color, Color.white }, 24, 380f, 0.6f, new Vector2(0f, y));
+            Burst(burstColors, 24, 380f, 0.6f, new Vector2(0f, y));
         });
         seq.Insert(0.85f, band.DOAnchorPosX(W * 1.8f - W / 2f, 0.2f).SetEase(Ease.InCubic));
 
@@ -434,4 +436,12 @@ public class CutInEffect : MonoBehaviour
         tex.Apply();
         return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
     }
+}
+
+// 小さなカットイン（CutInEffect.PlayMiniAsync）の見た目の差し替え（Prototype の fx.miniCutIn の fill・stroke・colors）
+public class MiniCutInStyle
+{
+    public Color NameBottom = new Color32(0xff, 0xf5, 0x9d, 0xff); // 名前のグラデーションの下側（上側は白）
+    public Color Outline = new Color32(0x1a, 0x00, 0x00, 0xff);    // 名前の縁取り
+    public Color[] Burst;                                          // 帯が止まったときに飛び散る粒の色（null なら帯の色と白）
 }
