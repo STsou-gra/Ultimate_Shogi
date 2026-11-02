@@ -190,6 +190,11 @@ public class GameSystem : MonoBehaviour
     public event System.Action<PlayerType> TranscendentUnlocked;
     // 超常魔法「世界の終わり」が始まった（盤の下の「進行中」表示・背景の赤み）
     public event System.Action<PlayerType> WorldEndStarted;
+    // 超常魔法「アンデッド・パラダイス」で駒がアンデッドとして復活した（データはもう盤にある。見た目は MagicFx.UndeadRise）
+    public event System.Action<GamePiece> UndeadRisen;
+
+    // アンデッドが倒されたときの消失の理由（取られても持ち駒にならず、エナジーも動かない）
+    public const string ReasonUndeadRest = "成仏";
 
     private readonly Queue<PlayerType> unlockQueue = new Queue<PlayerType>(); // 解放の演出待ち
     private bool isShowingUnlock = false;
@@ -199,7 +204,7 @@ public class GameSystem : MonoBehaviour
     //  手番を終える行動（移動・打つ・手番を使う魔法・必殺技・狙撃）のあと、手番を相手に渡す前に、
     //  手番側の自動行動をこの順に 1 つずつ行う（演出を見せ終わってから次へ）。2回行動で手番が続くときは行わない
     // ------------------------------------------------------------
-    private readonly List<TurnEndAction> turnEndActions = new List<TurnEndAction> { new PhalanxAdvance() };
+    private readonly List<TurnEndAction> turnEndActions = new List<TurnEndAction> { new PhalanxAdvance(), new UndeadMarch() };
 
     // 1 ターンの終わり（後手の手番の終わり）に起きること（Prototype の turn.js の roundEnd のうち、演出を見せるもの）。
     // 手番側の自動行動（ファランクス・アンデッド …）のあと、OnRoundEnd（手番交代）の直前に、同じ仕組みで 1 つずつ行う。
@@ -216,7 +221,7 @@ public class GameSystem : MonoBehaviour
     private bool isRunningTurnEnd = false;
     public bool IsRunningTurnEnd => isRunningTurnEnd;
 
-    // 自動行動を足す（アンデッドなど。足した順に、ファランクスのあとに動く）
+    // 自動行動を足す（足した順に、ファランクス・アンデッドのあとに動く）
     public void AddTurnEndAction(TurnEndAction action)
     {
         if (action != null && !turnEndActions.Contains(action)) turnEndActions.Add(action);
@@ -224,6 +229,8 @@ public class GameSystem : MonoBehaviour
 
     // 盾が割れるまでの秒数（移動・狙撃で取ろうとしたとき、攻撃が届くまで。CapturePiece を呼ぶ側が入れて、呼んだら 0 に戻す）
     private float captureFxDelay = 0f;
+    // 今の取りの攻撃が届くまでの秒数（取り・消失の通知の中で演出が読む。必殺技・自動行動の中では ActiveSpecial.HitTime を使う）
+    public float CaptureFxDelay => captureFxDelay;
     public const float ShieldBreakFxDuration = 0.6f; // 盾が割れてから手番が替わるまで（「GUARD!」を見せる）
 
     // 行動の演出を見せている間（手番の交代待ち）は操作できない
@@ -615,6 +622,17 @@ public class GameSystem : MonoBehaviour
         {
             // --- 駒を選択するフェーズ ---
             GamePiece piece = gameBoard.GetPieceAt(x, y);
+
+            // 自分のアンデッドは操作できない（持ち主の手番の終わりに自動で動く）
+            if (piece != null && IsMyPiece(piece) && piece.isUndead)
+            {
+                if (HandUIManager.Instance != null)
+                {
+                    HandUIManager.Instance.SetStatusText($"【{HandUIManager.GetJapaneseName(piece.type)}・アンデッド】 操作できない。手番の終わりに自動で1手動き、相手の王将へ向かう。" +
+                        "必殺技は使えず、自分の魔法の対象にも選べない。倒されると成仏する（持ち駒にならない）");
+                }
+                return;
+            }
 
             // 自分の駒なら選択
             if (piece != null && IsMyPiece(piece))
@@ -1098,10 +1116,10 @@ public class GameSystem : MonoBehaviour
     //  オンライン対戦中はまだ使えない（未同期）。詰みの判定にも含めない
     // ------------------------------------------------------------
 
-    // 駒の必殺技（なければ null）
+    // 駒の必殺技（なければ null。アンデッドは必殺技を使えない）
     public SpecialMove GetSpecialMove(GamePiece piece)
     {
-        if (piece == null || SpecialMoves == null) return null;
+        if (piece == null || piece.isUndead || SpecialMoves == null) return null;
         return SpecialMoves.For(piece.type);
     }
 
@@ -1519,6 +1537,13 @@ public class GameSystem : MonoBehaviour
     {
         if (!IsOnBoard(piece)) return false;
 
+        // アンデッド（Prototype の effects.js の capture）：取られても持ち駒にならず、「成仏」で消失する（エナジーもなし）。
+        // 盾は自分の魔法でしかかけられず、アンデッドは自分の魔法の対象にならないので、盾状態のアンデッドはいない
+        if (piece.isUndead && !(piece.hasShield && piece.player != by))
+        {
+            return VanishPiece(piece, ReasonUndeadRest);
+        }
+
         PieceDefeat defeat = new PieceDefeat(piece, DefeatKind.Capture, by, "取り");
         if (IsDefeatIntercepted(defeat)) return false;
 
@@ -1909,7 +1934,7 @@ public class GameSystem : MonoBehaviour
                 if (HandUIManager.Instance != null) HandUIManager.Instance.SetStatusText($"【{action.Title}】 {action.GetStatusText(side)}");
                 if (!string.IsNullOrEmpty(action.CutInName))
                 {
-                    await CutInEffect.Instance.PlayMiniAsync(action.CutInName, action.GetCutInSub(side), action.Color, destroyCancellationToken);
+                    await CutInEffect.Instance.PlayMiniAsync(action.CutInName, action.GetCutInSub(this, side), action.Color, destroyCancellationToken, 0f, action.CutInStyle);
                 }
                 if (!IsInTurn) return;
 
@@ -2093,7 +2118,7 @@ public class GameSystem : MonoBehaviour
         for (int i = 0; i < cells.Length; i++)
         {
             GamePiece piece = cells[i];
-            if (piece == null || piece.player != side) continue;
+            if (piece == null || piece.player != side || piece.isUndead) continue; // アンデッドは持ち主が動かせない
 
             for (int x = 0; x < 9; x++)
             {
@@ -2194,6 +2219,7 @@ public class GameSystem : MonoBehaviour
             if (special != null) sb.Append(Mathf.Min(piece.moveCount, special.requiredMoves));
             if (piece.hasShield) sb.Append('s'); // 盾状態（Prototype の hash.js と同じく局面に含める）
             if (piece.hasPhalanx) sb.Append('p'); // ファランクス状態（〃）
+            if (piece.isUndead) sb.Append('u');   // アンデッド（〃）
         }
         foreach (Player p in new[] { player1, player2 })
         {
@@ -2353,6 +2379,22 @@ public class GameSystem : MonoBehaviour
         gameBoard.RearrangePieces(from, squares);
         Cells.Rearrange(from, squares);
         return moves;
+    }
+
+    // ------------------------------------------------------------
+    //  アンデッド・パラダイス（Prototype の effects.js の reviveUndead）
+    // ------------------------------------------------------------
+
+    // type の駒を owner のアンデッドとして (x, y) に復活させる（成っていない状態。空きの通常マスに置くこと）。作った駒を返す。
+    // データはすぐ盤に入る。見た目（地面から這い上がる）は呼び出し側が MagicFx.UndeadRise で再生する
+    public GamePiece ReviveUndead(PieceType type, PlayerType owner, int x, int y)
+    {
+        if (gameBoard == null || gameBoard.HasPieceAt(x, y)) return null;
+        GamePiece piece = gameBoard.SpawnPiece(type, owner, x, y);
+        if (piece == null) return null;
+        piece.MakeUndead(); // 初期配置の駒ではない（倒されても記録しない）
+        UndeadRisen?.Invoke(piece);
+        return piece;
     }
 
     // 世界の終わりが進行中か（どちらかが発動した）

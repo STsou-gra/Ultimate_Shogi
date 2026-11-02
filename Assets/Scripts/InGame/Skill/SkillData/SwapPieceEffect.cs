@@ -11,12 +11,11 @@ public class SwapPieceEffect : SkillEffect
     return (index == 0) ? "入れ替える1つ目の駒を選択" : "入れ替える2つ目の駒を選択";
   }
 
-  // 自分の駒であればどの駒でも選べる（同じ駒を2回は選べない）
+  // 自分の駒であればどの駒でも選べる（同じ駒を2回は選べない。アンデッドは自分の魔法の対象に選べない）
   public override bool IsValidTarget(SkillContext context, Vector2Int pos)
   {
     if (context.Targets.Contains(pos)) return false;
-    GamePiece piece = context.GameBoard.GetPieceAt(pos.x, pos.y);
-    return piece != null && piece.player == context.Player;
+    return MagicKit.IsOwnPiece(context, context.GameBoard.GetPieceAt(pos.x, pos.y));
   }
 
   public override void Execute(SkillContext context)

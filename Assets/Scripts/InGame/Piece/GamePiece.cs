@@ -46,6 +46,28 @@ public abstract class GamePiece : MonoBehaviour
     // 槍のマーカーが弾む演出を始めた時刻（Time.time。MagicFx が自動行動のときに設定する。見た目だけ）
     [System.NonSerialized] public float spearPulseAt = -10f;
 
+    // アンデッド（超常魔法「アンデッド・パラダイス」で復活した駒。Prototype の undead）。
+    // 持ち主は操作できず、必殺技も使えず、自分の魔法の対象にも選べない。持ち主の手番の終わりに自動で 1 手動く（UndeadMarch）。
+    // 相手の攻撃は通常どおり受け、倒されると消失する（「成仏」。持ち駒にもエナジーにもならない）。
+    // 紫がかった半透明の駒になり（MakeUndead）、紫の瘴気と緑の鬼火をまとう（GameTickEffects）
+    public bool isUndead = false;
+
+    // アンデッドの駒の色（本体のスプライトに掛ける。紫がかった半透明）
+    public static readonly Color UndeadTint = new Color(0.8f, 0.62f, 1f, 0.6f);
+
+    // アンデッドにする（駒の本体を紫がかった半透明にする。倒された駒の残像などもこの色を写す）
+    public void MakeUndead()
+    {
+        isUndead = true;
+        IsInitial = false;
+        isSpecialReady = false;
+        foreach (GameObject visual in new[] { normalVisual, promotedVisual })
+        {
+            if (visual == null) continue;
+            foreach (SpriteRenderer sr in visual.GetComponentsInChildren<SpriteRenderer>(true)) sr.color = UndeadTint;
+        }
+    }
+
     // マスの状態（破壊・炎上・落とし穴）。GameBoard が駒を置くときに設定する
     public BoardCells Cells { get; set; }
 
