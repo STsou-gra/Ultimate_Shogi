@@ -9,11 +9,14 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 0}
+  m_Script: {fileID: 11500000, guid: 587807e885a34223916094a16ba027e7, type: 3}
   m_Name: Explosion_Definition
   m_EditorClassIdentifier: Assembly-CSharp::SkillDefinition
-  skillName: Explosion
+  skillName: "\u7206\u767A"
   icon: {fileID: 8145974987068900970, guid: 24f1fbec4566a496b82a67cacb76728f, type: 3}
   cost: 5
-  description: "\u7206\u767A\u3002"
+  description: "\u4E2D\u5FC3\u306E\u30DE\u30B9\u3092\u9078\u3073\u30013\u00D73\u306E\u99D2\u3092\u3059\u3079\u3066\u6D88\u5931\u3055\u305B\u308B\uFF08\u738B\u5C06\u306F\u6B8B\u308B\uFF09\u3002"
   effect: {fileID: 11400000, guid: 1f9985a846ba542b09dea2ffb4547f24, type: 2}
+  rank: 0
+  endsTurn: 0
+  color: {r: 1, g: 0.427451, b: 0, a: 1}

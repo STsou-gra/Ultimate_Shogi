@@ -33,6 +33,12 @@ public abstract class GamePiece : MonoBehaviour
     public bool hasScope = false;       // 狙撃手のスコープ（赤い光が明滅する）
     public Vector2 scopeOffset = new Vector2(0f, 0.55f);  // スコープの光の位置（駒のローカル座標）
 
+    // 盾状態（魔法「盾」。Prototype の shield）。相手の「取り」を1回だけ防ぎ、防ぐと割れる（GameSystem.CapturePiece）。
+    // 消失（爆発・炎上・落とし穴など）は防げない。盾状態の間は水色のバリアが出る（GameTickEffects）
+    public bool hasShield = false;
+    // 盾が割れても、攻撃が届くこの時刻（Time.time）まではバリアを出しておく（MagicFx が設定する。見た目だけ）
+    [System.NonSerialized] public float barrierHoldUntil = 0f;
+
     // マスの状態（破壊・炎上・落とし穴）。GameBoard が駒を置くときに設定する
     public BoardCells Cells { get; set; }
 

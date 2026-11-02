@@ -4123,6 +4123,7 @@ MonoBehaviour:
   selectionButtonsContainer: {fileID: 928656775}
   skillButtonPrefab: {fileID: 1137506921330594349, guid: e2531079a67a8402dabd89d444c3f548, type: 3}
   removeSkillButton: {fileID: 2085380350}
+  playButton: {fileID: 202253366}
   sceneManager: {fileID: 268403455}
 --- !u!4 &1401173431
 Transform:

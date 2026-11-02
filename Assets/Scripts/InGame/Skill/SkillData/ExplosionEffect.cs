@@ -15,16 +15,13 @@ public class ExplosionEffect : SkillEffect
   // カーソルを中心とした3x3マスを光らせて、爆発の範囲を見せる
   public override List<Vector2Int> GetPreviewCells(SkillContext context, Vector2Int cursor)
   {
-    List<Vector2Int> cells = new List<Vector2Int>();
-    for (int x = cursor.x - 1; x <= cursor.x + 1; x++)
-    {
-      for (int y = cursor.y - 1; y <= cursor.y + 1; y++)
-      {
-        if (x < 0 || x >= 9 || y < 0 || y >= 9) continue;
-        cells.Add(new Vector2Int(x, y));
-      }
-    }
-    return cells;
+    return MagicKit.SquareArea(cursor.x, cursor.y, MatchConfig.ExplosionRadius);
+  }
+
+  // 範囲の表示（スキルの色で 3x3 を塗る）
+  public override List<Vector2Int> GetAreaCells(SkillContext context, Vector2Int cursor)
+  {
+    return MagicKit.SquareArea(cursor.x, cursor.y, MatchConfig.ExplosionRadius);
   }
 
   public override void Execute(SkillContext context)

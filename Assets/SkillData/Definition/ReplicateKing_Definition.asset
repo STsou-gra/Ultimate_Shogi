@@ -9,11 +9,14 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 0}
+  m_Script: {fileID: 11500000, guid: 587807e885a34223916094a16ba027e7, type: 3}
   m_Name: ReplicateKing_Definition
   m_EditorClassIdentifier: Assembly-CSharp::SkillDefinition
-  skillName: Replicate King
+  skillName: "\u738B\u5C06\u8907\u88FD"
   icon: {fileID: 0}
   cost: 8
-  description: "\u738B\u5C06\u3092\u53EC\u559A\u3059\u308B\u3002"
+  description: "\u81EA\u9663\u306B2\u679A\u76EE\u306E\u738B\u5C06\u3092\u53EC\u559A\u3059\u308B\u3002"
   effect: {fileID: 11400000, guid: 4b8b92fc2403b4b0ba40cf9fd746d6cd, type: 2}
+  rank: 0
+  endsTurn: 0
+  color: {r: 1, g: 0.8784314, b: 0.5098039, a: 1}

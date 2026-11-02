@@ -84,8 +84,8 @@ public class GameSystem : MonoBehaviour
     private List<PositionRecord> positionHistory = new List<PositionRecord>();
     private Dictionary<string, int> positionCounts = new Dictionary<string, int>();
 
-    // 盤のマスを選ぶモード（スキルの対象：爆発の中心・駒入替の駒など／必殺技の対象：天馬跳躍の跳ぶ先）。
-    // スキルと必殺技で同じ操作（カーソル＋F で決定・Space で取消）を使う
+    // 盤のマスを選ぶモード（スキルの対象：爆発の中心・駒入替の駒・盾をかける駒など／必殺技の対象：天馬跳躍の跳ぶ先）。
+    // スキルと必殺技で同じ操作（カーソル＋F で決定・Space で取消・R で範囲の向きの切り替え）を使う
     private class TargetSelection
     {
         public string Title;                                       // 案内文の【】に出す名前
@@ -93,12 +93,21 @@ public class GameSystem : MonoBehaviour
         public List<Vector2Int> Chosen;                            // 選んだマス
         public System.Func<Vector2Int, bool> IsValid;              // そのマスを次に選べるか
         public System.Func<int, string> Prompt;                    // 何個目を選んでいるときの案内文
-        public System.Func<Vector2Int, List<Vector2Int>> Preview;  // カーソル位置で光らせるマス
+        public System.Func<Vector2Int, SkillPreview> Preview;      // カーソル位置で光らせるマス・塗る範囲
         public System.Action OnComplete;                           // 選び終わった
         public GamePiece Caster;                                   // 必殺技を使う駒（スキルなら null）
+
+        // 範囲の表示（スキルのみ。SkillEffect の GetAreaCells など）
+        public Color AreaColor = Color.white;                      // 範囲を塗る色（選べない範囲は赤）
+        public string BlockedText = "その範囲は選べません";         // 選べない範囲の説明
+        public int OrientCount = 1;                                // 向きの数（2つ以上なら R キーで切り替え）
+        public int Orient;                                         // 今の向き
+        public System.Action<int> SetOrient;                       // 向きを変えた
+        public System.Func<int, string> OrientLabel;               // 向きの名前
     }
     private TargetSelection targetSelection;
     private Vector2Int lastPreviewCursor;
+    private SkillAreaView skillAreaView; // 範囲の表示（盤を塗る）
 
     public bool IsSelectingSkillTarget => targetSelection != null;
     public bool IsSelectingSpecialTarget => targetSelection != null && targetSelection.Caster != null;
@@ -158,8 +167,21 @@ public class GameSystem : MonoBehaviour
     // 移動回数がちょうど必要数に達した（「必殺技 解放！」の演出用）
     public event System.Action<GamePiece> SpecialReady;
 
-    // 発動中の必殺技（効果を処理している間だけ。演出が倒された駒の飛ばし方を読む）
+    // 発動中の必殺技・魔法の時間軸（効果を処理している間だけ。演出が倒された駒の飛ばし方・盾が割れる時刻を読む）
     public SpecialContext ActiveSpecial { get; private set; }
+
+    // ------------------------------------------------------------
+    //  魔法スキル（Prototype の src/defs/magic・src/core/play.js の castMagic）
+    // ------------------------------------------------------------
+    private MagicFx magicFx;
+
+    // 盾状態になった・盾が取りを防いで割れた（演出用）
+    public event System.Action<GamePiece> ShieldGiven;
+    public event System.Action<ShieldBreak> ShieldBroken;
+
+    // 盾が割れるまでの秒数（移動・狙撃で取ろうとしたとき、攻撃が届くまで。CapturePiece を呼ぶ側が入れて、呼んだら 0 に戻す）
+    private float captureFxDelay = 0f;
+    public const float ShieldBreakFxDuration = 0.6f; // 盾が割れてから手番が替わるまで（「GUARD!」を見せる）
 
     // 行動の演出を見せている間（手番の交代待ち）は操作できない
     private bool isResolvingAction = false;
@@ -241,6 +263,12 @@ public class GameSystem : MonoBehaviour
         specialFx = FindAnyObjectByType<SpecialMoveFx>();
         if (specialFx == null) specialFx = gameObject.AddComponent<SpecialMoveFx>();
         if (SpecialMoves == null) Debug.LogWarning("必殺技の一覧が読めません");
+
+        // 魔法スキルの演出・範囲の表示（シーンに置かれていなければ自動で追加する）
+        magicFx = FindAnyObjectByType<MagicFx>();
+        if (magicFx == null) magicFx = gameObject.AddComponent<MagicFx>();
+        skillAreaView = FindAnyObjectByType<SkillAreaView>();
+        if (skillAreaView == null) skillAreaView = gameObject.AddComponent<SkillAreaView>();
 
         // 対局の状態（ターン数・エナジー）
         match = new MatchState(MatchConfig.FirstPlayer);
@@ -741,10 +769,15 @@ public class GameSystem : MonoBehaviour
         }
         if (targetPiece != null && targetPiece.player != piece.player)
         {
-            if (!CapturePiece(targetPiece, piece.player))
+            float reach = MoveArrivalDelay(piece) * 0.55f; // 盾の駒にはバリアの手前でぶつかる
+            captureFxDelay = reach;
+            bool captured = CapturePiece(targetPiece, piece.player, piece);
+            captureFxDelay = 0f;
+            if (!captured)
             {
-                // 取りが防がれた（盾など）：駒は元のマスに残り、手番は消費する
-                return false;
+                // 取りが防がれた（盾など）：盾にぶつかって元のマスへ跳ね返る。移動回数は数えず、手番は消費する
+                if (magicFx != null) magicFx.Bounce(piece, targetX, targetY, reach);
+                return ResolveKingLoss();
             }
         }
         gameBoard.UpdateBoardData(piece.X, piece.Y, targetX, targetY);
@@ -971,19 +1004,26 @@ public class GameSystem : MonoBehaviour
         bool explosive = PieceRules.IsExplosive(target.type);
         Debug.Log($"狙撃！ ({sniper.X}, {sniper.Y}) → ({tx}, {ty}) の {HandUIManager.GetJapaneseName(target.type)}");
         pendingActionFxTime = Mathf.Max(pendingActionFxTime, SnipeImpactDelay + SnipeAfterDelay);
-        Sniped?.Invoke(new SnipeShot(sniper.player, sniper, new Vector2Int(sniper.X, sniper.Y), new Vector2Int(tx, ty), target.type, explosive, SnipeImpactDelay));
+        bool guarded = !explosive && target.hasShield && target.player != sniper.player;
+        Sniped?.Invoke(new SnipeShot(sniper.player, sniper, new Vector2Int(sniper.X, sniper.Y), new Vector2Int(tx, ty), target.type, explosive, SnipeImpactDelay, guarded));
 
+        string targetName = HandUIManager.GetJapaneseName(target.type);
+        bool captured = true;
         if (explosive)
         {
             Explode(tx, ty, SnipeImpactDelay);
         }
         else
         {
-            CapturePiece(target, sniper.player);
+            captureFxDelay = SnipeImpactDelay;
+            captured = CapturePiece(target, sniper.player, sniper); // 盾なら防がれる
+            captureFxDelay = 0f;
         }
         if (HandUIManager.Instance != null)
         {
-            HandUIManager.Instance.SetStatusText(explosive ? "【狙撃】 火薬を撃ち抜いた！ 大爆発！" : $"【狙撃】 {HandUIManager.GetJapaneseName(target.type)}を撃ち抜いた！");
+            HandUIManager.Instance.SetStatusText(explosive ? "【狙撃】 火薬を撃ち抜いた！ 大爆発！"
+                : captured ? $"【狙撃】 {targetName}を撃ち抜いた！"
+                : $"【狙撃】 {targetName}の盾が弾を防いだ！（盾は割れた）");
         }
         if (ResolveKingLoss()) return;
         EndActionTurn();
@@ -1104,7 +1144,7 @@ public class GameSystem : MonoBehaviour
             Chosen = chosen,
             IsValid = pos => targets.Contains(pos),
             Prompt = index => move.GetTargetPrompt(),
-            Preview = cursor => targets,
+            Preview = cursor => SkillPreview.FromPanels(targets),
             OnComplete = () => StartSpecial(caster, move, chosen[0]),
             Caster = caster,
         });
@@ -1412,13 +1452,21 @@ public class GameSystem : MonoBehaviour
 
     // 取り：by が piece を取る。エナジーは取られた側が駒の価値の全額、取った側が半分（切り捨て）を得る。
     // 取った駒は by の持ち駒になる（王将・火薬は持ち駒にならない）。取れたら true（盾などで防がれたら false）。
+    // attacker は取ろうとした駒（演出・ログ用。わからなければ null）。
     // 王将が全部取られたかの判定は呼び出し側で行う（ResolveKingLoss）
-    public bool CapturePiece(GamePiece piece, PlayerType by)
+    public bool CapturePiece(GamePiece piece, PlayerType by, GamePiece attacker = null)
     {
         if (!IsOnBoard(piece)) return false;
 
         PieceDefeat defeat = new PieceDefeat(piece, DefeatKind.Capture, by, "取り");
         if (IsDefeatIntercepted(defeat)) return false;
+
+        // 盾（Prototype の effects.js の tryCapture / isGuarded）：相手の取りを1回だけ防いで割れる。駒はそのマスに残る
+        if (piece.hasShield && piece.player != by)
+        {
+            BreakShield(piece, attacker, by);
+            return false;
+        }
 
         AddPoint(defeat.Owner, PieceValues.CapturedSideGain(defeat.Type));
         AddPoint(by, PieceValues.CapturerGain(defeat.Type));
@@ -1427,7 +1475,28 @@ public class GameSystem : MonoBehaviour
         return true;
     }
 
-    // 消失：エナジー・持ち駒化なしで盤から消える（爆発など）。消えたら true（割り込みで止められたら false）
+    // 駒を盾状態にする（魔法「盾」）。盾状態にしたら true（もう盾状態なら false）
+    public bool GiveShield(GamePiece piece)
+    {
+        if (!IsOnBoard(piece) || piece.hasShield) return false;
+        piece.hasShield = true;
+        Debug.Log($"({piece.X}, {piece.Y})：{piece.player} の{HandUIManager.GetJapaneseName(piece.type)}が盾状態になった！");
+        ShieldGiven?.Invoke(piece);
+        return true;
+    }
+
+    // 盾が取りを防いで割れる（Prototype の effects.js の breakShield）
+    void BreakShield(GamePiece piece, GamePiece attacker, PlayerType by)
+    {
+        piece.hasShield = false;
+        float delay = ActiveSpecial != null ? Mathf.Max(0f, ActiveSpecial.HitTime) : captureFxDelay;
+        pendingActionFxTime = Mathf.Max(pendingActionFxTime, delay + ShieldBreakFxDuration);
+        string by2 = attacker != null ? $"{HandUIManager.GetJapaneseName(attacker.type)}の" : "";
+        Debug.Log($"({piece.X}, {piece.Y})：{piece.player} の{HandUIManager.GetJapaneseName(piece.type)}の盾が{by2}攻撃を防いだ！（盾は割れた）");
+        ShieldBroken?.Invoke(new ShieldBreak(piece, attacker, by, delay));
+    }
+
+    // 消失：エナジー・持ち駒化なしで盤から消える（爆発など）。盾では防げない。消えたら true（割り込みで止められたら false）
     public bool VanishPiece(GamePiece piece, string reason)
     {
         if (!IsOnBoard(piece)) return false;
@@ -1962,6 +2031,7 @@ public class GameSystem : MonoBehaviour
             // 必殺技のチャージ（必要数で頭打ち。チャージが違えば指せる手が違うので別の局面）
             SpecialMove special = GetSpecialMove(piece);
             if (special != null) sb.Append(Mathf.Min(piece.moveCount, special.requiredMoves));
+            if (piece.hasShield) sb.Append('s'); // 盾状態（Prototype の hash.js と同じく局面に含める）
         }
         foreach (Player p in new[] { player1, player2 })
         {
@@ -1991,10 +2061,42 @@ public class GameSystem : MonoBehaviour
         return currentState == GameState.Player1Turn;
     }
 
+    // ------------------------------------------------------------
+    //  スキル（魔法スキル）の発動（Prototype の play.js の castMagic・skills.js の magicStatus）
+    //  スキルボタン → 対象を選ぶスキルなら対象選択 → 魔法陣 → カットイン → 効果。
+    //  SkillDefinition.EndsTurn が true のスキル（盾・剣・落とし穴など）は手番を消費する（MatchConfig.MagicEndsTurn）。
+    //  2回行動・駒入替・爆発・王将複製は今までどおり手番を消費しない
+    // ------------------------------------------------------------
+
+    Player PlayerOf(PlayerType type)
+    {
+        return type == PlayerType.Player1 ? player1 : player2;
+    }
+
+    // スキルを今の盤面で使えるか（エナジー・オンライン・効果の対象。手番中の操作の状態は UseSkill が見る）。スキルボタンの押せる／押せないにも使う
+    public bool CanUseSkill(PlayerType player, SkillDefinition skill)
+    {
+        return SkillBlockReason(player, skill) == null;
+    }
+
+    // スキルを使えない理由（使えるなら null）。Prototype の magicStatus の reason
+    string SkillBlockReason(PlayerType player, SkillDefinition skill)
+    {
+        if (skill == null || skill.effect == null) return "効果が設定されていません";
+        Player owner = PlayerOf(player);
+        if (owner == null) return "プレイヤーがいません";
+        if (!owner.HasEnoughPoint(skill.cost)) return $"エナジー不足：あと {skill.cost - owner.Energy}";
+        // 手番を使う魔法・剣などの演出は、まだオンライン対戦の通信に乗せていない
+        if (skill.EndsTurn && IsOnlineMatch) return "オンライン対戦ではまだ使えません";
+        if (!skill.effect.CanUse(new SkillContext(this, gameBoard, player))) return "今は効果の対象がありません";
+        return null;
+    }
+
     public void UseSkill(PlayerType player, int slotIndex)
     {
         // 成りの選択中・スキルや狙撃の対象選択中・演出中は使えない
         if (isWaitingForPromoteChoice || IsSelectingSkillTarget || isSelectingSnipeTarget || isResolvingAction) return;
+        if (!IsInTurn) return;
 
         // 自分のターンであるかチェック
         PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
@@ -2003,7 +2105,7 @@ public class GameSystem : MonoBehaviour
             Debug.LogWarning("相手のターンにはスキルを使用できません。");
             return;
         }
-        Player targetPlayer = (player == PlayerType.Player1) ? player1 : player2;
+        Player targetPlayer = PlayerOf(player);
         if (targetPlayer == null || targetPlayer.SkillDeck == null)
         {
             return;
@@ -2020,17 +2122,19 @@ public class GameSystem : MonoBehaviour
             return;
         }
 
-        //コスト検証
-        if (!targetPlayer.HasEnoughPoint(skill.cost))
+        // コスト・盤面の条件
+        string reason = SkillBlockReason(player, skill);
+        if (reason != null)
         {
-            Debug.LogWarning($"スキル「{skill.skillName}」を使用するためのポイントが不足しています。必要: {skill.cost}");
+            Debug.LogWarning($"スキル「{skill.skillName}」は使えません：{reason}");
+            if (HandUIManager.Instance != null) HandUIManager.Instance.SetStatusText($"【{skill.skillName}】 {reason}");
             return;
         }
 
         SkillContext context = new SkillContext(this, gameBoard, player);
 
         // 対象を選ぶスキルは、選び終わってから発動する（ポイントもその時に消費）
-        if (skill.effect != null && skill.effect.TargetCount > 0)
+        if (skill.effect.TargetCount > 0)
         {
             BeginSkillTargetSelection(skill, context);
             return;
@@ -2038,32 +2142,101 @@ public class GameSystem : MonoBehaviour
         ExecuteSkill(skill, context);
     }
 
-    void ExecuteSkill(SkillDefinition skill, SkillContext context)
+    // 発動：エナジー消費 → 魔法陣 → カットイン → 効果 →（手番を使うスキルは）演出を待って手番交代
+    async void ExecuteSkill(SkillDefinition skill, SkillContext context)
     {
         PlayerType player = context.Player;
-        Player targetPlayer = (player == PlayerType.Player1) ? player1 : player2;
+        Player targetPlayer = PlayerOf(player);
+        bool endsTurn = skill.EndsTurn;
+        string rankLabel = SkillRanks.Label(skill.rank);
+        Vector2Int? focus = context.Targets.Count > 0 ? context.Targets[0] : (Vector2Int?)null;
 
-        //コスト消費・効果実行
+        // 選択状態を解除し、演出のあいだは操作できないようにする
+        ResetSelectionState();
+        isResolvingAction = true;
+
+        // コスト消費（発動の時点で払う。対象選択を取り消したときは払わない）
         targetPlayer.ConsumePoint(skill.cost);
-        skill.Use(context);
-        pendingActionFxTime = 0f; // スキルでは手番が替わらないので、演出を待たない
+        UpdateActivePlayerSkillUI();
+        Debug.Log($"プレイヤー {(player == PlayerType.Player1 ? "1" : "2")} が{rankLabel}「{skill.skillName}」を発動！（エナジー -{skill.cost}）");
+        if (HandUIManager.Instance != null)
+        {
+            HandUIManager.Instance.SetStatusText($"【{rankLabel}】 {skill.skillName}！");
+        }
+
+        try
+        {
+            if (magicFx != null) magicFx.PlayCast(skill, focus);
+            await Awaitable.WaitForSecondsAsync(0.25f, destroyCancellationToken);
+            string side = player == PlayerType.Player1 ? "先手" : "後手";
+            await CutInEffect.Instance.PlayAsync(skill.skillName, $"{side}・{rankLabel}", skill.color, destroyCancellationToken);
+        }
+        catch (System.OperationCanceledException)
+        {
+            return; // シーンを離れた
+        }
+
+        if (!IsInTurn)
+        {
+            isResolvingAction = false;
+            return;
+        }
+
+        // 効果（盤面はすぐ変わり、演出は Timeline の時刻どおりに再生される）
+        context.Timeline = new SpecialContext(this, gameBoard, player, specialFx);
+        context.Fx = magicFx;
+        pendingActionFxTime = 0f;
+        ActiveSpecial = context.Timeline;
+        try
+        {
+            skill.Use(context);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogException(e);
+        }
+        finally
+        {
+            ActiveSpecial = null;
+        }
+
+        if (!endsTurn && IsOnlineMatch)
+        {
+            // オンライン対戦時はサーバーへ通知（手番を使わない今までのスキルのみ）
+            NetworkManager.Instance.SendUseSkillRequest();
+        }
+
+        if (endsTurn)
+        {
+            // 演出を見せ終わってから、勝敗の判定と手番の交代
+            float wait = Mathf.Max(pendingActionFxTime, context.Timeline.Time + 0.3f);
+            pendingActionFxTime = 0f;
+            try
+            {
+                await Awaitable.WaitForSecondsAsync(wait, destroyCancellationToken);
+            }
+            catch (System.OperationCanceledException)
+            {
+                return;
+            }
+            isResolvingAction = false;
+            UpdateActivePlayerSkillUI();
+            if (ResolveKingLoss()) return;
+            if (IsInTurn) NextState();
+            return;
+        }
+
+        // 手番を使わないスキル：演出は待たずに、続けて操作できる
+        pendingActionFxTime = 0f;
+        isResolvingAction = false;
         UpdateActivePlayerSkillUI();
         if (ResolveKingLoss()) return; // スキルで王将が全部いなくなった（爆発では王将は倒せないので、今のスキルでは起きない）
         isActivePlayerInCheck = CheckRules.IsInCheck(gameBoard, player);
-
-        Debug.Log($"プレイヤー {(player == PlayerType.Player1 ? "1" : "2")} がスキル「{skill.skillName}」を使用しました。");
-
         if (HandUIManager.Instance != null)
         {
-            HandUIManager.Instance.SetStatusText($"【スキル発動！】 {skill.skillName}");
+            HandUIManager.Instance.SetStatusText($"【{rankLabel}】 {skill.skillName} 発動！" +
+                (string.IsNullOrEmpty(IdleStatusText) ? "" : "\n" + IdleStatusText));
         }
-
-        if (NetworkManager.Instance != null && NetworkManager.Instance.IsOnlineMatch)
-        {
-            // オンライン対戦時はサーバーへ通知
-            NetworkManager.Instance.SendUseSkillRequest();
-        }
-        UpdateActivePlayerSkillUI();
     }
 
     void BeginSkillTargetSelection(SkillDefinition skill, SkillContext context)
@@ -2076,8 +2249,14 @@ public class GameSystem : MonoBehaviour
             Chosen = context.Targets,
             IsValid = pos => effect.IsValidTarget(context, pos),
             Prompt = index => effect.GetTargetPrompt(index),
-            Preview = cursor => effect.GetPreviewCells(context, cursor),
+            Preview = cursor => effect.GetPreview(context, cursor),
             OnComplete = () => ExecuteSkill(skill, context), // ポイントは発動するときに消費する
+            AreaColor = skill.color,
+            BlockedText = effect.BlockedText,
+            OrientCount = Mathf.Max(1, effect.OrientCount),
+            Orient = context.Orient,
+            SetOrient = orient => context.Orient = orient,
+            OrientLabel = effect.GetOrientLabel,
         });
     }
 
@@ -2105,7 +2284,7 @@ public class GameSystem : MonoBehaviour
             SetDarkOverlayActive(true);
             selection.Caster.SetHighlight(true);
             highlightedPieces.Add(selection.Caster);
-            foreach (Vector2Int pos in selection.Preview(new Vector2Int(-1, -1)))
+            foreach (Vector2Int pos in selection.Preview(new Vector2Int(-1, -1)).Panels)
             {
                 GamePiece q = gameBoard.GetPieceAt(pos.x, pos.y);
                 if (q != null && q != selection.Caster)
@@ -2115,14 +2294,34 @@ public class GameSystem : MonoBehaviour
                 }
             }
         }
-        UpdateTargetPrompt();
+        UpdateTargetPrompt(null);
+        UpdateActivePlayerSkillUI();
     }
 
-    void UpdateTargetPrompt()
+    // 案内文（範囲を選べないときはその理由、向きを切り替えられるときは今の向きも出す）
+    void UpdateTargetPrompt(SkillPreview preview)
     {
         if (HandUIManager.Instance == null || targetSelection == null) return;
-        string prompt = targetSelection.Prompt(targetSelection.Chosen.Count);
-        HandUIManager.Instance.SetStatusText($"【{targetSelection.Title}】 {prompt} (決定: F / 取消: Space)");
+        TargetSelection selection = targetSelection;
+        string prompt = selection.Prompt(selection.Chosen.Count);
+        string orient = "";
+        if (selection.OrientCount > 1)
+        {
+            string label = selection.OrientLabel != null ? selection.OrientLabel(selection.Orient) : "";
+            orient = $"\n向き: {(string.IsNullOrEmpty(label) ? (selection.Orient + 1).ToString() : label)}（R で切り替え）";
+        }
+        string blocked = preview != null && preview.IsBlocked ? $"\n× {selection.BlockedText}" : "";
+        HandUIManager.Instance.SetStatusText($"【{selection.Title}】 {prompt} (決定: F / 取消: Space){orient}{blocked}");
+    }
+
+    // 範囲の向きを次へ（R キー）。向きが1つしかなければ何もしない
+    public void RotateTargetOrient()
+    {
+        TargetSelection selection = targetSelection;
+        if (selection == null || selection.OrientCount <= 1) return;
+        selection.Orient = (selection.Orient + 1) % selection.OrientCount;
+        if (selection.SetOrient != null) selection.SetOrient(selection.Orient);
+        lastPreviewCursor = new Vector2Int(-1, -1); // 光らせ直す
     }
 
     void HandleTargetSelection()
@@ -2130,19 +2329,35 @@ public class GameSystem : MonoBehaviour
         TargetSelection selection = targetSelection;
         Vector2Int cursor = new Vector2Int(gameCursor.X, gameCursor.Y);
 
-        // カーソルが動いたら、光らせるマスを更新する
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard != null && keyboard.rKey.wasPressedThisFrame)
+        {
+            RotateTargetOrient();
+        }
+
+        // カーソルが動いたら（向きを変えたら）、光らせるマス・塗る範囲を更新する
         if (cursor != lastPreviewCursor)
         {
             lastPreviewCursor = cursor;
+            SkillPreview preview = selection.Preview(cursor);
             gameBoard.AllDeactivePanel();
-            foreach (Vector2Int pos in selection.Preview(cursor))
+            foreach (Vector2Int pos in preview.Panels)
             {
                 gameBoard.ActivePanel(GameHelper.CalcPanelNum(pos.x, pos.y));
             }
+            if (skillAreaView != null) skillAreaView.Show(preview.Area, preview.Blockers, selection.AreaColor);
+            UpdateTargetPrompt(preview);
         }
 
         if (gameController.IsOkTrigger())
         {
+            SkillPreview preview = selection.Preview(cursor);
+            if (preview.IsBlocked)
+            {
+                Debug.Log(selection.BlockedText);
+                if (skillAreaView != null) skillAreaView.Shake();
+                return;
+            }
             if (!selection.IsValid(cursor))
             {
                 Debug.Log("そのマスは選べません");
@@ -2153,7 +2368,7 @@ public class GameSystem : MonoBehaviour
             lastPreviewCursor = new Vector2Int(-1, -1); // 選択状態が変わったので光らせ直す
             if (selection.Chosen.Count < selection.Count)
             {
-                UpdateTargetPrompt();
+                UpdateTargetPrompt(null);
                 return;
             }
 
@@ -2182,8 +2397,10 @@ public class GameSystem : MonoBehaviour
         targetSelection = null;
         selectedPiece = null;
         gameBoard.AllDeactivePanel();
+        if (skillAreaView != null) skillAreaView.Hide();
         ClearBoardHighlight();
         SetDarkOverlayActive(false);
+        UpdateActivePlayerSkillUI();
     }
 
     public void OnServerUseSkill(PlayerType activePlayer)
@@ -2316,7 +2533,8 @@ public class GameSystem : MonoBehaviour
                     skillSlotUIs[i].button.gameObject.SetActive(true);
                     skillSlotUIs[i].nameText.text = skill.skillName;
                     skillSlotUIs[i].costText.text = $"{skill.cost} Pt";
-                    skillSlotUIs[i].button.interactable = activePlayer.HasEnoughPoint(skill.cost);
+                    // エナジーが足りていて、今の盤面で効果の対象がある（盾をかけられる駒がある など）ときだけ押せる
+                    skillSlotUIs[i].button.interactable = CanUseSkill(activePlayer.PlayerType, skill);
                 }
                 else
                 {
