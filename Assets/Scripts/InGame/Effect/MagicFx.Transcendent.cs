@@ -386,16 +386,18 @@ public partial class MagicFx
         private static readonly float[] LayerAlpha = { 0.25f, 0.85f, 1f };
 
         private readonly int w, h;
+        private readonly Color[] layerColor; // 層ごとの色（既定は LayerColor。時間停止のガラスのひびは白）
         private readonly float[][] cover;   // 層ごとの塗りの濃さ（0〜1）
         private readonly Color32[] pixels;
         private readonly List<Crack> cracks = new List<Crack>();
         private readonly Texture2D texture;
         public Sprite Sprite { get; }
 
-        public CrackCanvas(int width, int height)
+        public CrackCanvas(int width, int height, Color[] colors = null)
         {
             w = Mathf.Max(2, width);
             h = Mathf.Max(2, height);
+            layerColor = colors != null && colors.Length == 3 ? colors : LayerColor;
             cover = new float[3][];
             for (int i = 0; i < 3; i++) cover[i] = new float[w * h];
             pixels = new Color32[w * h];
@@ -423,6 +425,20 @@ public partial class MagicFx
                 {
                     Grow(p, ang + (Random.value < 0.5f ? -1f : 1f) * Random.Range(0.5f, 1.1f), (len - d) * Random.Range(0.3f, 0.6f), width * 0.6f, d0 + d, depth + 1);
                 }
+            }
+            cracks.Add(k);
+        }
+
+        // 折れ線のひびを足す（pts は中心からの位置（px）。根元 pts[0] まで割れが届いてから、d0 + 道のりの順に伸びる）
+        public void AddPolyline(List<Vector2> pts, float width, float d0)
+        {
+            if (pts == null || pts.Count < 2) return;
+            Crack k = new Crack { width = width, d0 = d0 };
+            float d = 0f;
+            for (int i = 0; i < pts.Count; i++)
+            {
+                if (i > 0) d += Vector2.Distance(pts[i - 1], pts[i]);
+                k.pts.Add(new Vector3(pts[i].x, pts[i].y, d));
             }
             cracks.Add(k);
         }
@@ -457,7 +473,7 @@ public partial class MagicFx
                 {
                     int i = y * w + x;
                     Color c = new Color(0f, 0f, 0f, 0f);
-                    for (int l = 0; l < 3; l++) c = OverColor(c, LayerColor[l], LayerAlpha[l] * cover[l][i]);
+                    for (int l = 0; l < 3; l++) c = OverColor(c, layerColor[l], LayerAlpha[l] * cover[l][i]);
                     pixels[i] = c;
                 }
             }

@@ -25,6 +25,10 @@ public class GameBoard : MonoBehaviour
     // 書き換えは GameSystem.BreakCell / SetBurning / SetTrap / EnterCell を通すこと
     public BoardCells Cells { get; } = new BoardCells();
 
+    // 時間停止（超常魔法「停止世界」）の状態。時間停止中だけ GameSystem が入れる（それ以外は null）。
+    // 盤だけを受け取る判定（持ち駒のルール・魔法の空きマスなど）が、予定の駒が残っているマスを見るのに使う
+    public TimeStopState TimeStop { get; set; }
+
 
     [SerializeField] private List<PieceMap> pieceMapList = new List<PieceMap>();
 
@@ -136,6 +140,30 @@ public class GameBoard : MonoBehaviour
             return isKing; // 玉が取られたかどうかを返す
         }
         return false;
+    }
+
+    // 駒を盤のデータから外す（GameObject は残す。時間停止の「予定の駒」として、その場に灰色で残すとき）
+    public void DetachPiece(GamePiece piece)
+    {
+        if (piece == null) return;
+        int index = GameHelper.CalcPanelNum(piece.X, piece.Y);
+        if (index != -1 && boardData[index] == piece) boardData[index] = null;
+    }
+
+    // 外していた駒を (x, y) に戻す（盾で取りが防がれたなど。そのマスは空いていること）
+    public void AttachPiece(GamePiece piece, int x, int y)
+    {
+        int index = GameHelper.CalcPanelNum(x, y);
+        if (piece == null || index == -1) return;
+        boardData[index] = piece;
+        piece.X = x;
+        piece.Y = y;
+    }
+
+    // 盤のデータから外していた駒を破棄する（盤のデータは変えない。そのマスに今いる別の駒は消さない）
+    public void DestroyDetached(GamePiece piece)
+    {
+        if (piece != null) Destroy(piece.gameObject);
     }
 
     // 駒を作って (x, y) に置く（盤面の操作だけ）。作った駒を返す（置けなければ null）。

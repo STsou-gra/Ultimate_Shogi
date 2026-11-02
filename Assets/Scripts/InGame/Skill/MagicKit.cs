@@ -12,10 +12,13 @@ public static class MagicKit
         return piece != null && piece.player == context.Player && !piece.isUndead;
     }
 
-    // 駒がいない通常状態（破壊・炎上・落とし穴がない）のマスか（Prototype の emptyNormalSquares）
+    // 駒がいない通常状態（破壊・炎上・落とし穴がない）のマスか（Prototype の emptyNormalSquares・kit.js の空きマス）
     public static bool IsEmptyNormal(GameBoard board, Vector2Int pos)
     {
         if (!BoardCells.InBounds(pos.x, pos.y) || board.HasPieceAt(pos.x, pos.y)) return false;
+        // 時間停止中、予定の駒が残っているマス・マスの変化の予定があるマスは空きマスにしない
+        TimeStopState ts = board.TimeStop;
+        if (ts != null && (ts.IsHeldSquare(pos.x, pos.y) || ts.HasPendingCell(pos.x, pos.y))) return false;
         BoardCell cell = board.Cells.At(pos.x, pos.y);
         return cell != null && cell.State == CellState.Normal && !cell.HasTrap;
     }
