@@ -175,9 +175,25 @@ public class GameSystem : MonoBehaviour
     // ------------------------------------------------------------
     private MagicFx magicFx;
 
-    // 盾状態になった・盾が取りを防いで割れた（演出用）
+    // 盾状態になった・盾が取りを防いで割れた・ファランクス状態になった（演出用）
     public event System.Action<GamePiece> ShieldGiven;
     public event System.Action<ShieldBreak> ShieldBroken;
+    public event System.Action<GamePiece> PhalanxGiven;
+
+    // ------------------------------------------------------------
+    //  手番交代の前の自動行動（Prototype の turn.js の afterAction：ファランクス → アンデッド → …）
+    //  手番を終える行動（移動・打つ・手番を使う魔法・必殺技・狙撃）のあと、手番を相手に渡す前に、
+    //  手番側の自動行動をこの順に 1 つずつ行う（演出を見せ終わってから次へ）。2回行動で手番が続くときは行わない
+    // ------------------------------------------------------------
+    private readonly List<TurnEndAction> turnEndActions = new List<TurnEndAction> { new PhalanxAdvance() };
+    private bool isRunningTurnEnd = false;
+    public bool IsRunningTurnEnd => isRunningTurnEnd;
+
+    // 自動行動を足す（アンデッドなど。足した順に、ファランクスのあとに動く）
+    public void AddTurnEndAction(TurnEndAction action)
+    {
+        if (action != null && !turnEndActions.Contains(action)) turnEndActions.Add(action);
+    }
 
     // 盾が割れるまでの秒数（移動・狙撃で取ろうとしたとき、攻撃が届くまで。CapturePiece を呼ぶ側が入れて、呼んだら 0 に戻す）
     private float captureFxDelay = 0f;
@@ -710,7 +726,9 @@ public class GameSystem : MonoBehaviour
         ConfirmMove(pendingFromX, pendingFromY, pendingToX, pendingToY, promote);
     }
 
-    bool CanPromote(GamePiece piece, int fromX, int toX)
+    // fromX → toX の移動で成れるか（敵陣に入る・敵陣から出る。成れる駒で、まだ成っていない）。
+    // 必殺技・ファランクスの前進など、自動で成るところからも使う
+    public bool CanPromote(GamePiece piece, int fromX, int toX)
     {
         if (piece.isPromoted || !PieceRules.CanPromote(piece.type))
         {
@@ -1485,6 +1503,17 @@ public class GameSystem : MonoBehaviour
         return true;
     }
 
+    // 駒をファランクス状態にする（必殺魔法「ファランクス」。Prototype の effects.js の givePhalanx）。盾状態はそのまま。
+    // ファランクス状態にしたら true（もうファランクス状態なら false）
+    public bool GivePhalanx(GamePiece piece)
+    {
+        if (!IsOnBoard(piece) || piece.hasPhalanx) return false;
+        piece.hasPhalanx = true;
+        Debug.Log($"({piece.X}, {piece.Y})：{piece.player} の{HandUIManager.GetJapaneseName(piece.type)}がファランクス状態になった！（手番の終わりに自動で前進して前方を突く）");
+        PhalanxGiven?.Invoke(piece);
+        return true;
+    }
+
     // 盾が取りを防いで割れる（Prototype の effects.js の breakShield）
     void BreakShield(GamePiece piece, GamePiece attacker, PlayerType by)
     {
@@ -1541,6 +1570,7 @@ public class GameSystem : MonoBehaviour
     // ------------------------------------------------------------
 
     public BoardCells Cells => gameBoard != null ? gameBoard.Cells : null;
+    public GameBoard Board => gameBoard;
 
     // マスを破壊する（対局終了まで戻らない）。そこにいた駒は消失する。破壊したら true。
     // 王将が消えることもあるので、呼び出し側で ResolveKingLoss を呼ぶこと（スキルなら ExecuteSkill が呼ぶ）
@@ -1784,6 +1814,7 @@ public class GameSystem : MonoBehaviour
     }
 
 
+    // 行動が終わった：2回行動なら手番を続ける。そうでなければ、手番交代の前の自動行動（ファランクスなど）→ 手番交代
     void NextState()
     {
         if (hasExtraTurn)
@@ -1795,6 +1826,88 @@ public class GameSystem : MonoBehaviour
             UpdateActivePlayerSkillUI(); // 獲得したポイントをスキルボタンに反映
             return; // ターンを切り替えずに同じプレイヤーのターンを続ける
         }
+
+        if (!isRunningTurnEnd && IsInTurn)
+        {
+            PlayerType side = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
+            if (HasTurnEndWork(side))
+            {
+                RunTurnEndActions(side);
+                return; // 自動行動の演出が終わってから PassTurn
+            }
+        }
+        PassTurn();
+    }
+
+    bool HasTurnEndWork(PlayerType side)
+    {
+        foreach (TurnEndAction action in turnEndActions)
+        {
+            if (action.HasWork(this, side)) return true;
+        }
+        return false;
+    }
+
+    // 手番側の自動行動を順に行う：小さなカットイン → 効果（盤面はすぐ変わり、演出は時間軸どおりに再生）→ 演出を待つ → 勝敗の判定。
+    // 全部終わったら手番を相手に渡す
+    async void RunTurnEndActions(PlayerType side)
+    {
+        isRunningTurnEnd = true;
+        isResolvingAction = true;
+        ResetSelectionState();
+        try
+        {
+            foreach (TurnEndAction action in turnEndActions.ToArray())
+            {
+                if (!IsInTurn) return;
+                if (!action.HasWork(this, side)) continue;
+
+                if (HandUIManager.Instance != null) HandUIManager.Instance.SetStatusText($"【{action.Title}】 {action.GetStatusText(side)}");
+                if (!string.IsNullOrEmpty(action.CutInName))
+                {
+                    await CutInEffect.Instance.PlayMiniAsync(action.CutInName, action.GetCutInSub(side), action.Color, destroyCancellationToken);
+                }
+                if (!IsInTurn) return;
+
+                SpecialContext timeline = new SpecialContext(this, gameBoard, side, specialFx);
+                pendingActionFxTime = 0f;
+                ActiveSpecial = timeline;
+                try
+                {
+                    action.Run(new TurnEndContext(this, gameBoard, side, timeline, magicFx));
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogException(e);
+                }
+                finally
+                {
+                    ActiveSpecial = null;
+                }
+
+                float wait = Mathf.Max(pendingActionFxTime, timeline.Time + 0.2f);
+                pendingActionFxTime = 0f;
+                await Awaitable.WaitForSecondsAsync(wait, destroyCancellationToken);
+                UpdateActivePlayerSkillUI();
+                if (ResolveKingLoss()) return; // 自動行動で王将を取った・巻き込んだ
+            }
+        }
+        catch (System.OperationCanceledException)
+        {
+            return; // シーンを離れた
+        }
+        finally
+        {
+            isRunningTurnEnd = false;
+        }
+
+        isResolvingAction = false;
+        if (IsInTurn) PassTurn();
+    }
+
+    // 手番を相手に渡す（ターン数・エナジー・詰み・千日手の判定は OnTurnStarted）
+    void PassTurn()
+    {
         // ターン切り替え時に状態をクリア
         isSelectingHand = false;
         isDroppingHand = false;
@@ -2032,6 +2145,7 @@ public class GameSystem : MonoBehaviour
             SpecialMove special = GetSpecialMove(piece);
             if (special != null) sb.Append(Mathf.Min(piece.moveCount, special.requiredMoves));
             if (piece.hasShield) sb.Append('s'); // 盾状態（Prototype の hash.js と同じく局面に含める）
+            if (piece.hasPhalanx) sb.Append('p'); // ファランクス状態（〃）
         }
         foreach (Player p in new[] { player1, player2 })
         {

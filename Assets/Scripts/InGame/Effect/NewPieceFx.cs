@@ -100,6 +100,12 @@ public class NewPieceFx : MonoBehaviour
         }, false).SetLink(gameObject);
     }
 
+    // 爆発の見た目だけ（閃光・火球・衝撃波・火の粉・煙・シェイク）。隕石の着弾などから使う。size はピクセル（3マス = 198px）
+    public void Explosion(Vector3 pos, float size)
+    {
+        PlayExplosion(pos, size);
+    }
+
     // Prototype の fx.explosion（size はピクセル。範囲の一辺 = 3マス = 198px）
     void PlayExplosion(Vector3 pos, float size)
     {
