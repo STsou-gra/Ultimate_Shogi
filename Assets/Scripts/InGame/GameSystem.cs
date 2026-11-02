@@ -84,13 +84,24 @@ public class GameSystem : MonoBehaviour
     private List<PositionRecord> positionHistory = new List<PositionRecord>();
     private Dictionary<string, int> positionCounts = new Dictionary<string, int>();
 
-    // スキルの対象選択（爆発の中心・駒入替の駒など）
-    private bool isSelectingSkillTarget = false;
-    private SkillDefinition pendingSkill;
-    private SkillContext pendingSkillContext;
+    // 盤のマスを選ぶモード（スキルの対象：爆発の中心・駒入替の駒など／必殺技の対象：天馬跳躍の跳ぶ先）。
+    // スキルと必殺技で同じ操作（カーソル＋F で決定・Space で取消）を使う
+    private class TargetSelection
+    {
+        public string Title;                                       // 案内文の【】に出す名前
+        public int Count;                                          // 選ぶマスの数
+        public List<Vector2Int> Chosen;                            // 選んだマス
+        public System.Func<Vector2Int, bool> IsValid;              // そのマスを次に選べるか
+        public System.Func<int, string> Prompt;                    // 何個目を選んでいるときの案内文
+        public System.Func<Vector2Int, List<Vector2Int>> Preview;  // カーソル位置で光らせるマス
+        public System.Action OnComplete;                           // 選び終わった
+        public GamePiece Caster;                                   // 必殺技を使う駒（スキルなら null）
+    }
+    private TargetSelection targetSelection;
     private Vector2Int lastPreviewCursor;
 
-    public bool IsSelectingSkillTarget => isSelectingSkillTarget;
+    public bool IsSelectingSkillTarget => targetSelection != null;
+    public bool IsSelectingSpecialTarget => targetSelection != null && targetSelection.Caster != null;
 
     // ------------------------------------------------------------
     //  駒錬成・火薬・狙撃手（Prototype の forge.js / effects.js の explode / play.js の snipe）
@@ -127,6 +138,28 @@ public class GameSystem : MonoBehaviour
     private GamePiece snipingPiece;
     private readonly List<Vector2Int> snipeTargets = new List<Vector2Int>();
     public bool IsSelectingSnipeTarget => isSelectingSnipeTarget;
+
+    // ------------------------------------------------------------
+    //  必殺技（Prototype の src/defs/specials・src/core/play.js の special）
+    // ------------------------------------------------------------
+    [Header("Special Moves")]
+    [SerializeField] private SpecialMoveBook specialMoveBook; // 未設定なら Resources/SpecialMoveBook を読む
+    private SpecialMoveFx specialFx;
+
+    public SpecialMoveBook SpecialMoves
+    {
+        get
+        {
+            if (specialMoveBook == null) specialMoveBook = SpecialMoveBook.LoadDefault();
+            return specialMoveBook;
+        }
+    }
+
+    // 移動回数がちょうど必要数に達した（「必殺技 解放！」の演出用）
+    public event System.Action<GamePiece> SpecialReady;
+
+    // 発動中の必殺技（効果を処理している間だけ。演出が倒された駒の飛ばし方を読む）
+    public SpecialContext ActiveSpecial { get; private set; }
 
     // 行動の演出を見せている間（手番の交代待ち）は操作できない
     private bool isResolvingAction = false;
@@ -203,6 +236,11 @@ public class GameSystem : MonoBehaviour
         {
             gameObject.AddComponent<NewPieceFx>();
         }
+
+        // 必殺技の演出（シーンに置かれていなければ自動で追加する）。カットインは CutInEffect.Instance が自動で作る
+        specialFx = FindAnyObjectByType<SpecialMoveFx>();
+        if (specialFx == null) specialFx = gameObject.AddComponent<SpecialMoveFx>();
+        if (SpecialMoves == null) Debug.LogWarning("必殺技の一覧が読めません");
 
         // 対局の状態（ターン数・エナジー）
         match = new MatchState(MatchConfig.FirstPlayer);
@@ -339,9 +377,9 @@ public class GameSystem : MonoBehaviour
             }
         }
 
-        if (isSelectingSkillTarget)
+        if (IsSelectingSkillTarget)
         {
-            HandleSkillTargetSelection();
+            HandleTargetSelection();
             return;
         }
 
@@ -460,6 +498,10 @@ public class GameSystem : MonoBehaviour
             {
                 BeginSnipe();
             }
+            else if (keyboard.eKey.wasPressedThisFrame && selectedPiece != null)
+            {
+                BeginSpecial();
+            }
             else if (gameController.IsOkTrigger())
             {
                 HandlePieceSelection();
@@ -497,6 +539,11 @@ public class GameSystem : MonoBehaviour
                 {
                     // 狙撃手は動けない。「狙撃」ボタン（または G・もう一度 F）で狙撃の対象選択へ
                     HandUIManager.Instance.SetStatusText("【狙撃手】 狙撃: G / もう一度 F /「狙撃」ボタン (取消: Space)");
+                }
+                else if (GetSpecialMove(piece) != null && HandUIManager.Instance != null)
+                {
+                    // 必殺技のある駒：移動回数と必殺技の状態（オーラが出ていれば E・「必殺技」ボタンで発動）
+                    HandUIManager.Instance.SetStatusText(SpecialStatusText(piece));
                 }
             }
         }
@@ -716,6 +763,7 @@ public class GameSystem : MonoBehaviour
         {
             piece.Promote();
         }
+        CountMove(piece);
 
         return ResolveKingLoss();
     }
@@ -733,7 +781,11 @@ public class GameSystem : MonoBehaviour
             piece.X = x;
             piece.Y = y;
             AnimatePieceMove(piece, GameHelper.CalcPanelLocation(x, y));
-            if (EnterCell(piece, x, y) && promote) piece.Promote();
+            if (EnterCell(piece, x, y))
+            {
+                if (promote) piece.Promote();
+                CountMove(piece);
+            }
         }
         return ResolveKingLoss();
     }
@@ -938,6 +990,209 @@ public class GameSystem : MonoBehaviour
     }
 
     // ------------------------------------------------------------
+    //  必殺技（Prototype の play.js の special・skills.js の canUseSpecial / specialTargets）
+    //  駒ごとに移動回数を数え、技ごとの回数に達するとオーラが出て発動できる（成った駒も同じ技）。
+    //  オーラの出ている自分の駒を選ぶと「必殺技」ボタン（E キー）→ 対象を選ぶ技なら対象選択 → カットイン → 効果。
+    //  手番を消費する（A-5）。発動後は移動回数が 0 に戻る。取った駒は持ち駒になる（A-7）。王将も取れる（R-4）。
+    //  オンライン対戦中はまだ使えない（未同期）。詰みの判定にも含めない
+    // ------------------------------------------------------------
+
+    // 駒の必殺技（なければ null）
+    public SpecialMove GetSpecialMove(GamePiece piece)
+    {
+        if (piece == null || SpecialMoves == null) return null;
+        return SpecialMoves.For(piece.type);
+    }
+
+    // 通常の移動を 1 回数える（Prototype の play.js の move の moveCount++ と noteSpecialReady）
+    void CountMove(GamePiece piece)
+    {
+        if (!IsOnBoard(piece)) return;
+        piece.moveCount++;
+        bool wasReady = piece.isSpecialReady;
+        RefreshSpecialReady(piece);
+        if (piece.isSpecialReady && !wasReady)
+        {
+            Debug.Log($"{piece.player} の{HandUIManager.GetJapaneseName(piece.type)}：必殺技「{GetSpecialMove(piece).moveName}」が使えるようになった！");
+            SpecialReady?.Invoke(piece);
+        }
+    }
+
+    // 移動回数から isSpecialReady（オーラ）を設定し直す
+    public void RefreshSpecialReady(GamePiece piece)
+    {
+        if (piece == null) return;
+        SpecialMove move = GetSpecialMove(piece);
+        piece.isSpecialReady = move != null && piece.moveCount >= move.requiredMoves;
+    }
+
+    // 駒を選んだときの案内（Prototype の PlayerPanel.js の駒の情報）
+    string SpecialStatusText(GamePiece piece)
+    {
+        SpecialMove move = GetSpecialMove(piece);
+        if (move == null) return IdleStatusText;
+        string name = HandUIManager.GetJapaneseName(piece.type);
+        if (!piece.isSpecialReady)
+        {
+            int rest = Mathf.Max(0, move.requiredMoves - piece.moveCount);
+            return $"【{name}】 移動 {piece.moveCount} 回　必殺技「{move.moveName}」はあと {rest} 回移動で使える (取消: Space)";
+        }
+        if (IsOnlineMatch) return $"【{name}】 必殺技「{move.moveName}」★発動可能★（オンライン対戦ではまだ使えません）";
+        string usage = move.CanUse(new SpecialContext(this, gameBoard, piece, specialFx))
+            ? "発動: E /「必殺技」ボタン"
+            : "今は効果の対象がありません";
+        return $"【{name}】 必殺技「{move.moveName}」★発動可能★ {usage} (取消: Space)\n{move.description}";
+    }
+
+    // 選んでいる駒で必殺技のボタンを出すか（自分の手番に、オーラの出ている自分の駒を選んでいる）
+    public bool CanBeginSpecial
+    {
+        get
+        {
+            return CanActNow && !isSelectingHand && !isDroppingHand && !isSelectingSnipeTarget
+                && selectedPiece != null && IsMyPiece(selectedPiece) && selectedPiece.isSpecialReady
+                && GetSpecialMove(selectedPiece) != null && !IsOnlineMatch;
+        }
+    }
+
+    // 選んでいる駒の必殺技（ボタンの表示用。対象選択中はその技）
+    public SpecialMove SelectedSpecial
+    {
+        get
+        {
+            if (IsSelectingSpecialTarget) return GetSpecialMove(targetSelection.Caster);
+            return selectedPiece != null ? GetSpecialMove(selectedPiece) : null;
+        }
+    }
+
+    // 選んでいる駒の必殺技を今の盤面で使えるか（効果の対象があるか）
+    public bool CanUseSelectedSpecial
+    {
+        get
+        {
+            if (!CanBeginSpecial) return false;
+            return GetSpecialMove(selectedPiece).CanUse(new SpecialContext(this, gameBoard, selectedPiece, specialFx));
+        }
+    }
+
+    // 「必殺技」ボタン・E キー：対象を選ぶ技なら対象選択へ、選ばない技はすぐ発動する
+    public void BeginSpecial()
+    {
+        if (!CanBeginSpecial) return;
+        GamePiece caster = selectedPiece;
+        SpecialMove move = GetSpecialMove(caster);
+        SpecialContext probe = new SpecialContext(this, gameBoard, caster, specialFx);
+        if (!move.CanUse(probe))
+        {
+            if (HandUIManager.Instance != null) HandUIManager.Instance.SetStatusText($"【{move.moveName}】 今は効果の対象がありません (取消: Space)");
+            return;
+        }
+
+        List<Vector2Int> targets = move.GetTargets(probe);
+        if (targets == null)
+        {
+            StartSpecial(caster, move, null);
+            return;
+        }
+
+        // 対象を選ぶ技（天馬跳躍）：スキルと同じ対象選択モードで 1 マス選ぶ
+        List<Vector2Int> chosen = new List<Vector2Int>();
+        BeginTargetSelection(new TargetSelection
+        {
+            Title = move.moveName,
+            Count = 1,
+            Chosen = chosen,
+            IsValid = pos => targets.Contains(pos),
+            Prompt = index => move.GetTargetPrompt(),
+            Preview = cursor => targets,
+            OnComplete = () => StartSpecial(caster, move, chosen[0]),
+            Caster = caster,
+        });
+    }
+
+    void StartSpecial(GamePiece caster, SpecialMove move, Vector2Int? target)
+    {
+        ResetSelectionState();
+        ExecuteSpecial(caster, move, target);
+    }
+
+    // 発動（Prototype の play.js の special）：カットイン → 効果 → 移動回数を 0 に → 成り → 演出を待って手番交代
+    async void ExecuteSpecial(GamePiece caster, SpecialMove move, Vector2Int? target)
+    {
+        if (!IsOnBoard(caster)) return;
+        isResolvingAction = true;
+        PlayerType owner = caster.player;
+        string pieceName = HandUIManager.GetJapaneseName(caster.type);
+        Debug.Log($"{owner} の{pieceName}が必殺技「{move.moveName}」を発動！");
+        if (HandUIManager.Instance != null) HandUIManager.Instance.SetStatusText($"【必殺技】 {pieceName}の「{move.moveName}」！");
+
+        try
+        {
+            if (specialFx != null) specialFx.PlayCast(caster, move);
+            await Awaitable.WaitForSecondsAsync(0.25f, destroyCancellationToken);
+            string side = owner == PlayerType.Player1 ? "先手" : "後手";
+            await CutInEffect.Instance.PlayAsync(move.moveName, $"{side}・{pieceName}の必殺技", move.color, destroyCancellationToken);
+        }
+        catch (System.OperationCanceledException)
+        {
+            return; // シーンを離れた
+        }
+
+        if (!IsInTurn || !IsOnBoard(caster))
+        {
+            isResolvingAction = false;
+            return;
+        }
+        if (specialFx != null) specialFx.PopName(caster, move);
+
+        // 効果（盤面はすぐ変わり、演出は SpecialMoveFx が時刻どおりに再生する）
+        SpecialContext context = new SpecialContext(this, gameBoard, caster, specialFx) { Target = target };
+        int fromX = caster.X;
+        pendingActionFxTime = 0f;
+        ActiveSpecial = context;
+        try
+        {
+            move.Apply(context);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogException(e);
+        }
+        finally
+        {
+            ActiveSpecial = null;
+        }
+
+        // 発動後は移動回数（チャージ）を 0 に戻す。敵陣に入る・出ると成る（Prototype と同じく自動で成る）
+        if (IsOnBoard(caster))
+        {
+            caster.moveCount = 0;
+            RefreshSpecialReady(caster);
+            if (CanPromote(caster, fromX, caster.X))
+            {
+                caster.isPromoted = true;
+                context.Schedule(caster.UpdateVisual);
+            }
+        }
+
+        // 演出を見せ終わってから、勝敗の判定と手番の交代
+        float wait = Mathf.Max(pendingActionFxTime, context.Time + 0.5f);
+        pendingActionFxTime = 0f;
+        try
+        {
+            await Awaitable.WaitForSecondsAsync(wait, destroyCancellationToken);
+        }
+        catch (System.OperationCanceledException)
+        {
+            return;
+        }
+        isResolvingAction = false;
+        UpdateActivePlayerSkillUI();
+        if (ResolveKingLoss()) return;
+        if (IsInTurn) NextState();
+    }
+
+    // ------------------------------------------------------------
     //  駒錬成（Prototype の effects.js の forge）
     //  エナジーを払って駒を作り、持ち駒に加える。MatchConfig.ForgeEndsTurn が false なら手番は続く
     // ------------------------------------------------------------
@@ -947,7 +1202,7 @@ public class GameSystem : MonoBehaviour
     {
         get
         {
-            if (!IsInTurn || isResolvingAction || isWaitingForPromoteChoice || isSelectingSkillTarget) return false;
+            if (!IsInTurn || isResolvingAction || isWaitingForPromoteChoice || IsSelectingSkillTarget) return false;
             if (IsOnlineMatch && CurrentPlayer.PlayerType != NetworkManager.Instance.MyPlayerType) return false;
             return true;
         }
@@ -1704,6 +1959,9 @@ public class GameSystem : MonoBehaviour
             sb.Append(piece.player == PlayerType.Player1 ? 'a' : 'b');
             sb.Append((int)piece.type);
             sb.Append(piece.isPromoted ? '+' : '-');
+            // 必殺技のチャージ（必要数で頭打ち。チャージが違えば指せる手が違うので別の局面）
+            SpecialMove special = GetSpecialMove(piece);
+            if (special != null) sb.Append(Mathf.Min(piece.moveCount, special.requiredMoves));
         }
         foreach (Player p in new[] { player1, player2 })
         {
@@ -1736,7 +1994,7 @@ public class GameSystem : MonoBehaviour
     public void UseSkill(PlayerType player, int slotIndex)
     {
         // 成りの選択中・スキルや狙撃の対象選択中・演出中は使えない
-        if (isWaitingForPromoteChoice || isSelectingSkillTarget || isSelectingSnipeTarget || isResolvingAction) return;
+        if (isWaitingForPromoteChoice || IsSelectingSkillTarget || isSelectingSnipeTarget || isResolvingAction) return;
 
         // 自分のターンであるかチェック
         PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
@@ -1810,6 +2068,22 @@ public class GameSystem : MonoBehaviour
 
     void BeginSkillTargetSelection(SkillDefinition skill, SkillContext context)
     {
+        SkillEffect effect = skill.effect;
+        BeginTargetSelection(new TargetSelection
+        {
+            Title = skill.skillName,
+            Count = effect.TargetCount,
+            Chosen = context.Targets,
+            IsValid = pos => effect.IsValidTarget(context, pos),
+            Prompt = index => effect.GetTargetPrompt(index),
+            Preview = cursor => effect.GetPreviewCells(context, cursor),
+            OnComplete = () => ExecuteSkill(skill, context), // ポイントは発動するときに消費する
+        });
+    }
+
+    // マスを選ぶモードに入る（スキル・必殺技の共通）
+    void BeginTargetSelection(TargetSelection selection)
+    {
         // 駒の選択・持ち駒の選択を解除してから対象選択に入る
         selectedPiece = null;
         isSelectingHand = false;
@@ -1822,23 +2096,38 @@ public class GameSystem : MonoBehaviour
             HandUIManager.Instance.HidePanel();
         }
 
-        isSelectingSkillTarget = true;
-        pendingSkill = skill;
-        pendingSkillContext = context;
+        targetSelection = selection;
         lastPreviewCursor = new Vector2Int(-1, -1);
-        UpdateSkillTargetPrompt();
+
+        // 必殺技：画面を暗くし、使う駒と、選べるマスにいる駒を光らせる
+        if (selection.Caster != null)
+        {
+            SetDarkOverlayActive(true);
+            selection.Caster.SetHighlight(true);
+            highlightedPieces.Add(selection.Caster);
+            foreach (Vector2Int pos in selection.Preview(new Vector2Int(-1, -1)))
+            {
+                GamePiece q = gameBoard.GetPieceAt(pos.x, pos.y);
+                if (q != null && q != selection.Caster)
+                {
+                    q.SetHighlight(true);
+                    highlightedPieces.Add(q);
+                }
+            }
+        }
+        UpdateTargetPrompt();
     }
 
-    void UpdateSkillTargetPrompt()
+    void UpdateTargetPrompt()
     {
-        if (HandUIManager.Instance == null) return;
-        string prompt = pendingSkill.effect.GetTargetPrompt(pendingSkillContext.Targets.Count);
-        HandUIManager.Instance.SetStatusText($"【{pendingSkill.skillName}】 {prompt} (決定: F / 取消: Space)");
+        if (HandUIManager.Instance == null || targetSelection == null) return;
+        string prompt = targetSelection.Prompt(targetSelection.Chosen.Count);
+        HandUIManager.Instance.SetStatusText($"【{targetSelection.Title}】 {prompt} (決定: F / 取消: Space)");
     }
 
-    void HandleSkillTargetSelection()
+    void HandleTargetSelection()
     {
-        SkillEffect effect = pendingSkill.effect;
+        TargetSelection selection = targetSelection;
         Vector2Int cursor = new Vector2Int(gameCursor.X, gameCursor.Y);
 
         // カーソルが動いたら、光らせるマスを更新する
@@ -1846,7 +2135,7 @@ public class GameSystem : MonoBehaviour
         {
             lastPreviewCursor = cursor;
             gameBoard.AllDeactivePanel();
-            foreach (Vector2Int pos in effect.GetPreviewCells(pendingSkillContext, cursor))
+            foreach (Vector2Int pos in selection.Preview(cursor))
             {
                 gameBoard.ActivePanel(GameHelper.CalcPanelNum(pos.x, pos.y));
             }
@@ -1854,42 +2143,47 @@ public class GameSystem : MonoBehaviour
 
         if (gameController.IsOkTrigger())
         {
-            if (!effect.IsValidTarget(pendingSkillContext, cursor))
+            if (!selection.IsValid(cursor))
             {
                 Debug.Log("そのマスは選べません");
                 return;
             }
 
-            pendingSkillContext.Targets.Add(cursor);
+            selection.Chosen.Add(cursor);
             lastPreviewCursor = new Vector2Int(-1, -1); // 選択状態が変わったので光らせ直す
-            if (pendingSkillContext.Targets.Count < effect.TargetCount)
+            if (selection.Chosen.Count < selection.Count)
             {
-                UpdateSkillTargetPrompt();
+                UpdateTargetPrompt();
                 return;
             }
 
-            SkillDefinition skill = pendingSkill;
-            SkillContext context = pendingSkillContext;
-            EndSkillTargetSelection();
-            ExecuteSkill(skill, context);
+            EndTargetSelection();
+            selection.OnComplete();
         }
         else if (gameController.IsCancelTrigger())
         {
-            // 取り消した場合はポイントを消費しない
-            EndSkillTargetSelection();
-            if (HandUIManager.Instance != null)
-            {
-                HandUIManager.Instance.SetStatusText(IdleStatusText);
-            }
+            CancelTargetSelection();
         }
     }
 
-    void EndSkillTargetSelection()
+    // 対象選択をやめる（スキルのポイント・必殺技のチャージは減らない）。「必殺技をやめる」ボタン・Space
+    public void CancelTargetSelection()
     {
-        isSelectingSkillTarget = false;
-        pendingSkill = null;
-        pendingSkillContext = null;
+        if (targetSelection == null) return;
+        EndTargetSelection();
+        if (HandUIManager.Instance != null)
+        {
+            HandUIManager.Instance.SetStatusText(IdleStatusText);
+        }
+    }
+
+    void EndTargetSelection()
+    {
+        targetSelection = null;
+        selectedPiece = null;
         gameBoard.AllDeactivePanel();
+        ClearBoardHighlight();
+        SetDarkOverlayActive(false);
     }
 
     public void OnServerUseSkill(PlayerType activePlayer)

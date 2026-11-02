@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7d9b0d2b2b4d42bc9e4c56b514bfff9f, type: 3}
+  m_Name: Rook_Special
+  m_EditorClassIdentifier: Assembly-CSharp::RookBeamSpecial
+  moveName: "\u9F8D\u738B\u65CB\u98A8"
+  requiredMoves: 3
+  color: {r: 0.4117647, g: 0.9411765, b: 0.6823529, a: 1}
+  description: "\u7E26\u6A2A4\u65B9\u5411\u306B\u885D\u6483\u6CE2\u3092\u653E\u3061\u3001\u5404\u65B9\u5411\u3067\u6700\u521D\u306B\u5F53\u305F\u3063\u305F\u76F8\u624B\u306E\u99D2\u3092\u53D6\u308B\u3002"

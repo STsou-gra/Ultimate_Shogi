@@ -10,6 +10,9 @@ using TMPro;
 //                 押すと GameSystem.Forge（キーボードなら Z・X …）。錬成すると「火薬 錬成！」と出てボタンが弾む
 //  ・狙撃ボタン … 自分の手番に狙撃手を選んでいるときだけ出る（GameSystem.BeginSnipe。キーボードなら G）。
 //                 狙撃の対象を選んでいる間は「狙撃をやめる」になる
+//  ・必殺技ボタン … 自分の手番に、オーラの出ている（必殺技を使える）自分の駒を選んでいるときだけ出る
+//                 （GameSystem.BeginSpecial。キーボードなら E）。効果の対象がないときは押せない。
+//                 対象を選ぶ技（天馬跳躍）の対象を選んでいる間は「必殺技をやめる」になる
 //
 // スキルボタンのパネル（5 枠）は埋まっているので、画面の右上に実行時にパネルを作って並べる。
 // シーンに置かなくても GameSystem が自動で追加する
@@ -43,6 +46,9 @@ public class ForgePanelView : MonoBehaviour
     private Button snipeButton;
     private Image snipeImage;
     private TextMeshProUGUI snipeLabel;
+    private Button specialButton;
+    private Image specialImage;
+    private TextMeshProUGUI specialLabel;
 
     void Start()
     {
@@ -77,6 +83,27 @@ public class ForgePanelView : MonoBehaviour
             snipeLabel.text = aiming ? "狙撃をやめる  [Space]" : "狙撃  [G]";
             snipeImage.color = aiming ? CancelButtonColor : SnipeButtonColor;
         }
+
+        bool choosing = gameSystem.IsSelectingSpecialTarget;
+        bool showSpecial = choosing || gameSystem.CanBeginSpecial;
+        if (specialButton.gameObject.activeSelf != showSpecial) specialButton.gameObject.SetActive(showSpecial);
+        if (showSpecial)
+        {
+            SpecialMove move = gameSystem.SelectedSpecial;
+            string moveName = move != null ? move.moveName : "";
+            bool usable = choosing || gameSystem.CanUseSelectedSpecial;
+            specialButton.interactable = usable;
+            specialLabel.text = choosing ? "必殺技をやめる  [Space]"
+                : usable ? $"必殺技「{moveName}」  [E]" : $"「{moveName}」 対象なし";
+            specialImage.color = choosing ? CancelButtonColor : SpecialButtonColor(move);
+        }
+    }
+
+    // 必殺技ボタンの色（技の色を少し暗くして、白い文字を読みやすくする）
+    static Color SpecialButtonColor(SpecialMove move)
+    {
+        Color c = move != null ? move.color : PanelLineColor;
+        return Color.Lerp(c, Color.black, 0.45f);
     }
 
     // ------------------------------------------------------------
@@ -86,6 +113,12 @@ public class ForgePanelView : MonoBehaviour
     {
         if (gameSystem.IsSelectingSnipeTarget) gameSystem.CancelSnipe();
         else gameSystem.BeginSnipe();
+    }
+
+    void OnSpecialClicked()
+    {
+        if (gameSystem.IsSelectingSpecialTarget) gameSystem.CancelTargetSelection();
+        else gameSystem.BeginSpecial();
     }
 
     void OnForged(PlayerType owner, ForgeRecipe recipe)
@@ -190,6 +223,15 @@ public class ForgePanelView : MonoBehaviour
         Stretch(snipeLabel.rectTransform, Vector2.zero, Vector2.zero);
         snipeButton.onClick.AddListener(OnSnipeClicked);
         snipeButton.gameObject.SetActive(false);
+
+        // 必殺技ボタン（オーラの出ている自分の駒を選んでいるときだけ出る）
+        specialButton = CreateButton("SpecialButton", panel, SpecialButtonColor(null), out image);
+        specialImage = image;
+        AddLayout(specialButton.gameObject, buttonHeight * 0.8f);
+        specialLabel = CreateText("Label", specialButton.transform, "必殺技  [E]", 28f, Color.white, TextAlignmentOptions.Center);
+        Stretch(specialLabel.rectTransform, Vector2.zero, Vector2.zero);
+        specialButton.onClick.AddListener(OnSpecialClicked);
+        specialButton.gameObject.SetActive(false);
     }
 
     ForgeButton CreateForgeButton(ForgeRecipe recipe, string key)

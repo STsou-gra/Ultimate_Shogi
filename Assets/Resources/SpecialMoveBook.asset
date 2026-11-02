@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6e33380e4c774bd1ac77b9a30461f38b, type: 3}
+  m_Name: SpecialMoveBook
+  m_EditorClassIdentifier: Assembly-CSharp::SpecialMoveBook
+  entries:
+  - pieceType: 7
+    move: {fileID: 11400000, guid: 30049646703e406484a9c37734ac3bac, type: 2}
+  - pieceType: 6
+    move: {fileID: 11400000, guid: be4630264842456785ed103ab39030e8, type: 2}
+  - pieceType: 5
+    move: {fileID: 11400000, guid: de07769b13b44c42bac07d1c1d1c802a, type: 2}
+  - pieceType: 3
+    move: {fileID: 11400000, guid: 724eea493505475d98fc35061b163277, type: 2}
+  - pieceType: 2
+    move: {fileID: 11400000, guid: 5e9c685214ac43b4802987dbdadeb1f2, type: 2}
+  - pieceType: 1
+    move: {fileID: 11400000, guid: 6f9be8b51b244923be5d7861c57a9462, type: 2}
