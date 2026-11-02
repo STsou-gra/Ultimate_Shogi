@@ -98,6 +98,7 @@ public class GameTickEffects : MonoBehaviour
     private readonly List<Outline> skillButtonOutlines = new List<Outline>();
 
     private float time;
+    private float worldTime; // 盤の外周の発光の時刻（時間停止中は進まない）
 
     void Start()
     {
@@ -130,12 +131,16 @@ public class GameTickEffects : MonoBehaviour
     void LateUpdate()
     {
         float dt = Mathf.Min(0.05f, Time.deltaTime);
+        // 時間停止中（超常魔法「停止世界」）は、駒のオーラ・盤の外周の発光・背景の火の粉も止まる（Prototype の tick と同じ）。
+        // 移動先ハイライトの明滅・スキルボタンなどの UI は動かす
+        bool frozen = gameSystem != null && gameSystem.IsTimeStopped;
+        if (!frozen) worldTime += dt;
         time += dt;
         float t = time;
         float pulse = 0.5f + 0.5f * Mathf.Sin(t * 5f);
         bool inTurn = gameSystem != null && gameSystem.IsInTurn;
 
-        UpdatePieces(dt, pulse);
+        if (!frozen) UpdatePieces(dt, pulse);
 
         // 移動先ハイライト・カーソルの明滅
         float hlAlpha = 0.75f + 0.25f * Mathf.Sin(t * 6f);
@@ -153,14 +158,14 @@ public class GameTickEffects : MonoBehaviour
         if (boardGlow != null)
         {
             Color c = doom ? DoomGlowColor : BoardGlowColor;
-            c.a = 0.4f * (0.6f + 0.4f * Mathf.Sin(t * (doom ? 4f : 1.5f)));
+            c.a = 0.4f * (0.6f + 0.4f * Mathf.Sin(worldTime * (doom ? 4f : 1.5f)));
             boardGlow.color = c;
         }
 
         UpdateUI(inTurn, pulse);
 
         // 背景を漂う火の粉
-        if (bgLayer != null && Random.value < dt * 10f)
+        if (!frozen && bgLayer != null && Random.value < dt * 10f)
         {
             float halfH = cam.orthographicSize;
             float halfW = halfH * cam.aspect;

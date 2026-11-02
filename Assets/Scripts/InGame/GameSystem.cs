@@ -5,7 +5,7 @@ using System.Security.Cryptography.X509Certificates;
 using TMPro;
 
 // ターン管理やゲームの準備を行う
-public class GameSystem : MonoBehaviour
+public partial class GameSystem : MonoBehaviour
 {
     private GameState currentState;
     private PlayerType winner; // 勝者のプレイヤータイプを保存する変数
@@ -333,6 +333,12 @@ public class GameSystem : MonoBehaviour
             gameObject.AddComponent<WorldEndView>();
         }
 
+        // 時間停止（停止世界）の見た目：色の反転・予定の表示・残り回数と「解除」ボタン（シーンに置かれていなければ自動で追加する）
+        if (FindAnyObjectByType<TimeStopView>() == null)
+        {
+            gameObject.AddComponent<TimeStopView>();
+        }
+
         // 対局の状態（ターン数・エナジー）
         // 乱数のシードは対局ごとに決める（後で棋譜に残し、オンラインでは両者で同じ値を使う）
         uint seed = GameRng.NewSeed();
@@ -574,7 +580,12 @@ public class GameSystem : MonoBehaviour
         else
         {
             // 通常モード
-            if (keyboard.hKey.wasPressedThisFrame)
+            if (keyboard.qKey.wasPressedThisFrame && CanReleaseTimeStop)
+            {
+                // 時間停止の「解除」（Q キー・「解除」ボタン）
+                ReleaseTimeStop();
+            }
+            else if (keyboard.hKey.wasPressedThisFrame)
             {
                 UpdateHandList();
                 isSelectingHand = true;
@@ -630,6 +641,16 @@ public class GameSystem : MonoBehaviour
                 {
                     HandUIManager.Instance.SetStatusText($"【{HandUIManager.GetJapaneseName(piece.type)}・アンデッド】 操作できない。手番の終わりに自動で1手動き、相手の王将へ向かう。" +
                         "必殺技は使えず、自分の魔法の対象にも選べない。倒されると成仏する（持ち駒にならない）");
+                }
+                return;
+            }
+
+            // 時間停止中、消失・爆発の予定ができた自分の駒は、もう動かせない（必殺技・狙撃も使えない）
+            if (piece != null && IsMyPiece(piece) && IsFrozenInTimeStop(piece))
+            {
+                if (HandUIManager.Instance != null)
+                {
+                    HandUIManager.Instance.SetStatusText($"【{HandUIManager.GetJapaneseName(piece.type)}】 消失・爆発の予定があるので、もう動かせない（時間が動き出すと消える）");
                 }
                 return;
             }
@@ -795,6 +816,11 @@ public class GameSystem : MonoBehaviour
         {
             return false;
         }
+        // 時間停止中は成りも予定になる（1 つの駒につき 1 回。予定ができたら、時間が動き出すまで成る前の動きのまま）
+        if (timeStop != null && timeStop.HasPendingPromote(piece))
+        {
+            return false;
+        }
 
         // 敵陣（先手: X >= 6, 後手: X <= 2）に入る・敵陣から出る
         bool fromInEnemy = BoardZones.IsEnemyZone(piece.player, fromX);
@@ -842,6 +868,7 @@ public class GameSystem : MonoBehaviour
     bool ApplyMove(GamePiece piece, int targetX, int targetY, bool promote)
     {
         GamePiece targetPiece = gameBoard.GetPieceAt(targetX, targetY);
+        RecordTimeStopMove(piece, targetX, targetY); // 時間停止中は 1 マスごとの移動を記録する（盾で押し戻すときに使う）
         if (targetPiece != null && targetPiece != piece && PieceRules.IsExplosive(targetPiece.type))
         {
             return EnterGunpowder(piece, targetX, targetY, promote);
@@ -873,7 +900,7 @@ public class GameSystem : MonoBehaviour
 
         if (promote)
         {
-            piece.Promote();
+            PromotePiece(piece); // 時間停止中は成りの予定にする
         }
         CountMove(piece);
 
@@ -895,7 +922,7 @@ public class GameSystem : MonoBehaviour
             AnimatePieceMove(piece, GameHelper.CalcPanelLocation(x, y));
             if (EnterCell(piece, x, y))
             {
-                if (promote) piece.Promote();
+                if (promote) PromotePiece(piece);
                 CountMove(piece);
             }
         }
@@ -919,8 +946,15 @@ public class GameSystem : MonoBehaviour
     // 消失なので、エナジー・持ち駒化はなし。王将は爆発では倒せない（MatchConfig.ExplosionSparesKing）。
     // entering は火薬のマスに入った駒（範囲の外から来ても一緒に吹き飛ぶ）。fxDelay は見た目を始めるまでの秒数。
     // 火薬・爆発スキル共通。王将が消えることはないが、呼び出し側で ResolveKingLoss を呼ぶこと
-    public void Explode(int cx, int cy, float fxDelay = 0f, GamePiece entering = null)
+    // held は盤のデータにはいないが、その場に残っている駒（時間停止の「取られる予定」の駒など。範囲内なら一緒に消失する）。
+    // 時間停止中は爆発の予定にする（火薬はその場に残り、火薬に入った駒はもう動かせない）
+    public void Explode(int cx, int cy, float fxDelay = 0f, GamePiece entering = null, IEnumerable<GamePiece> held = null)
     {
+        if (timeStop != null)
+        {
+            DeferExplode(cx, cy, entering);
+            return;
+        }
         Debug.Log($"({cx}, {cy}) で爆発！");
         Exploded?.Invoke(new ExplosionInfo(cx, cy, fxDelay, entering));
         pendingActionFxTime = Mathf.Max(pendingActionFxTime, fxDelay + ExplosionFxDuration);
@@ -936,6 +970,14 @@ public class GameSystem : MonoBehaviour
             }
         }
         if (entering != null && !victims.Contains(entering)) victims.Add(entering);
+        if (held != null)
+        {
+            foreach (GamePiece q in held)
+            {
+                if (q == null || victims.Contains(q) || !IsOnBoard(q)) continue;
+                if (Mathf.Abs(q.X - cx) <= r && Mathf.Abs(q.Y - cy) <= r) victims.Add(q);
+            }
+        }
 
         List<Vector2Int> chain = new List<Vector2Int>();
         foreach (GamePiece piece in victims)
@@ -991,7 +1033,7 @@ public class GameSystem : MonoBehaviour
         {
             return CanActNow && !isSelectingHand && !isDroppingHand && !isSelectingSnipeTarget
                 && selectedPiece != null && IsMyPiece(selectedPiece) && PieceRules.IsSniper(selectedPiece.type)
-                && !IsOnlineMatch;
+                && !IsFrozenInTimeStop(selectedPiece) && !IsOnlineMatch;
         }
     }
 
@@ -1083,7 +1125,7 @@ public class GameSystem : MonoBehaviour
         bool explosive = PieceRules.IsExplosive(target.type);
         Debug.Log($"狙撃！ ({sniper.X}, {sniper.Y}) → ({tx}, {ty}) の {HandUIManager.GetJapaneseName(target.type)}");
         pendingActionFxTime = Mathf.Max(pendingActionFxTime, SnipeImpactDelay + SnipeAfterDelay);
-        bool guarded = !explosive && target.hasShield && target.player != sniper.player;
+        bool guarded = !explosive && target.hasShield && target.player != sniper.player && timeStop == null; // 時間停止中は盾の判定も時間が動き出してから
         Sniped?.Invoke(new SnipeShot(sniper.player, sniper, new Vector2Int(sniper.X, sniper.Y), new Vector2Int(tx, ty), target.type, explosive, SnipeImpactDelay, guarded));
 
         string targetName = HandUIManager.GetJapaneseName(target.type);
@@ -1100,7 +1142,8 @@ public class GameSystem : MonoBehaviour
         }
         if (HandUIManager.Instance != null)
         {
-            HandUIManager.Instance.SetStatusText(explosive ? "【狙撃】 火薬を撃ち抜いた！ 大爆発！"
+            HandUIManager.Instance.SetStatusText(timeStop != null ? (explosive ? "【狙撃】 火薬を撃ち抜いた！（時間が動き出すと爆発する）" : $"【狙撃】 {targetName}を撃ち抜いた！（時間が動き出すと取れる）")
+                : explosive ? "【狙撃】 火薬を撃ち抜いた！ 大爆発！"
                 : captured ? $"【狙撃】 {targetName}を撃ち抜いた！"
                 : $"【狙撃】 {targetName}の盾が弾を防いだ！（盾は割れた）");
         }
@@ -1128,6 +1171,7 @@ public class GameSystem : MonoBehaviour
     {
         if (!IsOnBoard(piece)) return;
         piece.moveCount++;
+        MarkTimeStopMoveCounted(piece); // 盾で押し戻されたら数え直す
         bool wasReady = piece.isSpecialReady;
         RefreshSpecialReady(piece);
         if (piece.isSpecialReady && !wasReady)
@@ -1170,7 +1214,7 @@ public class GameSystem : MonoBehaviour
         {
             return CanActNow && !isSelectingHand && !isDroppingHand && !isSelectingSnipeTarget
                 && selectedPiece != null && IsMyPiece(selectedPiece) && selectedPiece.isSpecialReady
-                && GetSpecialMove(selectedPiece) != null && !IsOnlineMatch;
+                && !IsFrozenInTimeStop(selectedPiece) && GetSpecialMove(selectedPiece) != null && !IsOnlineMatch;
         }
     }
 
@@ -1289,8 +1333,15 @@ public class GameSystem : MonoBehaviour
             RefreshSpecialReady(caster);
             if (CanPromote(caster, fromX, caster.X))
             {
-                caster.isPromoted = true;
-                context.Schedule(caster.UpdateVisual);
+                if (timeStop != null)
+                {
+                    DeferPromote(caster); // 時間停止中は成りの予定にする
+                }
+                else
+                {
+                    caster.isPromoted = true;
+                    context.Schedule(caster.UpdateVisual);
+                }
             }
         }
 
@@ -1510,6 +1561,12 @@ public class GameSystem : MonoBehaviour
     public void AddPoint(PlayerType player, int amount)
     {
         if (match == null || amount <= 0) return;
+        if (timeStop != null)
+        {
+            // 時間停止中はエナジーが増えない（取りのエナジーは、時間が動き出して取りを処理するときに入る）
+            Debug.Log($"（時間停止中）{player} のエナジー +{amount} は入らない");
+            return;
+        }
         match.Energy.Gain(player, amount); // 表示は Player.BindEnergy で PointManager に反映される
         UpdateActivePlayerSkillUI();
     }
@@ -1536,6 +1593,13 @@ public class GameSystem : MonoBehaviour
     public bool CapturePiece(GamePiece piece, PlayerType by, GamePiece attacker = null)
     {
         if (!IsOnBoard(piece)) return false;
+
+        // 時間停止中：取りの予定にして、取れたことにする（盾の判定・エナジー・持ち駒化は時間が動き出してから）
+        if (timeStop != null)
+        {
+            DeferCapture(piece, by, attacker);
+            return true;
+        }
 
         // アンデッド（Prototype の effects.js の capture）：取られても持ち駒にならず、「成仏」で消失する（エナジーもなし）。
         // 盾は自分の魔法でしかかけられず、アンデッドは自分の魔法の対象にならないので、盾状態のアンデッドはいない
@@ -1598,6 +1662,13 @@ public class GameSystem : MonoBehaviour
     {
         if (!IsOnBoard(piece)) return false;
 
+        // 時間停止中：消失の予定にする（駒は灰色でその場に残り、以降はないものとして扱う）
+        if (timeStop != null)
+        {
+            DeferDoom(piece, reason);
+            return true;
+        }
+
         PieceDefeat defeat = new PieceDefeat(piece, DefeatKind.Vanish, null, reason);
         if (IsDefeatIntercepted(defeat)) return false;
 
@@ -1607,7 +1678,10 @@ public class GameSystem : MonoBehaviour
 
     bool IsOnBoard(GamePiece piece)
     {
-        return piece != null && gameBoard != null && gameBoard.GetPieceAt(piece.X, piece.Y) == piece;
+        if (piece == null || gameBoard == null) return false;
+        if (gameBoard.GetPieceAt(piece.X, piece.Y) == piece) return true;
+        // 時間停止の解除中は、予定の駒として残していた駒も盤上の駒として倒せる
+        return resolvingTimeStop != null && resolvingTimeStop.IsHeld(piece);
     }
 
     bool IsDefeatIntercepted(PieceDefeat defeat)
@@ -1627,7 +1701,16 @@ public class GameSystem : MonoBehaviour
         {
             match.RecordFallenInitial(defeat.Owner, defeat.Type, defeat.Kind);
         }
-        gameBoard.RemovePieceAt(defeat.X, defeat.Y);
+        if (gameBoard.GetPieceAt(defeat.X, defeat.Y) == defeat.Piece)
+        {
+            gameBoard.RemovePieceAt(defeat.X, defeat.Y);
+        }
+        else
+        {
+            // 時間停止の予定の駒（盤のデータから外してある。そのマスに今いる別の駒は消さない）
+            gameBoard.DestroyDetached(defeat.Piece);
+        }
+        if (resolvingTimeStop != null) resolvingTimeStop.Held.Remove(defeat.Piece);
         PieceDefeated?.Invoke(defeat);
     }
 
@@ -1646,6 +1729,14 @@ public class GameSystem : MonoBehaviour
     {
         BoardCells cells = Cells;
         if (cells == null) return false;
+        if (timeStop != null)
+        {
+            // 時間停止中は予定にする（時間が動き出してから破壊する）
+            BoardCell c = cells.At(x, y);
+            if (c == null || c.IsBroken) return false;
+            DeferCell(TimeStopCellEffect.Break, x, y, timeStop.Owner, 0);
+            return true;
+        }
         GamePiece piece = gameBoard.GetPieceAt(x, y);
         if (!cells.Break(x, y)) return false;
         if (piece != null) VanishPiece(piece, BoardCells.ReasonBroken);
@@ -1658,6 +1749,14 @@ public class GameSystem : MonoBehaviour
     {
         BoardCells cells = Cells;
         if (cells == null || match == null) return false;
+        if (timeStop != null)
+        {
+            // 時間停止中は予定にする（時間が動き出したターンから数える）
+            BoardCell c = cells.At(x, y);
+            if (c == null || c.IsBroken || turns <= 0) return false;
+            DeferCell(TimeStopCellEffect.Burn, x, y, timeStop.Owner, turns);
+            return true;
+        }
         return cells.SetBurning(x, y, turns, match.Turn.TurnNumber);
     }
 
@@ -1667,6 +1766,14 @@ public class GameSystem : MonoBehaviour
     {
         BoardCells cells = Cells;
         if (cells == null || gameBoard.HasPieceAt(x, y)) return false;
+        if (timeStop != null)
+        {
+            // 時間停止中は予定にする（時間が動き出してから仕掛ける）
+            BoardCell c = cells.At(x, y);
+            if (c == null || c.State != CellState.Normal || c.HasTrap) return false;
+            DeferCell(TimeStopCellEffect.Trap, x, y, owner, 0);
+            return true;
+        }
         return cells.SetTrap(x, y, owner);
     }
 
@@ -1680,6 +1787,13 @@ public class GameSystem : MonoBehaviour
         BoardCells cells = Cells;
         BoardCell cell = cells != null ? cells.At(x, y) : null;
         if (piece == null || cell == null) return true;
+
+        // 時間停止中は消失の予定にする（駒はそのマスに残るが、もう動かせない）
+        if (timeStop != null && cell.IsHazard)
+        {
+            DeferEnterVanish(piece, x, y, cell.HasTrap ? BoardCells.ReasonTrap : BoardCells.ReasonBurning);
+            return true;
+        }
 
         string reason = null;
         if (cell.HasTrap)
@@ -1776,6 +1890,8 @@ public class GameSystem : MonoBehaviour
 
     private bool CanDropPieceTo(PlayerType player, PieceType type, int targetX, int targetY)
     {
+        // 時間停止中、予定の駒（取られる予定など）が残っているマスには打てない
+        if (timeStop != null && timeStop.IsHeldSquare(targetX, targetY)) return false;
         foreach (var rule in gameRules)
         {
             if (!rule.IsLegalDrop(type, player, targetX, targetY, gameBoard))
@@ -1885,6 +2001,9 @@ public class GameSystem : MonoBehaviour
     // 行動が終わった：2回行動なら手番を続ける。そうでなければ、手番交代の前の自動行動（ファランクスなど）→ 手番交代
     void NextState()
     {
+        // 時間停止中：1 回の行動では手番を終えない（回数を数え、使い切ったら予定をまとめて処理してから手番の流れに戻る）
+        if (TimeStopAfterAction(true)) return;
+
         if (hasExtraTurn)
         {
             hasExtraTurn = false;
@@ -2089,6 +2208,7 @@ public class GameSystem : MonoBehaviour
     {
         get
         {
+            if (timeStop != null) return TimeStopStatusText;
             string check = isActivePlayerInCheck ? "【王手！】 放置すると次の手で王将を取られます" : "";
             if (string.IsNullOrEmpty(turnNotice)) return check;
             if (string.IsNullOrEmpty(check)) return turnNotice;
@@ -2457,6 +2577,7 @@ public class GameSystem : MonoBehaviour
         if (!owner.HasEnoughPoint(skill.cost)) return $"エナジー不足：あと {skill.cost - owner.Energy}";
         // 手番を使う魔法・剣などの演出は、まだオンライン対戦の通信に乗せていない
         if (skill.EndsTurn && IsOnlineMatch) return "オンライン対戦ではまだ使えません";
+        if (timeStop != null && skill.effect is DoubleTurnEffect) return "時間停止中は使えません";
         if (!skill.effect.CanUse(new SkillContext(this, gameBoard, player))) return "今は効果の対象がありません";
         return null;
     }
@@ -2601,6 +2722,7 @@ public class GameSystem : MonoBehaviour
         isResolvingAction = false;
         UpdateActivePlayerSkillUI();
         if (ResolveKingLoss()) return; // スキルで王将が全部いなくなった（爆発では王将は倒せないので、今のスキルでは起きない）
+        if (TimeStopAfterAction(false)) return; // 時間停止中は 1 回に数える（使い切ったら予定を処理して、手番を続ける）
         isActivePlayerInCheck = CheckRules.IsInCheck(gameBoard, player);
         if (HandUIManager.Instance != null)
         {
@@ -2842,6 +2964,9 @@ public class GameSystem : MonoBehaviour
     // 指定したプレイヤーの王将が盤面にまだ残っているかをチェックする
     private bool IsKingAlive(PlayerType player)
     {
+        // 時間停止中に取られる予定の王将は、まだ倒されていない
+        if (timeStop != null && timeStop.HasHeldKing(player)) return true;
+
         // 9x9の盤面をすべてループして探す
         for (int x = 0; x < 9; x++)
         {

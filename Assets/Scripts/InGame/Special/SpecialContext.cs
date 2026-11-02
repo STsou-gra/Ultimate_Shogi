@@ -102,6 +102,13 @@ public class SpecialContext
     //  時間・演出
     // ------------------------------------------------------------
 
+    // 次に倒される駒の演出を、今の時刻 Time・向き dir にする（時間停止の解除で、予定をまとめて処理するときに使う）
+    public void MarkHit(Vector2Int dir)
+    {
+        HitTime = Time;
+        HitDirection = dir;
+    }
+
     // 演出を sec 秒待つ（このあとの演出・取りの見た目が遅れる）
     public void Wait(float sec)
     {
@@ -144,6 +151,7 @@ public class SpecialContext
         GamePiece target = PieceAt(tx, ty);
         Vector2Int dir = new Vector2Int(System.Math.Sign(tx - p.X), System.Math.Sign(ty - p.Y));
         float arrive = Time + duration;
+        GameSystem.RecordTimeStopMove(p, tx, ty); // 時間停止中は 1 マスごとの移動を記録する（盾で押し戻すときに使う）
 
         if (target != null && target != p)
         {
