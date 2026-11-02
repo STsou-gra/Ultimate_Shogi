@@ -110,11 +110,12 @@ public class HandUIManager : MonoBehaviour
     private string FormatHand(Dictionary<PieceType, int> hand)
     {
         List<string> items = new List<string>();
-        foreach (var kvp in hand)
+        foreach (PieceType type in PieceRules.HandOrder)
         {
-            if (kvp.Value > 0)
+            int count;
+            if (hand.TryGetValue(type, out count) && count > 0)
             {
-                items.Add($"{GetJapaneseName(kvp.Key)} x{kvp.Value}");
+                items.Add($"{GetJapaneseName(type)} x{count}");
             }
         }
         if (items.Count == 0) return "なし";
@@ -133,6 +134,8 @@ public class HandUIManager : MonoBehaviour
             case PieceType.Bishop: return "角";
             case PieceType.Rook: return "飛";
             case PieceType.King: return "玉";
+            case PieceType.Gunpowder: return "火薬";
+            case PieceType.Sniper: return "狙撃手";
             default: return type.ToString();
         }
     }

@@ -15,6 +15,8 @@ public static class PieceValues
             case PieceType.Bishop: return 5;
             case PieceType.Rook: return 5;
             case PieceType.King: return 10;
+            case PieceType.Gunpowder: return 0; // 取られても誰もエナジーを得ない（爆発するので通常は取られない）
+            case PieceType.Sniper: return 3;
             default: return 0;
         }
     }
