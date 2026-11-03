@@ -981,7 +981,7 @@ public static class MagicSprites
         float fill = Mathf.Clamp01(-d * 20f + 0.5f);
         float edge = Mathf.Clamp01(1f - Mathf.Abs(d) * 20f);
         return Color.Lerp(new Color(1f, 1f, 1f, fill * 0.8f), Color.white, edge * 0.9f);
-    }));
+    }, FilterMode.Bilinear));
 
     // 魔法陣（R = 46px）。色を付ける部分（外周の輪・六芒星）と白い部分（内側の輪・外周の目盛り）を別の画像にする
     public static Sprite CircleColored => circleColored != null ? circleColored : (circleColored = MakeCircle(true));
