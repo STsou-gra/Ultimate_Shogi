@@ -231,6 +231,10 @@ public partial class GameSystem : MonoBehaviour
     private float captureFxDelay = 0f;
     // 今の取りの攻撃が届くまでの秒数（取り・消失の通知の中で演出が読む。必殺技・自動行動の中では ActiveSpecial.HitTime を使う）
     public float CaptureFxDelay => captureFxDelay;
+    // 狙撃の取りの通知中か（狙撃の演出は NewPieceFx が出すので、普段の取りの演出 BasicMoveFx は出さない）
+    private bool isSnipeCapture = false;
+    public bool IsSnipeCapture => isSnipeCapture;
+    private BasicMoveFx basicMoveFx;
     // マスの効果（炎上・落とし穴など）で消える駒が、そのマスに着くまでの秒数（EnterCell が消失の通知の間だけ入れる。演出が読む）
     private float enterCellFxDelay = 0f;
     public float EnterCellFxDelay => enterCellFxDelay;
@@ -314,6 +318,9 @@ public partial class GameSystem : MonoBehaviour
         {
             gameObject.AddComponent<NewPieceFx>();
         }
+        // 取り・打つ・成り・王手の演出
+        basicMoveFx = FindAnyObjectByType<BasicMoveFx>();
+        if (basicMoveFx == null) basicMoveFx = gameObject.AddComponent<BasicMoveFx>();
 
         // 必殺技の演出（シーンに置かれていなければ自動で追加する）。カットインは CutInEffect.Instance が自動で作る
         specialFx = FindAnyObjectByType<SpecialMoveFx>();
@@ -1140,7 +1147,9 @@ public partial class GameSystem : MonoBehaviour
         else
         {
             captureFxDelay = SnipeImpactDelay;
+            isSnipeCapture = true;
             captured = CapturePiece(target, sniper.player, sniper); // 盾なら防がれる
+            isSnipeCapture = false;
             captureFxDelay = 0f;
         }
         if (HandUIManager.Instance != null)
@@ -1522,6 +1531,7 @@ public partial class GameSystem : MonoBehaviour
         var hand = targetPlayer.Hand;
 
         GamePiece dropped = gameBoard.SpawnPiece(type, activePlayer, toX, toY);
+        if (dropped != null && basicMoveFx != null) basicMoveFx.Dropped(dropped);
         if (dropped != null) EnterCell(dropped, toX, toY); // 炎上のマスに打ったら消失する
 
         if (HandUIManager.Instance != null)
@@ -1943,6 +1953,7 @@ public partial class GameSystem : MonoBehaviour
         var hand = CurrentPlayer.Hand;
 
         GamePiece dropped = gameBoard.SpawnPiece(type, activePlayer, x, y);
+        if (dropped != null && basicMoveFx != null) basicMoveFx.Dropped(dropped);
         if (dropped != null) EnterCell(dropped, x, y); // 炎上のマスに打ったら消失する
 
         if (HandUIManager.Instance != null)
@@ -2186,6 +2197,7 @@ public partial class GameSystem : MonoBehaviour
         }
 
         isActivePlayerInCheck = CheckRules.IsInCheck(gameBoard, side);
+        if (isActivePlayerInCheck && basicMoveFx != null) basicMoveFx.Check();
 
         // 詰み（王将が1枚のときのみ。スキルは回避手に含めない）
         if (isActivePlayerInCheck && IsCheckmated(side))
