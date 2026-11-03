@@ -231,6 +231,9 @@ public partial class GameSystem : MonoBehaviour
     private float captureFxDelay = 0f;
     // 今の取りの攻撃が届くまでの秒数（取り・消失の通知の中で演出が読む。必殺技・自動行動の中では ActiveSpecial.HitTime を使う）
     public float CaptureFxDelay => captureFxDelay;
+    // マスの効果（炎上・落とし穴など）で消える駒が、そのマスに着くまでの秒数（EnterCell が消失の通知の間だけ入れる。演出が読む）
+    private float enterCellFxDelay = 0f;
+    public float EnterCellFxDelay => enterCellFxDelay;
     public const float ShieldBreakFxDuration = 0.6f; // 盾が割れてから手番が替わるまで（「GUARD!」を見せる）
 
     // 行動の演出を見せている間（手番の交代待ち）は操作できない
@@ -1811,7 +1814,10 @@ public partial class GameSystem : MonoBehaviour
         }
         if (reason == null) return true;
 
+        // 移動の見た目の途中なら、そのマスに着いてから消える（BoardCellView の写しが 0.2 秒で進む）
+        enterCellFxDelay = DG.Tweening.DOTween.IsTweening(piece.transform) ? 0.2f : 0f;
         VanishPiece(piece, reason);
+        enterCellFxDelay = 0f;
         return IsOnBoard(piece);
     }
 

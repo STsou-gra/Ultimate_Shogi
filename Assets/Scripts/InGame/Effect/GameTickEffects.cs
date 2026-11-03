@@ -6,6 +6,8 @@ using TMPro;
 // 毎フレームの演出（プロトタイプ index.html の Game.tick の移植）
 // ・sin(t*5) のパルスで 必殺技オーラ・スキルパネルの枠・使えるスキルボタン・手番テキストを明滅
 // ・オーラ中の駒から光の粒、火薬の導火線から火花、狙撃手のスコープの赤い光の明滅、背景を漂う火の粉
+// ・盤上の駒は自軍の色の淡い光（陣営オーラ。先手：青 0x2f7bff ／ 後手：赤 0xff2a4a）をまとう。駒の形にぼかした光が駒の後ろで sin(t*2) でゆっくり息づく
+//   （盾のバリアは水色 0x4fc3f7 の六角形を駒の手前に重ねるので、濃い青の駒形の光とは形・色・前後で見分けられる）
 // ・盾状態の駒に水色のバリア（六角形。現れるときは大きく出て縮み、sin(t*3) でゆらめく）
 // ・ファランクス状態の駒に金色の槍（前方 1×3 へ構えた穂先。現れるときは小さく出て広がり、sin(t*4) で光りながら前へ小さく突き出す）
 // ・アンデッドの駒に紫の瘴気（後ろでゆらめく。sin(t*2.2)）と緑の鬼火（2 つが周りを回り、明滅しながら漂う）、立ち上る緑の火の粉
@@ -48,6 +50,8 @@ public class GameTickEffects : MonoBehaviour
     private static readonly Color[] DoomEmberColors = { Hex(0xff1744), Hex(0xd50000), Hex(0xff6d00), Hex(0x8d6e63) };
     private static readonly Color BarrierColor = Hex(0x4fc3f7);
     private static readonly Color SpearColor = Hex(0xffc400);
+    // 陣営オーラ（Prototype の config.js の SIDE_GLOW_COLORS）。盾のバリア（水色）と紛れないよう、パネルの色より濃い青にしている
+    public static readonly Color[] SideGlowColors = { Hex(0x2f7bff), Hex(0xff2a4a) };
     // アンデッド（Prototype の config.js の UNDEAD_COLORS）
     public static readonly Color UndeadMiasmaColor = Hex(0x9c4dff);
     public static readonly Color UndeadVeilColor = Hex(0x4a148c);
@@ -56,6 +60,8 @@ public class GameTickEffects : MonoBehaviour
     // 駒ごとの演出オブジェクト（駒の子に作るので、駒と一緒に破棄される）
     private class PieceFx
     {
+        public SpriteRenderer side;        // 陣営オーラ（駒の後ろ）
+        public float sideAge;              // 陣営オーラが付いてからの秒数（ふわっと現れる演出用）
         public Transform aura;
         public SpriteRenderer auraGlow;
         public SpriteRenderer auraRing;
@@ -140,6 +146,8 @@ public class GameTickEffects : MonoBehaviour
         float pulse = 0.5f + 0.5f * Mathf.Sin(t * 5f);
         bool inTurn = gameSystem != null && gameSystem.IsInTurn;
 
+        // 陣営オーラは時間停止中も新しく置かれた駒に付ける（ゆらぎだけ止める）
+        UpdateSideGlows(frozen, dt);
         if (!frozen) UpdatePieces(dt, pulse);
 
         // 移動先ハイライト・カーソルの明滅
@@ -327,6 +335,132 @@ public class GameTickEffects : MonoBehaviour
         foreach (GamePiece dead in deadPieces) pieceFx.Remove(dead);
     }
 
+    // 陣営オーラ（Prototype の pieceView.js の side と Game.tick の side.alpha）：盤上のすべての駒の後ろに、自軍の色の駒形の光
+    void UpdateSideGlows(bool frozen, float dt)
+    {
+        if (gameBoard == null) return;
+        foreach (GamePiece piece in gameBoard.GetBoardData())
+        {
+            if (piece == null) continue;
+            PieceFx fx;
+            if (!pieceFx.TryGetValue(piece, out fx))
+            {
+                // 移動の途中は表示順が一時的に上がっているので、着いてから付ける
+                if (DG.Tweening.DOTween.IsTweening(piece.transform)) continue;
+                fx = new PieceFx();
+                pieceFx.Add(piece, fx);
+            }
+            if (fx.side == null)
+            {
+                if (DG.Tweening.DOTween.IsTweening(piece.transform)) continue;
+                CreateSideGlow(piece, fx);
+                if (fx.side == null) continue;
+                // 時間停止中はゆらがないので、そのまま出す
+                fx.sideAge = frozen ? 1f : 0f;
+                if (frozen) fx.side.color = WithAlpha(SideGlowColors[piece.player == PlayerType.Player1 ? 0 : 1], 0.85f);
+            }
+            if (frozen) continue;
+            // ゆっくり息づく（0.85 + 0.15 * sin(t*2 + id)）。付いた直後は 0.3 秒でふわっと現れる
+            fx.sideAge += dt;
+            float phase = (piece.GetInstanceID() % 1000) * 0.37f;
+            float appear = Mathf.Clamp01(fx.sideAge / 0.3f);
+            fx.side.color = WithAlpha(SideGlowColors[piece.player == PlayerType.Player1 ? 0 : 1], appear * (0.85f + 0.15f * Mathf.Sin(worldTime * 2f + phase)));
+        }
+    }
+
+    // 陣営オーラ：駒の本体の画像の大きさに合わせた駒形の光を、駒のすべての表示より奥に置く
+    void CreateSideGlow(GamePiece piece, PieceFx fx)
+    {
+        SpriteRenderer body = null;
+        foreach (SpriteRenderer sr in piece.GetComponentsInChildren<SpriteRenderer>(true))
+        {
+            if (sr.sprite == null || IsPieceOverlay(sr.transform) || sr.transform == piece.transform) continue;
+            body = sr;
+            break;
+        }
+        if (body == null) return;
+
+        // 本体の画像の大きさ・中心（駒のローカル座標）
+        Vector3 ls = body.transform.localScale;
+        Vector2 size = Vector2.Scale(body.sprite.bounds.size, new Vector2(Mathf.Abs(ls.x), Mathf.Abs(ls.y)));
+        Vector2 center = (Vector2)body.transform.localPosition + Vector2.Scale(body.sprite.bounds.center, new Vector2(ls.x, ls.y));
+
+        // ぼかしの幅はプロトタイプの 1マスの 0.12 倍（盤上の 1マス = ワールドの 1）を駒のローカルの長さに直す
+        float worldPerLocal = Mathf.Max(0.0001f, Mathf.Abs(piece.transform.lossyScale.x));
+        float blur = 0.12f / worldPerLocal;
+
+        fx.side = CreateChildSprite(piece.transform, SideName, GetSideGlowSprite(size, blur), MinSortingOrder(piece) - 2, Vector2.one);
+        fx.side.transform.localPosition = new Vector3(center.x, center.y, 0f);
+        fx.side.color = WithAlpha(SideGlowColors[piece.player == PlayerType.Player1 ? 0 : 1], 0f);
+    }
+
+    private static readonly Dictionary<Vector3Int, Sprite> sideGlowSprites = new Dictionary<Vector3Int, Sprite>();
+
+    // 駒の形にぼかした白い光（Prototype の textures.js の makePieceGlowTexture。tint で色を付ける）。中心は駒の中心
+    static Sprite GetSideGlowSprite(Vector2 size, float blur)
+    {
+        Vector3Int key = new Vector3Int(Mathf.RoundToInt(size.x * 100f), Mathf.RoundToInt(size.y * 100f), Mathf.RoundToInt(blur * 100f));
+        Sprite cached;
+        if (sideGlowSprites.TryGetValue(key, out cached) && cached != null) return cached;
+
+        // 駒の画像の輪郭（先端・肩・底の角）。プロトタイプと同じく、本体より 1.14×1.1 倍に広げて光らせる
+        float w = size.x * 1.14f, h = size.y * 1.1f;
+        Vector2[] poly =
+        {
+            new Vector2(0f, h * 0.5f), new Vector2(w * 0.40f, h * 0.34f), new Vector2(w * 0.5f, -h * 0.5f),
+            new Vector2(-w * 0.5f, -h * 0.5f), new Vector2(-w * 0.40f, h * 0.34f),
+        };
+        // canvas の shadowBlur は標準偏差がその半分のぼかし。3 回重ね塗りして光を濃くしている
+        float sigma = Mathf.Max(0.001f, blur * 0.5f);
+        float margin = sigma * 4f;
+        const float ppu = 96f;
+        int tw = Mathf.CeilToInt((w + margin * 2f) * ppu);
+        int th = Mathf.CeilToInt((h + margin * 2f) * ppu);
+        Texture2D tex = new Texture2D(tw, th, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+        Color[] pixels = new Color[tw * th];
+        for (int y = 0; y < th; y++)
+        {
+            for (int x = 0; x < tw; x++)
+            {
+                Vector2 p = new Vector2((x + 0.5f) / ppu - tw / (2f * ppu), (y + 0.5f) / ppu - th / (2f * ppu));
+                float d = SignedPolygonDistance(p, poly);
+                float a0 = 0.5f * Erfc(d / (sigma * 1.41421356f));
+                float a = 1f - Mathf.Pow(1f - a0, 3f);
+                pixels[y * tw + x] = new Color(1f, 1f, 1f, a);
+            }
+        }
+        tex.SetPixels(pixels);
+        tex.Apply();
+        Sprite sprite = Sprite.Create(tex, new Rect(0, 0, tw, th), new Vector2(0.5f, 0.5f), ppu);
+        sideGlowSprites[key] = sprite;
+        return sprite;
+    }
+
+    // 多角形までの符号付き距離（内側が負）
+    static float SignedPolygonDistance(Vector2 p, Vector2[] poly)
+    {
+        float best = float.MaxValue;
+        bool inside = false;
+        for (int i = 0, j = poly.Length - 1; i < poly.Length; j = i++)
+        {
+            Vector2 a = poly[j], b = poly[i];
+            Vector2 ab = b - a;
+            float t = Mathf.Clamp01(Vector2.Dot(p - a, ab) / Mathf.Max(1e-6f, ab.sqrMagnitude));
+            best = Mathf.Min(best, (p - (a + ab * t)).magnitude);
+            if ((a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+        }
+        return inside ? -best : best;
+    }
+
+    // 相補誤差関数（Abramowitz–Stegun 7.1.26 の近似）
+    static float Erfc(float x)
+    {
+        float z = Mathf.Abs(x);
+        float t = 1f / (1f + 0.3275911f * z);
+        float y = t * (0.254829592f + t * (-0.284496736f + t * (1.421413741f + t * (-1.453152027f + t * 1.061405429f)))) * Mathf.Exp(-z * z);
+        return x >= 0f ? y : 2f - y;
+    }
+
     void UpdateUndead(GamePiece piece, PieceFx fx, float dt)
     {
         if (fx.miasma == null) CreateUndead(piece, fx);
@@ -499,7 +633,7 @@ public class GameTickEffects : MonoBehaviour
     void CreateAura(GamePiece piece, PieceFx fx)
     {
         int order = MinSortingOrder(piece) - 1;
-        fx.aura = new GameObject("SpecialAura").transform;
+        fx.aura = new GameObject(AuraName).transform;
         fx.aura.SetParent(piece.transform, false);
 
         // プロトタイプの駒は 幅0.8×高さ0.9マス。オーラはぼかした発光（約1.3倍）と輪（約1.15倍）
@@ -552,14 +686,16 @@ public class GameTickEffects : MonoBehaviour
         return sr;
     }
 
+    private const string SideName = "SideGlow";
+    private const string AuraName = "SpecialAura";
     private const string BarrierName = "ShieldBarrier";
     private const string SpearName = "PhalanxSpear";
     private const string UndeadName = "UndeadAura";
 
-    // 駒に重ねる表示（バリア・槍・アンデッドの瘴気と鬼火）。駒の描画順を調べるときは数えない
+    // 駒に重ねる表示（陣営オーラ・必殺技オーラ・バリア・槍・アンデッドの瘴気と鬼火）。駒の描画順を調べるときは数えない
     static bool IsOverlay(Transform t)
     {
-        return t.name == BarrierName || t.name == SpearName || t.name == UndeadName;
+        return t.name == SideName || t.name == AuraName || t.name == BarrierName || t.name == SpearName || t.name == UndeadName;
     }
 
     // t が駒に重ねた表示（またはその中）か。駒の本体のスプライトだけを触りたいとき（MagicFx の這い上がる演出など）に使う
@@ -587,7 +723,11 @@ public class GameTickEffects : MonoBehaviour
     static int MinSortingOrder(GamePiece piece)
     {
         int order = int.MaxValue;
-        foreach (SpriteRenderer sr in piece.GetComponentsInChildren<SpriteRenderer>(true)) order = Mathf.Min(order, sr.sortingOrder);
+        foreach (SpriteRenderer sr in piece.GetComponentsInChildren<SpriteRenderer>(true))
+        {
+            if (IsPieceOverlay(sr.transform)) continue; // 先に付けたオーラなどの分だけ奥へずれていかないように
+            order = Mathf.Min(order, sr.sortingOrder);
+        }
         return order == int.MaxValue ? 10 : order;
     }
 
