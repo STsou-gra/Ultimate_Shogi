@@ -6,6 +6,10 @@ using DG.Tweening;
 //  打つ     … 駒が上から落ちてきて、衝撃波・土ぼこり・画面の揺れ
 //  成り     … 金色の衝撃波と光の粒、駒が弾んで「成！」
 //  王手     … 画面中央に大きな「王手！」と画面の揺れ
+//  王将を取った … 「王 討ち取り！」（王将が2枚以上あって対局が続くときも出る）
+//  手番     … 対局の最初に「対局開始」、2手目からは手番の始まりに「☗ 先手の番」「☖ 後手の番」
+//  打ち込み解禁 … 「敵陣への打ち込み 解禁！」
+//  エナジー … 増減のたびに、そのプレイヤーの側の盤の外に「+N エナジー」「-N エナジー」
 // 必殺技・魔法の中の取りは SpecialMoveFx、狙撃は NewPieceFx が演出するので、ここでは扱わない。
 // シーンに置かなくても GameSystem が自動で追加する
 public class BasicMoveFx : MonoBehaviour
@@ -48,6 +52,13 @@ public class BasicMoveFx : MonoBehaviour
         if (gameSystem.ActiveSpecial != null || gameSystem.IsSnipeCapture) return;
         if (newPieceFx == null) newPieceFx = FindAnyObjectByType<NewPieceFx>();
         if (newPieceFx == null) return;
+
+        if (defeat.Type == PieceType.King)
+        {
+            Vector3 kp = CellWorld(defeat.X, defeat.Y);
+            DOVirtual.DelayedCall(Mathf.Max(0.15f, gameSystem.CaptureFxDelay), () =>
+                newPieceFx.PopText("王 討ち取り！", kp - ScreenUp * (20f * PX), 50f, Color.white, Hex(0xff1744), Hex(0x2a0000), 40f, 1.4f), false).SetLink(gameObject);
+        }
 
         PlayerType by = defeat.By.Value;
         float delay = Mathf.Max(0.15f, gameSystem.CaptureFxDelay);
@@ -152,6 +163,62 @@ public class BasicMoveFx : MonoBehaviour
             if (newPieceFx != null) newPieceFx.PopText("王手！", center, 96f, Color.white, Hex(0xff1744), Hex(0x2a0000), 20f, 1.1f);
             fx.Shake(6f, 0.25f);
         }, false).SetLink(gameObject);
+    }
+
+    // ------------------------------------------------------------
+    //  手番・エナジー・お知らせ
+    // ------------------------------------------------------------
+    Vector3 ScreenCenter => cam != null ? new Vector3(cam.transform.position.x, cam.transform.position.y, 0f) : Vector3.zero;
+
+    Vector3 CellWorld(int x, int y)
+    {
+        Vector2 l = GameHelper.CalcPanelLocation(x, y);
+        return gameBoard != null ? gameBoard.transform.TransformPoint(new Vector3(l.x, l.y, 0f)) : (Vector3)l;
+    }
+
+    public void GameStart()
+    {
+        if (newPieceFx == null) newPieceFx = FindAnyObjectByType<NewPieceFx>();
+        if (newPieceFx != null) newPieceFx.PopText("対局開始", ScreenCenter, 80f, Hex(0xffd54a), Hex(0xff6f00), Hex(0x2a0a00), 20f, 1.2f);
+    }
+
+    public void TurnStarted(PlayerType side)
+    {
+        if (newPieceFx == null) newPieceFx = FindAnyObjectByType<NewPieceFx>();
+        if (newPieceFx == null) return;
+        bool p1 = side == PlayerType.Player1;
+        string text = p1 ? "☗ 先手の番" : "☖ 後手の番";
+        // カメラが回り終わる頃に出す
+        DOVirtual.DelayedCall(0.35f, () => newPieceFx.PopText(text, ScreenCenter, 46f, Color.white, p1 ? Player1Color : Player2Color, Hex(0x0a0a1a), 10f, 0.6f), false).SetLink(gameObject);
+    }
+
+    public void DropUnlocked()
+    {
+        if (newPieceFx == null) newPieceFx = FindAnyObjectByType<NewPieceFx>();
+        if (newPieceFx == null) return;
+        DOVirtual.DelayedCall(1f, () => newPieceFx.PopText("敵陣への打ち込み 解禁！", ScreenCenter + ScreenUp * 1.2f, 40f, Color.white, Gold, Hex(0x2a1a00), 10f, 1.2f), false).SetLink(gameObject);
+    }
+
+    // エナジーの増減：そのプレイヤーの側（自陣の奥の、盤の外）に出す
+    public void Energy(PlayerType player, int delta)
+    {
+        if (delta == 0) return;
+        if (newPieceFx == null) newPieceFx = FindAnyObjectByType<NewPieceFx>();
+        if (newPieceFx == null) return;
+        int backRank = SpecialContext.Forward(player) > 0 ? -1 : 9;
+        Vector3 pos = CellWorld(4, backRank);
+        Color color = player == PlayerType.Player1 ? Player1Color : Player2Color;
+        if (delta > 0)
+        {
+            newPieceFx.PopText($"+{delta} エナジー", pos, 26f, Color.white, color, Hex(0x0a0a1a), 30f, 0.9f);
+            PieceFx.BurstOptions burst = PieceFx.BurstOptions.Default;
+            burst.count = 10; burst.colors = new[] { color, Color.white }; burst.speed = 120f * PX; burst.life = 0.5f; burst.size = 0.18f;
+            if (fx != null) fx.Burst(pos, burst);
+        }
+        else
+        {
+            newPieceFx.PopText($"-{-delta} エナジー", pos, 26f, Color.white, Hex(0xb388ff), Hex(0x0a0a1a), 30f, 0.9f);
+        }
     }
 
     static Color Hex(int rgb)

@@ -353,6 +353,12 @@ public partial class GameSystem : MonoBehaviour
         // 乱数のシードは対局ごとに決める（後で棋譜に残し、オンラインでは両者で同じ値を使う）
         uint seed = GameRng.NewSeed();
         match = new MatchState(MatchConfig.FirstPlayer, seed);
+        // エナジーの増減の「+N エナジー」（BasicMoveFx は Start で作られる。対局の準備の前に作られていなければ探す）
+        match.Energy.Changed += (player, value, delta) =>
+        {
+            if (basicMoveFx == null) basicMoveFx = FindAnyObjectByType<BasicMoveFx>();
+            if (basicMoveFx != null) basicMoveFx.Energy(player, delta);
+        };
         Debug.Log($"対局の乱数のシード: {seed}");
         match.Turn.RoundEnded += OnRoundEnd;
         if (player1 != null) player1.BindEnergy(match.Energy);
@@ -2185,10 +2191,16 @@ public partial class GameSystem : MonoBehaviour
         // 先手の番ならターン数を進める → エナジー +PointsPerTurn
         match.Turn.BeginTurn();
         turnNotice = "";
+        if (basicMoveFx != null)
+        {
+            if (match.Turn.MoveNumber <= 1) basicMoveFx.GameStart();
+            else basicMoveFx.TurnStarted(side);
+        }
         if (side == match.Turn.FirstPlayer && match.Turn.IsDropUnlockTurn)
         {
             turnNotice = $"第{match.Turn.TurnNumber}ターン：敵陣への持ち駒の打ち込みが解禁された！";
             Debug.Log(turnNotice);
+            if (basicMoveFx != null) basicMoveFx.DropUnlocked();
         }
         AddPoint(side, MatchConfig.PointsPerTurn);
         if (HandUIManager.Instance != null)
