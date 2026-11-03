@@ -122,21 +122,9 @@ public class HandUIManager : MonoBehaviour
         return string.Join("  ", items);
     }
 
+    // 駒の短い名前（Match/PieceNames.cs。ルール説明などからも同じ名前を使う）
     public static string GetJapaneseName(PieceType type)
     {
-        switch (type)
-        {
-            case PieceType.Pawn: return "歩";
-            case PieceType.Lance: return "香";
-            case PieceType.Knight: return "桂";
-            case PieceType.SilverGeneral: return "銀";
-            case PieceType.GoldGeneral: return "金";
-            case PieceType.Bishop: return "角";
-            case PieceType.Rook: return "飛";
-            case PieceType.King: return "玉";
-            case PieceType.Gunpowder: return "火薬";
-            case PieceType.Sniper: return "狙撃手";
-            default: return type.ToString();
-        }
+        return PieceNames.Short(type);
     }
 }

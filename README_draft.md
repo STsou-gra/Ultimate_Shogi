@@ -141,7 +141,7 @@ Ultimate-Shogi_WebBuild/   WebGL ビルド成果物
 
 2. Project ウィンドウで右クリック → **Create > UltimateShogi > Effects > My Skill** → `SkillData/Effect/` に保存
 3. **Create > UltimateShogi > Skill Definition** で定義を作り、名前・コスト・説明・アイコン・Effect を設定 → `SkillData/Definition/` に保存
-4. `SkillData/Database/SkillDatabase.asset` の `All Skills` に追加する
+4. `Resources/SkillDatabase.asset` の `All Skills` に追加する（ルール説明の魔法の一覧にも自動で出る）
 
 ---
 

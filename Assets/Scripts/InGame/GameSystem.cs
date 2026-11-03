@@ -349,6 +349,12 @@ public partial class GameSystem : MonoBehaviour
             gameObject.AddComponent<TimeStopView>();
         }
 
+        // ルール説明のオーバーレイ（「ルール」ボタン・Tab キー。シーンに置かれていなければ自動で追加する）
+        if (FindAnyObjectByType<RulesOverlayView>() == null)
+        {
+            gameObject.AddComponent<RulesOverlayView>();
+        }
+
         // 対局の状態（ターン数・エナジー）
         // 乱数のシードは対局ごとに決める（後で棋譜に残し、オンラインでは両者で同じ値を使う）
         uint seed = GameRng.NewSeed();
@@ -450,6 +456,9 @@ public partial class GameSystem : MonoBehaviour
 
         // 爆発・狙撃の演出が終わって手番が替わるまで・超常魔法の解放の演出の間は操作しない
         if (IsBusy) return;
+
+        // ルール説明を開いている間（と閉じた直後）は操作しない
+        if (RulesOverlayView.IsBlockingInput) return;
 
         // 成り確認ダイアログの応答待ち中のキー操作
         if (isWaitingForPromoteChoice)
@@ -2410,6 +2419,13 @@ public partial class GameSystem : MonoBehaviour
     Player PlayerOf(PlayerType type)
     {
         return type == PlayerType.Player1 ? player1 : player2;
+    }
+
+    // type が編成した魔法（ルール説明の一覧の印などに使う。なければ null）
+    public SkillDeck GetSkillDeck(PlayerType type)
+    {
+        Player p = PlayerOf(type);
+        return p != null ? p.SkillDeck : null;
     }
 
     // ------------------------------------------------------------
