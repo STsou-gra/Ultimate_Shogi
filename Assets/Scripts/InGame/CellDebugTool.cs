@@ -35,6 +35,7 @@ public class CellDebugTool : MonoBehaviour
         bool trapKey = keyboard.digit3Key.wasPressedThisFrame;
         bool clearKey = keyboard.digit0Key.wasPressedThisFrame;
         if (!breakKey && !burnKey && !trapKey && !clearKey) return;
+        if (RulesOverlayView.IsBlockingInput) return;
 
         if (!CanUse()) return;
 
