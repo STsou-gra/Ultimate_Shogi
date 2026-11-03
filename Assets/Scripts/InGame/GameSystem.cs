@@ -652,7 +652,6 @@ public partial class GameSystem : MonoBehaviour
     {
         int x = gameCursor.X;
         int y = gameCursor.Y;
-        bool isGameOver = false;
 
         if (selectedPiece == null)
         {
