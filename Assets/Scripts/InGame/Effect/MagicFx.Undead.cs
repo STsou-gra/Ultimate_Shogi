@@ -8,7 +8,7 @@ using DG.Tweening;
 //  発動       … 画面が紫に光り、自陣が瘴気に染まる（紫の光・立ち上る緑の火の粉・揺れ）
 //  復活       … 1 体ずつ、土くれが飛び、緑の火が吸い込まれ、紫の衝撃波 → 駒が地面から這い上がる →「アンデッド 復活！」
 //  進軍       … 小さなカットイン「アンデッド進軍！」（GameSystem が UndeadMarch の CutInStyle で出す）→ 各アンデッドから緑の火が散る
-//  成仏       … 倒されたアンデッドから緑の鬼火が天へ昇り、駒の形の光がふわりと昇って消える →「成仏」
+//  成仏       … 倒されたアンデッドから緑の鬼火が天へ昇り、駒の形の光がふわりと昇って消える →「成仏！」
 // アンデッドの駒そのものの見た目（紫がかった半透明・瘴気・鬼火）は GamePiece.MakeUndead と GameTickEffects
 public partial class MagicFx
 {
@@ -149,7 +149,6 @@ public partial class MagicFx
     // 普通の移動・狙撃で取られたとき（成仏）は、駒の形の光がふわりと昇って消える（必殺技・自動行動・爆発などは、ほかの演出が駒を飛ばす）
     void OnUndeadDefeated(PieceDefeat defeat)
     {
-        if (!defeat.WasUndead) return;
         SpecialContext ctx = gameSystem != null ? gameSystem.ActiveSpecial : null;
         bool plainCapture = ctx == null && defeat.Reason == GameSystem.ReasonUndeadRest;
         float delay = ctx != null ? Mathf.Max(0f, ctx.HitTime) : (plainCapture ? Mathf.Max(0.15f, gameSystem.CaptureFxDelay) : 0.3f);
@@ -164,8 +163,9 @@ public partial class MagicFx
             burst.gravity = -160f * PX;
             fx.Burst(pos, burst);
             fx.Shockwave(pos, UndeadMiasmaColor, 1.4f, 0.4f);
-            PopText("成仏", pos + ScreenUp * (30f * PX), 30f, Color.white, UndeadTextColor, UndeadOutlineColor, 50f, 1f);
         });
+        // 「成仏！」（消失の理由ごとの色。MagicFx.Vanish.cs）
+        PopVanish(defeat, delay);
     }
 
     // 駒の形の光が、攻撃が届く delay 秒後から昇りながら薄くなって消える（それまではそのマスに残る）

@@ -15,6 +15,7 @@ using DG.Tweening;
 //  破壊砲   … 充填（範囲が明滅・発射口に光が集まる）→ 盤の端から端へ極太の破壊光線 →「破壊!!」
 //  天変地異・世界の終わり（超常魔法）… MagicFx.Transcendent.cs
 //  アンデッド・パラダイス（超常魔法）… MagicFx.Undead.cs
+//  消失のポップアップ（「炎上！」「落とし穴！」など。理由ごとの色）… MagicFx.Vanish.cs
 //
 // 盤面のデータはすぐ変わるので、見た目は SkillContext.Timeline の時刻（発動からの秒数）に合わせて再生する。
 // シーンに置かなくても GameSystem が自動で追加する
@@ -63,7 +64,7 @@ public partial class MagicFx : MonoBehaviour
             gameSystem.ShieldGiven += OnShieldGiven;
             gameSystem.ShieldBroken += OnShieldBroken;
             gameSystem.PhalanxGiven += OnPhalanxGiven;
-            gameSystem.PieceDefeated += OnUndeadDefeated;
+            gameSystem.PieceDefeated += OnPieceDefeatedFx;
         }
     }
 
@@ -74,7 +75,7 @@ public partial class MagicFx : MonoBehaviour
             gameSystem.ShieldGiven -= OnShieldGiven;
             gameSystem.ShieldBroken -= OnShieldBroken;
             gameSystem.PhalanxGiven -= OnPhalanxGiven;
-            gameSystem.PieceDefeated -= OnUndeadDefeated;
+            gameSystem.PieceDefeated -= OnPieceDefeatedFx;
         }
     }
 

@@ -175,7 +175,11 @@ public partial class GameSystem
     void PromotePiece(GamePiece piece)
     {
         if (timeStop != null) DeferPromote(piece);
-        else piece.Promote();
+        else
+        {
+            piece.Promote();
+            if (basicMoveFx != null) basicMoveFx.Promoted(piece);
+        }
     }
 
     void AddPending(TimeStopPending e, string label)
