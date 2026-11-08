@@ -48,10 +48,9 @@ public partial class GameSystem
     // 消失・爆発の予定ができた駒か（その駒はもう動かせず、必殺技・狙撃も使えない）
     public bool IsFrozenInTimeStop(GamePiece piece) => timeStop != null && timeStop.IsFrozen(piece);
 
-    // 「解除」できるか（時間停止中の、発動したプレイヤーの操作できるとき）
+    // 「解除」できるか（時間停止中の、発動したプレイヤーの操作できるとき）。「解除」ボタンを押せるか
     public bool CanReleaseTimeStop =>
-        timeStop != null && !timeStop.JustStarted && !timeStop.Ending && CanActNow
-        && CurrentPlayer != null && CurrentPlayer.PlayerType == timeStop.Owner;
+        timeStop != null && CanActNow && ReleaseBlockReason(CurrentSide) == null;
 
     // 時間停止中の案内文（Prototype の PlayerPanel.js の timeStopInfo）
     string TimeStopStatusText =>
@@ -136,10 +135,16 @@ public partial class GameSystem
         TimeStopUpdated?.Invoke(timeStop, false);
     }
 
-    // 「解除」（Q キー・ボタン。Prototype の play.js の releaseTimeStop）：回数が残っていても時間停止を終え、手番の流れに戻る
+    // 「解除」（Q キー・ボタン）：「停止世界の解除」行動を Dispatch
     public void ReleaseTimeStop()
     {
         if (!CanReleaseTimeStop) return;
+        Dispatch(MatchAction.ReleaseTimeStop());
+    }
+
+    // 解除の実行（Dispatch の ExecutePlan から。Prototype の play.js の releaseTimeStop）：回数が残っていても時間停止を終え、手番の流れに戻る
+    void ExecuteReleaseTimeStop()
+    {
         timeStop.Ending = true;
         Debug.Log($"{TurnEndAction.SideName(timeStop.Owner)}：時間停止を解除した（残り {timeStop.Remaining} 回）");
         ResolveTimeStop(true);
