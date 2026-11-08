@@ -562,28 +562,11 @@ public partial class GameSystem : MonoBehaviour
         }
         else if (isDroppingHand)
         {
-            // 持ち駒打つ位置選択モード
+            // 持ち駒打つ位置選択モード：決定したら「打つ」行動を Dispatch（オンラインならサーバーへ送る）
             if (gameController.IsOkTrigger())
             {
-                int x = gameCursor.X;
-                int y = gameCursor.Y;
-                if (CanDropPieceTo(activePlayer, selectedHandType, x, y))
-                {
-                    if (NetworkManager.Instance != null && NetworkManager.Instance.IsOnlineMatch)
-                    {
-                        NetworkManager.Instance.SendDropRequest(selectedHandType, x, y);
-                        isDroppingHand = false;
-                        isSelectingHand = false;
-                        gameBoard.AllDeactivePanel();
-                    }
-                    else
-                    {
-                        DropPiece(selectedHandType, x, y);
-                        if (ResolveKingLoss()) return;
-                        EndActionTurn();
-                    }
-                }
-                else
+                MatchAction drop = MatchAction.Drop(selectedHandType, new Vector2Int(gameCursor.X, gameCursor.Y));
+                if (!Dispatch(drop))
                 {
                     Debug.Log("そこには配置できません（将棋ルール違反、またはすでに駒があります）");
                 }
@@ -734,24 +717,13 @@ public partial class GameSystem : MonoBehaviour
         }
     }
 
+    // 移動先（と成るか）が決まった：「移動」行動を Dispatch（オンラインならサーバーへ送る）
     void ConfirmMove(int fromX, int fromY, int toX, int toY, bool promote)
     {
-        if (NetworkManager.Instance != null && NetworkManager.Instance.IsOnlineMatch)
+        MatchAction move = MatchAction.Move(new Vector2Int(fromX, fromY), new Vector2Int(toX, toY), promote);
+        if (!Dispatch(move))
         {
-            NetworkManager.Instance.SendMoveRequest(fromX, fromY, toX, toY, promote);
-            selectedPiece = null;
-            gameBoard.AllDeactivePanel();
-            ClearBoardHighlight();
-            SetDarkOverlayActive(false);
-            currentMovablePositions.Clear();
-        }
-        else
-        {
-            GamePiece piece = gameBoard.GetPieceAt(fromX, fromY);
-            if (piece != null)
-            {
-                ExecuteLocalMove(piece, toX, toY, promote);
-            }
+            Debug.Log($"そこには移動できません：{move}");
         }
     }
 
@@ -1131,9 +1103,10 @@ public partial class GameSystem : MonoBehaviour
                 Debug.Log("そこは狙撃できません");
                 return;
             }
-            GamePiece sniper = snipingPiece;
+            // 対象が決まった：「狙撃」行動を Dispatch
+            MatchAction snipe = MatchAction.Snipe(new Vector2Int(snipingPiece.X, snipingPiece.Y), cursor);
             EndSnipeTargetSelection();
-            ExecuteSnipe(sniper, cursor.x, cursor.y);
+            Dispatch(snipe);
         }
         else if (gameController.IsCancelTrigger())
         {
@@ -1141,6 +1114,7 @@ public partial class GameSystem : MonoBehaviour
         }
     }
 
+    // 狙撃の実行（Dispatch の ExecutePlan から）
     void ExecuteSnipe(GamePiece sniper, int tx, int ty)
     {
         GamePiece target = gameBoard.GetPieceAt(tx, ty);
@@ -1277,14 +1251,15 @@ public partial class GameSystem : MonoBehaviour
             return;
         }
 
+        Vector2Int from = new Vector2Int(caster.X, caster.Y);
         List<Vector2Int> targets = move.GetTargets(probe);
         if (targets == null)
         {
-            StartSpecial(caster, move, null);
+            Dispatch(MatchAction.Special(from)); // 対象を選ばない技はすぐ発動
             return;
         }
 
-        // 対象を選ぶ技（天馬跳躍）：スキルと同じ対象選択モードで 1 マス選ぶ
+        // 対象を選ぶ技（天馬跳躍）：スキルと同じ対象選択モードで 1 マス選ぶ → 「必殺技」行動を Dispatch
         List<Vector2Int> chosen = new List<Vector2Int>();
         BeginTargetSelection(new TargetSelection
         {
@@ -1294,11 +1269,12 @@ public partial class GameSystem : MonoBehaviour
             IsValid = pos => targets.Contains(pos),
             Prompt = index => move.GetTargetPrompt(),
             Preview = cursor => SkillPreview.FromPanels(targets),
-            OnComplete = () => StartSpecial(caster, move, chosen[0]),
+            OnComplete = () => Dispatch(MatchAction.Special(from, chosen[0])),
             Caster = caster,
         });
     }
 
+    // 必殺技の実行（Dispatch の ExecutePlan から）
     void StartSpecial(GamePiece caster, SpecialMove move, Vector2Int? target)
     {
         ResetSelectionState();
@@ -1407,17 +1383,23 @@ public partial class GameSystem : MonoBehaviour
     // オンライン対戦中か（錬成・狙撃はまだ通信に乗せていないので、オンラインでは使えない）
     bool IsOnlineMatch => NetworkManager.Instance != null && NetworkManager.Instance.IsOnlineMatch;
 
+    // 錬成のボタンを押せるか（操作できるとき・狙撃の対象選択中でない・ルールで錬成できる）
     public bool CanForge(ForgeRecipe recipe)
     {
-        if (recipe == null || !CanActNow || isSelectingSnipeTarget || IsOnlineMatch) return false;
-        return CurrentPlayer != null && CurrentPlayer.HasEnoughPoint(recipe.cost);
+        if (recipe == null || !CanActNow || isSelectingSnipeTarget || CurrentPlayer == null) return false;
+        return FindRecipe(recipe.pieceType) == recipe && ForgeBlockReason(CurrentSide, recipe) == null;
     }
 
-    // 錬成する。できたら true
+    // 錬成する（錬成ボタン・Z・X キー）：「錬成」行動を Dispatch。できたら true
     public bool Forge(ForgeRecipe recipe)
     {
         if (!CanForge(recipe)) return false;
+        return Dispatch(MatchAction.Forge(recipe.pieceType));
+    }
 
+    // 錬成の実行（Dispatch の ExecutePlan から）
+    void ExecuteForge(ForgeRecipe recipe)
+    {
         Player player = CurrentPlayer;
         PlayerType side = player.PlayerType;
         player.ConsumePoint(recipe.cost);
@@ -1446,7 +1428,6 @@ public partial class GameSystem : MonoBehaviour
             ResetSelectionState();
             EndActionTurn();
         }
-        return true;
     }
 
     // キーボードで錬成（Z = 1つ目のレシピ、X = 2つ目、C = 3つ目）
@@ -1523,45 +1504,16 @@ public partial class GameSystem : MonoBehaviour
         moveAnimator.PlayMove(piece, location, PieceMoveAnimator.StyleFor(piece));
     }
 
+    // オンライン対戦：サーバーが認めた移動（自分の手も相手の手も、この通知で実行する）
     public void OnServerMovePiece(int fromX, int fromY, int toX, int toY, PlayerType activePlayer, bool promote)
     {
-        GamePiece piece = gameBoard.GetPieceAt(fromX, fromY);
-        if (piece == null) return;
-
-        if (ApplyMove(piece, toX, toY, promote)) return; // 対局が終わった
-
-        selectedPiece = null;
-        gameBoard.AllDeactivePanel();
-        ClearBoardHighlight();
-        SetDarkOverlayActive(false);
-        currentMovablePositions.Clear();
-        EndActionTurn();
+        ExecuteRemote(MatchAction.Move(new Vector2Int(fromX, fromY), new Vector2Int(toX, toY), promote), activePlayer);
     }
 
+    // オンライン対戦：サーバーが認めた持ち駒を打つ手
     public void OnServerDropPiece(PieceType type, int toX, int toY, PlayerType activePlayer)
     {
-        Player targetPlayer = (activePlayer == PlayerType.Player1) ? player1 : player2;
-        targetPlayer.RemovePieceFromHand(type);
-        var hand = targetPlayer.Hand;
-
-        GamePiece dropped = gameBoard.SpawnPiece(type, activePlayer, toX, toY);
-        if (dropped != null && basicMoveFx != null) basicMoveFx.Dropped(dropped);
-        if (dropped != null) EnterCell(dropped, toX, toY); // 炎上のマスに打ったら消失する
-
-        if (HandUIManager.Instance != null)
-        {
-            HandUIManager.Instance.UpdateActiveHandDisplay(activePlayer, hand);
-            HandUIManager.Instance.SetStatusText("");
-            HandUIManager.Instance.HidePanel();
-        }
-
-        isDroppingHand = false;
-        isSelectingHand = false;
-        gameBoard.AllDeactivePanel();
-        ClearBoardHighlight();
-        SetDarkOverlayActive(false);
-        currentMovablePositions.Clear();
-        NextState();
+        ExecuteRemote(MatchAction.Drop(type, new Vector2Int(toX, toY)), activePlayer);
     }
 
     public void OnServerGameOver(PlayerType serverWinner)
@@ -1960,19 +1912,20 @@ public partial class GameSystem : MonoBehaviour
         }
     }
 
-    private void DropPiece(PieceType type, int x, int y)
+    // owner が持ち駒 type を (x, y) に打つ（Dispatch・オンラインの通知の ExecutePlan から。判定は済んでいること）
+    private void DropPiece(PlayerType owner, PieceType type, int x, int y)
     {
-        PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
-        CurrentPlayer.RemovePieceFromHand(type);
-        var hand = CurrentPlayer.Hand;
+        Player ownerPlayer = PlayerOf(owner);
+        ownerPlayer.RemovePieceFromHand(type);
+        var hand = ownerPlayer.Hand;
 
-        GamePiece dropped = gameBoard.SpawnPiece(type, activePlayer, x, y);
+        GamePiece dropped = gameBoard.SpawnPiece(type, owner, x, y);
         if (dropped != null && basicMoveFx != null) basicMoveFx.Dropped(dropped);
         if (dropped != null) EnterCell(dropped, x, y); // 炎上のマスに打ったら消失する
 
         if (HandUIManager.Instance != null)
         {
-            HandUIManager.Instance.UpdateActiveHandDisplay(activePlayer, hand);
+            HandUIManager.Instance.UpdateActiveHandDisplay(owner, hand);
             HandUIManager.Instance.SetStatusText("");
             HandUIManager.Instance.HidePanel();
         }
@@ -2666,18 +2619,16 @@ public partial class GameSystem : MonoBehaviour
             return;
         }
 
-        SkillContext context = new SkillContext(this, gameBoard, player);
-
         // 対象を選ぶスキルは、選び終わってから発動する（ポイントもその時に消費）
         if (skill.effect.TargetCount > 0)
         {
-            BeginSkillTargetSelection(skill, context);
+            BeginSkillTargetSelection(skill, new SkillContext(this, gameBoard, player));
             return;
         }
-        ExecuteSkill(skill, context);
+        Dispatch(MatchAction.Magic(skill.Id)); // 対象を選ばない魔法はすぐ発動
     }
 
-    // 発動：エナジー消費 → 魔法陣 → カットイン → 効果 →（手番を使うスキルは）演出を待って手番交代
+    // 発動（Dispatch の ExecutePlan から）：エナジー消費 → 魔法陣 → カットイン → 効果 →（手番を使うスキルは）演出を待って手番交代
     async void ExecuteSkill(SkillDefinition skill, SkillContext context)
     {
         PlayerType player = context.Player;
@@ -2788,7 +2739,8 @@ public partial class GameSystem : MonoBehaviour
             IsValid = pos => effect.IsValidTarget(context, pos),
             Prompt = index => effect.GetTargetPrompt(index),
             Preview = cursor => effect.GetPreview(context, cursor),
-            OnComplete = () => ExecuteSkill(skill, context), // ポイントは発動するときに消費する
+            // 選び終わった：「魔法」行動を Dispatch（ポイントは発動するときに消費する）
+            OnComplete = () => Dispatch(MatchAction.Magic(skill.Id, context.Targets, context.Orient)),
             AreaColor = skill.color,
             BlockedText = effect.BlockedText,
             OrientCount = Mathf.Max(1, effect.OrientCount),

@@ -1,6 +1,6 @@
 # アルティメット将棋 開発予定
 
-最終更新: 2026-11-03
+最終更新: 2026-11-08
 目標: ゲーム出展型イベント『大阪ゲームダンジョン2』（2026-12-26）に試遊できる状態で出展する
 
 > この資料は「現状」「決まったこと」「今後入れる案」をまとめたものです。
@@ -27,6 +27,7 @@
 | 画面遷移 | タイトル → 魔法スキル編成 → 対局 → ゲームオーバー（勝者・引き分けを表示） → タイトル |
 | ルール説明 | 対局中に「ルール」ボタン（Tab キー）で開閉するオーバーレイ（5-6）。錬成・必殺技・魔法の一覧は定義データから自動で並べる |
 | 対戦形式 | 同一PCでの2人対戦（キーボード操作）／自作サーバーでのオンライン対戦（移動・打つのみ同期。錬成・狙撃・必殺技はオンラインでは使えない） |
+| 行動（Action） | 操作はすべて「行動」（`MatchAction`。移動・打つ・必殺技・狙撃・魔法・錬成・停止世界の解除）にして `GameSystem.Dispatch` で実行する（5-7）。CPU・棋譜・合戦将棋型・討伐任務の土台 |
 
 **オンライン対戦のサーバー側**には、王手・詰み・千日手などの判定はまだ入っていない（クライアント側で判定している）。
 
@@ -466,6 +467,33 @@ Prototype の魔法スキルの仕組み（`src/defs/magic/`・`src/core/skills.
 - `SkillDatabase` のアセットを `Assets/Resources/SkillDatabase.asset` に移した（GUID はそのままなので、編成画面の参照は切れない）。ルール説明は `SkillDatabase.LoadDefault()` で読む。魔法を足すときは今までどおりこのデータベースに足せば、編成の候補にもルール説明にも出る。
 - 駒の日本語名は `PieceNames`（`Match/PieceNames.cs`）にまとめた（`HandUIManager.GetJapaneseName` はこれを呼ぶ）。
 
+### 5-7. 行動（Action）の層（Prototype の `src/core/actions.js` を移植）
+
+CPU・棋譜・合戦将棋型・討伐任務の土台として、プレイヤーの意思決定を「行動（Action）」のデータにした。
+盤のクリック・キー・ボタンは、選び終わったら行動を組み立てて `GameSystem.Dispatch(action)` を呼ぶだけにし、実行はすべて `Dispatch` を通る。
+**遊び方・オンライン対戦の挙動は変えていない**（どの操作で何ができるか・演出・手番の流れは今までと同じ）。
+
+| 行動（`MatchActionType`） | 持つ項目 | 入力 |
+|---|---|---|
+| `Move` 移動 | `from`・`to`・`promote`（成るか） | 駒を選ぶ → 移動先 →（成りの確認） |
+| `Drop` 打つ | `piece`・`to` | H → 持ち駒 → 打つマス |
+| `Special` 必殺技 | `from`・`targets`（天馬跳躍だけ 1 マス） | 駒を選ぶ → E／「必殺技」ボタン →（対象） |
+| `Snipe` 狙撃 | `from`・`targets`（1 マス） | 狙撃手を選ぶ → G／もう一度 F／「狙撃」ボタン → 対象 |
+| `Magic` 魔法 | `skill`（`SkillDefinition.Id`）・`targets`（選んだ順。駒入替は 2 つ）・`orient`（範囲の向き） | スキルボタン →（対象） |
+| `Forge` 錬成 | `piece` | Z・X／錬成ボタン |
+| `ReleaseTimeStop` 停止世界の解除 | なし | Q／「解除」ボタン |
+
+**実装メモ**
+- 行動は `Assets/Scripts/InGame/Match/MatchAction.cs`（プレーンなクラス。`JsonUtility` でそのまま JSON にできる：`ToJson` / `FromJson`）。座標は `GamePiece` の X・Y と同じ（x = 段、y = 筋。**Prototype とは x と y が逆**）。マスは `MatchSquare`（`{"x":0,"y":0}`。`Vector2Int` と相互に変換できる）。`owner` は行動するプレイヤー（-1 = 手番のプレイヤー。合戦将棋型用）。比べるときは `Key`（使わない項目の違いは無視する。Prototype の `actionKey`）。
+- 魔法の `skill` は `SkillDefinition.Id`（アセット名から `_Definition` を除いたもの。`Shield_Definition` → `Shield`）。編成（`Player.SkillDeck`）から探す。
+- 入口は `GameSystem.Actions.cs`（`GameSystem` の partial）。
+  - `CanDispatch(action)`（理由つきの `CanDispatch(action, out reason)` もある）：今その行動を実行できるか。Prototype の `planAction` に当たる。手番・演出中でないか・オンライン対戦で使えるか（錬成・狙撃・必殺技・手番を使う魔法はオンラインでは使えない）・ルール（移動先・成りの選び方・打てるマス・必殺技のチャージと対象・狙撃の対象・魔法のエナジーと対象・錬成のエナジー）を見る。**駒や持ち駒を選んでいる途中かどうか（UI の状態）は見ない**（それはボタンの `CanForge`・`CanBeginSnipe` などが見る）。
+  - `Dispatch(action)`：判定 → 実行（`ExecutePlan`）。実行できなければ何もせずに false。オンライン対戦の移動・打つはサーバーへ送り、サーバーからの通知（`OnServerMovePiece`・`OnServerDropPiece`）で `ExecuteRemote` が実行する（サーバーが認めた手なので判定し直さない。今までと同じ）。
+  - 実行した行動は `ActionHistory` に順に残り（行動したプレイヤーつき。棋譜の元）、Console に `[Action] 第N手 …  {JSON}` と出る。`ActionExecuting` イベントもある。
+- 成りの選び方は `IsPromoteChoiceAllowed`（成りの確認と同じ：成れないなら成らないだけ、行き所がなくなるなら成るだけ、それ以外はどちらも）。魔法の対象は対象選択と同じく「範囲が赤くない（`IsSkillAreaBlocked`）・`IsValidTarget`」を、選んだ順に確かめる。
+- 実行の中身は今までのメソッドをそのまま使っている：`ExecuteLocalMove`・`DropPiece`・`StartSpecial`・`ExecuteSnipe`・`ExecuteSkill`・`ExecuteForge`（もとの `Forge` の中身）・`ExecuteReleaseTimeStop`（もとの `ReleaseTimeStop` の中身）。`Forge`・`ReleaseTimeStop`・`UseSkill`・`BeginSpecial` などの公開メソッドは今までどおり使える（中で `Dispatch` を呼ぶ）。
+- 新しい入力（CPU・棋譜の再生・ショップUI など）を足すときは、行動を作って `Dispatch` を呼べばよい。
+
 ---
 
 ## 6. 今後実装したいスキル・駒案（たたき台）
@@ -648,8 +676,12 @@ Prototype の魔法スキルの仕組み（`src/defs/magic/`・`src/core/skills.
 - [ ] 神: 入手条件と即勝利
 
 ### Phase 5: オンライン
-- [ ] スキル・錬成・狙撃・必殺技をアクションとしてサーバーへ送る（今はオンラインでは錬成・狙撃・必殺技を使えない）
+- [ ] スキル・錬成・狙撃・必殺技をアクションとしてサーバーへ送る（今はオンラインでは錬成・狙撃・必殺技を使えない。`MatchAction.ToJson` をそのまま送れる形にした）
 - [ ] サーバー側に王手・詰み・千日手と新ルールを実装
+
+### Phase 6: CPU・棋譜・合戦将棋型・討伐任務の土台（5-7）
+- [x] 行動（`MatchAction`）と `GameSystem.Dispatch` / `CanDispatch`。入力処理は行動を組み立てて `Dispatch` を呼ぶだけにした
+- [ ] Unity エディターでの動作確認（移動・成りの確認・打つ・狙撃・必殺技・魔法（対象なし／1 つ／駒入替の 2 つ／範囲）・錬成・停止世界の解除が今までどおり動くこと、Console の `[Action]` の行、オンライン対戦の移動・打つ）
 
 ---
 

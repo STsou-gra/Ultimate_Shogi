@@ -26,6 +26,19 @@ public class SkillDefinition : ScriptableObject
     // 発動で手番を消費するか（Prototype の CONFIG.MAGIC_ENDS_TURN）
     public bool EndsTurn => endsTurn && MatchConfig.MagicEndsTurn;
 
+    // 行動（MatchAction.skill）・棋譜で魔法を指す名前（Prototype の id）。
+    // アセット名から末尾の「_Definition」を除いたもの（Shield_Definition → Shield）。アセット名がなければ skillName
+    public const string AssetSuffix = "_Definition";
+    public string Id
+    {
+        get
+        {
+            string assetName = name;
+            if (string.IsNullOrEmpty(assetName)) return skillName ?? "";
+            return assetName.EndsWith(AssetSuffix) ? assetName.Substring(0, assetName.Length - AssetSuffix.Length) : assetName;
+        }
+    }
+
     // Executorを廃止し、定義自身に実行させる（冗長化の削減）
     public void Use(SkillContext context)
     {
