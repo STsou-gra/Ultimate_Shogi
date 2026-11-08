@@ -7,7 +7,9 @@ using UnityEngine.InputSystem;
 //   L … 手番のプレイヤーの合法手（GameSystem.LegalActions）を種類ごとの数と一覧で出す。あわせて次を確かめる
 //       ・合法手がすべて CanDispatch で実行できるか
 //       ・合法手にない行動（全マスへの移動・打つ・狙撃・必殺技・対象 1 つの魔法・錬成・解除の候補）が CanDispatch で弾かれるか
-//       食い違いがあれば警告で出す（なければ「食い違いなし」）
+//       ・盤面のスナップショット（CaptureSnapshot → BoardSimulator.LegalActions）でも同じ合法手になるか
+//       ・スナップショットを JSON にして読み戻しても同じか
+//       食い違いがあれば警告で出す（なければ「食い違いなし」「一致」）
 // エディタと Development Build でだけ動く。駒・持ち駒・スキルの対象を選んでいる間は使えない。
 // シーンに置かなくても GameSystem が自動で追加する
 public class ActionDebugTool : MonoBehaviour
@@ -87,10 +89,40 @@ public class ActionDebugTool : MonoBehaviour
         if (problems.Count == 0) Debug.Log("[ActionDebug] LegalActions と CanDispatch の食い違いなし");
         else Debug.LogWarning($"[ActionDebug] 食い違い {problems.Count} 件\n" + string.Join("\n", problems.GetRange(0, Mathf.Min(problems.Count, 50))));
 
+        LogSnapshotCheck(side, keys);
+
         StringBuilder list = new StringBuilder();
         for (int i = 0; i < legal.Count && i < listLimit; i++) list.Append(legal[i]).Append('\n');
         if (legal.Count > listLimit) list.Append($"…ほか {legal.Count - listLimit} 件\n");
         Debug.Log($"[ActionDebug] 一覧\n{list}");
+    }
+
+    // 盤面のスナップショット（GameSystem.CaptureSnapshot）でも同じ合法手になるか・JSON にして戻しても同じか
+    void LogSnapshotCheck(PlayerType side, HashSet<string> liveKeys)
+    {
+        BoardSnapshot snapshot = gameSystem.CaptureSnapshot();
+        List<MatchAction> simulated = BoardSimulator.LegalActions(snapshot, side);
+        HashSet<string> simKeys = new HashSet<string>();
+        foreach (MatchAction a in simulated) simKeys.Add(a.Key);
+
+        List<string> problems = new List<string>();
+        foreach (MatchAction a in simulated)
+        {
+            if (!liveKeys.Contains(a.Key)) problems.Add($"スナップショットだけの合法手: {a}");
+        }
+        foreach (MatchAction a in gameSystem.LegalActions(side))
+        {
+            if (!simKeys.Contains(a.Key)) problems.Add($"スナップショットにない合法手: {a}");
+        }
+
+        string json = snapshot.ToJson();
+        BoardSnapshot back = BoardSnapshot.FromJson(json);
+        List<string> jsonDiff = back != null ? snapshot.Diff(back, true) : new List<string> { "JSON から読めない" };
+
+        if (problems.Count == 0) Debug.Log($"[ActionDebug] スナップショットの合法手 {simulated.Count} 件：GameSystem と一致（駒 {snapshot.pieces.Count}・王手 {(SnapshotRules.IsInCheck(snapshot, side) ? "あり" : "なし")}）");
+        else Debug.LogWarning($"[ActionDebug] スナップショットの合法手が GameSystem と違う（{problems.Count} 件）\n" + string.Join("\n", problems.GetRange(0, Mathf.Min(problems.Count, 50))));
+        if (jsonDiff.Count == 0) Debug.Log($"[ActionDebug] スナップショットの JSON（{json.Length} 文字）を読み戻しても同じ\n{json}");
+        else Debug.LogWarning($"[ActionDebug] スナップショットの JSON を読み戻すと違う（{jsonDiff.Count} 件）\n" + string.Join("\n", jsonDiff));
     }
 
     // 照合用の候補：ルールで弾かれるものも含めて、ひととおりの行動を作る（駒入替のような対象 2 つの魔法は、合法手の側だけで確かめる）

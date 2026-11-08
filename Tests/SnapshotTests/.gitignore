@@ -1,0 +1,4 @@
+bin/
+obj/
+# ルートの .gitignore（Unity 用）が *.csproj を無視するので、このテストのプロジェクトだけは残す
+!SnapshotTests.csproj

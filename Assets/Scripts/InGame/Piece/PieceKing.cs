@@ -4,9 +4,7 @@ public class PieceKing : GamePiece
 {
     protected override bool CanMoveByPattern(int toX, int toY)
     {
-        int dx =  Mathf.Abs(toX - X);
-        int dy = Mathf.Abs(toY - Y);
-        // 全方向に1マス以内
-        return (dx <= 1 && dy <= 1);
+        // 動きの形は PieceMoves（GameObject に依存しない盤面のシミュレーションと同じ判定）
+        return PieceMoves.CanMoveByPattern(type, player, isPromoted, toX - X, toY - Y);
     }
 }
