@@ -408,6 +408,9 @@ public partial class GameSystem : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        // 盤面のシミュレーションの照合（エディタと Development Build のみ。行動が終わって操作できるようになったら）
+        UpdateSimulationCheck();
+
         //TODO: ターン管理
         switch (currentState)
         {

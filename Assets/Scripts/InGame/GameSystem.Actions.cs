@@ -348,6 +348,7 @@ public partial class GameSystem
     void ExecutePlan(ActionPlan plan)
     {
         MatchAction a = plan.Action;
+        BeginSimulationCheck(a); // エディタと Development Build：盤面のシミュレーションの予測を作っておき、行動が終わったら照合する
         RecordAction(a, plan.Owner);
 
         switch (a.type)
