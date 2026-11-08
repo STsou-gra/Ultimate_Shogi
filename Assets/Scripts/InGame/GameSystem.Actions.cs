@@ -399,6 +399,150 @@ public partial class GameSystem
         ExecutePlan(plan);
     }
 
+    // ------------------------------------------------------------
+    //  合法手（Prototype の legalActions）
+    // ------------------------------------------------------------
+
+    // player が今選べる行動をすべて返す。CanDispatch で実行できる行動と同じになるように、PlanAction と同じ判定から作る
+    // （手番でない・演出中・オンライン対戦の相手の手番なら空）。形は盤のクリック・ボタンで作る行動と同じ（owner は -1 のまま）。
+    // 並び：盤上の駒（盤の添字 GameHelper.CalcPanelNum の順）ごとに 移動（成らない → 成る）・狙撃・必殺技
+    //       → 持ち駒（PieceRules.HandOrder の順）→ 魔法（編成の順。範囲の向き → 対象を選ぶ順）→ 錬成（レシピの順）→ 解除
+    public List<MatchAction> LegalActions(PlayerType player)
+    {
+        List<MatchAction> res = new List<MatchAction>();
+        if (!IsInTurn || match == null || gameBoard == null || IsBusy) return res;
+        if (player != CurrentSide) return res;
+        if (IsOnlineMatch && player != NetworkManager.Instance.MyPlayerType) return res;
+
+        // 盤上の駒
+        GamePiece[] board = gameBoard.GetBoardData();
+        for (int i = 0; i < board.Length; i++)
+        {
+            GamePiece p = board[i];
+            if (p == null || p.player != player) continue;
+            AddPieceActions(res, p);
+        }
+
+        // 持ち駒
+        Player owner = PlayerOf(player);
+        if (owner != null)
+        {
+            foreach (PieceType type in PieceRules.HandOrder)
+            {
+                int count;
+                if (!owner.Hand.TryGetValue(type, out count) || count <= 0) continue;
+                for (int x = 0; x < BoardCells.Size; x++)
+                {
+                    for (int y = 0; y < BoardCells.Size; y++)
+                    {
+                        if (CanDropPieceTo(player, type, x, y)) res.Add(MatchAction.Drop(type, new Vector2Int(x, y)));
+                    }
+                }
+            }
+        }
+
+        // 魔法（同じ Id の魔法は 1 回だけ。Dispatch は Id で編成から探すので、同じ行動になる）
+        if (owner != null && owner.SkillDeck != null && owner.SkillDeck.skills != null)
+        {
+            HashSet<string> seen = new HashSet<string>();
+            foreach (SkillDefinition skill in owner.SkillDeck.skills)
+            {
+                if (skill == null || !seen.Add(skill.Id)) continue;
+                if (FindDeckSkill(player, skill.Id) != skill || SkillBlockReason(player, skill) != null) continue;
+                AddMagicActions(res, player, skill);
+            }
+        }
+
+        // 錬成（同じ駒のレシピは 1 つ目だけ。Dispatch は駒の種類でレシピを探す）
+        foreach (ForgeRecipe recipe in ForgeRecipes)
+        {
+            if (recipe == null || FindRecipe(recipe.pieceType) != recipe) continue;
+            if (ForgeBlockReason(player, recipe) == null) res.Add(MatchAction.Forge(recipe.pieceType));
+        }
+
+        // 停止世界の解除
+        if (ReleaseBlockReason(player) == null) res.Add(MatchAction.ReleaseTimeStop());
+        return res;
+    }
+
+    // 盤上の自分の駒 p の行動（移動・狙撃・必殺技）
+    void AddPieceActions(List<MatchAction> res, GamePiece p)
+    {
+        Vector2Int from = new Vector2Int(p.X, p.Y);
+
+        // 移動（PlanMove と同じ）
+        if (!p.isUndead && !IsFrozenInTimeStop(p))
+        {
+            for (int x = 0; x < BoardCells.Size; x++)
+            {
+                for (int y = 0; y < BoardCells.Size; y++)
+                {
+                    if (!CanPieceMoveTo(p, x, y)) continue;
+                    Vector2Int to = new Vector2Int(x, y);
+                    if (IsPromoteChoiceAllowed(p, x, y, false)) res.Add(MatchAction.Move(from, to, false));
+                    if (IsPromoteChoiceAllowed(p, x, y, true)) res.Add(MatchAction.Move(from, to, true));
+                }
+            }
+        }
+
+        // 狙撃（PlanSnipe と同じ）
+        if (PieceRules.IsSniper(p.type) && SnipeBlockReason(p) == null)
+        {
+            foreach (Vector2Int t in GetSnipeTargets(p)) res.Add(MatchAction.Snipe(from, t));
+        }
+
+        // 必殺技（PlanSpecial と同じ）
+        if (SpecialBlockReason(p) == null)
+        {
+            SpecialMove move = GetSpecialMove(p);
+            SpecialContext probe = new SpecialContext(this, gameBoard, p, specialFx);
+            if (move.CanUse(probe))
+            {
+                List<Vector2Int> targets = move.GetTargets(probe);
+                if (targets == null) res.Add(MatchAction.Special(from));
+                else
+                {
+                    foreach (Vector2Int t in targets) res.Add(MatchAction.Special(from, t));
+                }
+            }
+        }
+    }
+
+    // 魔法 skill の行動（PlanMagic と同じ。対象を選ぶ魔法は、範囲の向きごとに、対象選択で選べる順に並べる）
+    void AddMagicActions(List<MatchAction> res, PlayerType player, SkillDefinition skill)
+    {
+        SkillEffect effect = skill.effect;
+        if (effect.TargetCount <= 0)
+        {
+            res.Add(MatchAction.Magic(skill.Id));
+            return;
+        }
+        int orients = Mathf.Max(1, effect.OrientCount);
+        for (int orient = 0; orient < orients; orient++)
+        {
+            SkillContext context = new SkillContext(this, gameBoard, player) { Orient = orient };
+            AddMagicTargets(res, skill, context);
+        }
+    }
+
+    // 対象を 1 つずつ選んでいく（context.Targets に選び終わった対象。TargetCount 個そろったら行動にする）
+    void AddMagicTargets(List<MatchAction> res, SkillDefinition skill, SkillContext context)
+    {
+        SkillEffect effect = skill.effect;
+        for (int x = 0; x < BoardCells.Size; x++)
+        {
+            for (int y = 0; y < BoardCells.Size; y++)
+            {
+                Vector2Int pos = new Vector2Int(x, y);
+                if (!IsSkillTargetSelectable(effect, context, pos)) continue;
+                context.Targets.Add(pos);
+                if (context.Targets.Count >= effect.TargetCount) res.Add(MatchAction.Magic(skill.Id, context.Targets, context.Orient));
+                else AddMagicTargets(res, skill, context);
+                context.Targets.RemoveAt(context.Targets.Count - 1);
+            }
+        }
+    }
+
     void RecordAction(MatchAction a, PlayerType owner)
     {
         MatchAction record = a.Clone();

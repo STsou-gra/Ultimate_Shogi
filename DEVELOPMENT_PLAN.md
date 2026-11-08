@@ -494,6 +494,13 @@ CPU・棋譜・合戦将棋型・討伐任務の土台として、プレイヤ�
 - 実行の中身は今までのメソッドをそのまま使っている：`ExecuteLocalMove`・`DropPiece`・`StartSpecial`・`ExecuteSnipe`・`ExecuteSkill`・`ExecuteForge`（もとの `Forge` の中身）・`ExecuteReleaseTimeStop`（もとの `ReleaseTimeStop` の中身）。`Forge`・`ReleaseTimeStop`・`UseSkill`・`BeginSpecial` などの公開メソッドは今までどおり使える（中で `Dispatch` を呼ぶ）。
 - 新しい入力（CPU・棋譜の再生・ショップUI など）を足すときは、行動を作って `Dispatch` を呼べばよい。
 
+**合法手（`GameSystem.LegalActions(player)`。Prototype の `legalActions`）**
+- そのプレイヤーが今選べる行動をすべて返す。`CanDispatch` で実行できる行動と同じになるように、判定は `PlanAction` と同じ部品（`IsPromoteChoiceAllowed`・`CanDropPieceTo`・`SpecialBlockReason`・`SnipeBlockReason`・`SkillBlockReason`・`IsSkillTargetSelectable`・`ForgeBlockReason`・`ReleaseBlockReason`）を使っている。手番でない・演出中・オンライン対戦の相手の手番なら空。
+- 並びは、盤上の駒（盤の添字の順）ごとに 移動（成らない → 成る）・狙撃・必殺技 → 持ち駒（`PieceRules.HandOrder` の順）→ 魔法（編成の順。範囲の向き → 対象を選ぶ順）→ 錬成（レシピの順）→ 解除。
+- 成るか選べる移動は 2 つ（成らない・成る）、行き所がなくなる移動は「成る」だけ。駒入替のように対象を 2 つ選ぶ魔法は、対象選択と同じ順で選べる組をすべて並べる（多いときは数百）。
+- 毎フレーム呼ぶ想定ではない（全マスを調べるので、CPU の思考や確認用に呼ぶ）。
+- **デバッグキー `L`**（`ActionDebugTool`。エディタと Development Build のみ。駒などを選んでいないとき）：手番のプレイヤーの合法手の数（種類ごと）と一覧を Console に出す。あわせて「合法手がすべて `CanDispatch` で実行できるか」「合法手にない候補（全マスへの移動・打つ・狙撃・必殺技・対象 1 つの魔法・錬成・解除）が弾かれるか」を照合し、食い違いがあれば警告を出す。初期配置の先手なら移動は 30 件（本将棋と同じ）。
+
 ---
 
 ## 6. 今後実装したいスキル・駒案（たたき台）
@@ -682,6 +689,8 @@ CPU・棋譜・合戦将棋型・討伐任務の土台として、プレイヤ�
 ### Phase 6: CPU・棋譜・合戦将棋型・討伐任務の土台（5-7）
 - [x] 行動（`MatchAction`）と `GameSystem.Dispatch` / `CanDispatch`。入力処理は行動を組み立てて `Dispatch` を呼ぶだけにした
 - [ ] Unity エディターでの動作確認（移動・成りの確認・打つ・狙撃・必殺技・魔法（対象なし／1 つ／駒入替の 2 つ／範囲）・錬成・停止世界の解除が今までどおり動くこと、Console の `[Action]` の行、オンライン対戦の移動・打つ）
+- [x] 合法手 `GameSystem.LegalActions(player)` と、確かめるデバッグキー `L`（`ActionDebugTool`）
+- [ ] Unity エディターでの動作確認（初期配置で移動 30 件、L で「食い違いなし」、時間停止中・アンデッド・狙撃手・必殺技のオーラ・駒入替などの局面でも食い違いがないこと）
 
 ---
 
