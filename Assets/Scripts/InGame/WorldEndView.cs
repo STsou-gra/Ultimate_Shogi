@@ -47,12 +47,17 @@ public class WorldEndView : MonoBehaviour
         BuildTint();
         BuildBanner();
         gameSystem.WorldEndStarted += OnWorldEndStarted;
+        gameSystem.StateImported += OnStateImported;
         Refresh(false);
     }
 
     void OnDestroy()
     {
-        if (gameSystem != null) gameSystem.WorldEndStarted -= OnWorldEndStarted;
+        if (gameSystem != null)
+        {
+            gameSystem.WorldEndStarted -= OnWorldEndStarted;
+            gameSystem.StateImported -= OnStateImported;
+        }
         if (tint != null) Destroy(tint.gameObject);
         if (banner != null) Destroy(banner.gameObject);
     }
@@ -60,6 +65,12 @@ public class WorldEndView : MonoBehaviour
     void OnWorldEndStarted(PlayerType owner)
     {
         Refresh(true);
+    }
+
+    // 局面を読み込んだ（世界の終わりが始まっている局面・いない局面のどちらにもなる）
+    void OnStateImported()
+    {
+        Refresh(false);
     }
 
     // 発動状況を表示に反映する（Prototype の refreshWorldEnd）

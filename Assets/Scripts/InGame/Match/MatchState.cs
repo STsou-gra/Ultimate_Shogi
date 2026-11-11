@@ -121,6 +121,28 @@ public class MatchState
         }
     }
 
+    // ------------------------------------------------------------
+    //  局面の読み込み（MatchSnapshotIO.Restore。GameSystem.ImportState から）。通知は出さない
+    // ------------------------------------------------------------
+
+    public void RestoreTranscendent(PlayerType owner, bool unlocked, bool used)
+    {
+        transcendentUnlocked[(int)owner] = unlocked;
+        transcendentUsed[(int)owner] = used;
+    }
+
+    public void RestoreWorldEnd(PlayerType owner, int? since)
+    {
+        worldEndSince[(int)owner] = since;
+    }
+
+    public void RestoreFallenInitial(PlayerType owner, IEnumerable<FallenPieceRecord> records)
+    {
+        List<FallenPieceRecord> list = fallenInitial[(int)owner];
+        list.Clear();
+        if (records != null) list.AddRange(records);
+    }
+
     // 千日手の「同じ局面」の判定用に、超常魔法の状態を文字列にする
     // （Prototype の hash.js と同じく、解放・使用・世界の終わり・倒された初期配置の駒の種類）
     public void AppendKey(System.Text.StringBuilder sb)

@@ -70,6 +70,9 @@ public class BoardCells
     // マスの状態が入れ替わった（Rearrange。from[i] にあった状態が to[i] へ移った）。見た目もマスごと付け替える
     public event System.Action<IReadOnlyList<Vector2Int>, IReadOnlyList<Vector2Int>> Rearranged;
 
+    // 局面を読み込んでマスの状態を丸ごと置き換えた（Restore。見た目は全部のマスを描き直す）
+    public event System.Action Reloaded;
+
     public BoardCells()
     {
         for (int i = 0; i < cells.Length; i++) cells[i] = new BoardCell();
@@ -197,6 +200,52 @@ public class BoardCells
         cell.Reset();
         Changed?.Invoke(x, y, CellChange.Cleared);
         return true;
+    }
+
+    // ------------------------------------------------------------
+    //  局面の書き出し・読み込み（MatchSnapshot.cells。GameSystem.ExportState / ImportState）
+    // ------------------------------------------------------------
+
+    // 通常でないマス（破壊・炎上・落とし穴）を、添字の順に書き出す
+    public List<CellSnapshot> Capture()
+    {
+        List<CellSnapshot> list = new List<CellSnapshot>();
+        for (int i = 0; i < cells.Length; i++)
+        {
+            BoardCell cell = cells[i];
+            if (cell.State == CellState.Normal && !cell.HasTrap) continue;
+            int x, y;
+            GameHelper.CalcPanelPosition(out x, out y, i);
+            list.Add(new CellSnapshot
+            {
+                x = x,
+                y = y,
+                state = cell.State,
+                burnUntil = cell.BurnUntil ?? -1,
+                trap = cell.Trap.HasValue ? (int)cell.Trap.Value : -1,
+            });
+        }
+        return list;
+    }
+
+    // 書き出したマスの状態に置き換える（list にないマスは通常に戻す）。Changed は出さず、最後に Reloaded を出す。
+    // 破壊マスには炎上・落とし穴を残さず、炎上でないマスには終わるターンを残さない（Break・SetBurning と同じ形にそろえる）
+    public void Restore(IEnumerable<CellSnapshot> list)
+    {
+        foreach (BoardCell cell in cells) cell.Reset();
+        if (list != null)
+        {
+            foreach (CellSnapshot c in list)
+            {
+                BoardCell cell = At(c.x, c.y);
+                if (cell == null) continue;
+                cell.State = c.state;
+                cell.BurnUntil = c.state == CellState.Burning && c.burnUntil >= 0 ? c.burnUntil : (int?)null;
+                bool hasTrap = c.state != CellState.Broken && (c.trap == (int)PlayerType.Player1 || c.trap == (int)PlayerType.Player2);
+                cell.Trap = hasTrap ? (PlayerType)c.trap : (PlayerType?)null;
+            }
+        }
+        Reloaded?.Invoke();
     }
 
     // 千日手の「同じ局面」の判定用に、マスの状態を文字列にする（Prototype の hash.js と同じく、状態・終わるターン・穴の持ち主）

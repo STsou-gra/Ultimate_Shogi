@@ -44,6 +44,12 @@ public class EnergyState
         return true;
     }
 
+    // 書き出した局面から戻す（GameSystem.ImportState。Changed は出さないので、表示は Player.BindEnergy で合わせ直す）
+    public void Restore(PlayerType player, int value)
+    {
+        values[(int)player] = value;
+    }
+
     int Set(PlayerType player, int value)
     {
         int delta = value - values[(int)player];
