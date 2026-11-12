@@ -4,15 +4,7 @@ public class PieceRook : GamePiece
 {
     protected override bool CanMoveByPattern(int toX, int toY)
     {
-        int dx = toX - X;
-        int dy = toY - Y;
-        if (isPromoted)
-        {
-            // 竜王：縦横どこまでも ＋ 周囲1マス（斜め4方向も1マスだけ動ける）
-            return (dx == 0 || dy == 0) || (Mathf.Abs(dx) <= 1 && Mathf.Abs(dy) <= 1);
-        }
-
-        // 飛：縦横どこまでも
-        return (dx == 0 || dy == 0);
+        // 動きの形は PieceMoves（GameObject に依存しない盤面のシミュレーションと同じ判定）
+        return PieceMoves.CanMoveByPattern(type, player, isPromoted, toX - X, toY - Y);
     }
 }

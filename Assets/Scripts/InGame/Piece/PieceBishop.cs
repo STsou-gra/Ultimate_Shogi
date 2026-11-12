@@ -4,15 +4,7 @@ public class PieceBishop : GamePiece
 {
     protected override bool CanMoveByPattern(int toX, int toY)
     {
-        int dx = toX - X;
-        int dy = toY - Y;
-        if (isPromoted)
-        {
-            // 竜馬：斜めどこまでも ＋ 周囲1マス（上下左右4方向も1マスだけ動ける）
-            return (Mathf.Abs(dx) == Mathf.Abs(dy)) || (Mathf.Abs(dx) <= 1 && Mathf.Abs(dy) <= 1);
-        }
-
-        // 角：斜めどこまでも
-        return (Mathf.Abs(dx) == Mathf.Abs(dy));
+        // 動きの形は PieceMoves（GameObject に依存しない盤面のシミュレーションと同じ判定）
+        return PieceMoves.CanMoveByPattern(type, player, isPromoted, toX - X, toY - Y);
     }
 }

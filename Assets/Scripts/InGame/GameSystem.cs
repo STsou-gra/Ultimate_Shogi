@@ -307,6 +307,11 @@ public partial class GameSystem : MonoBehaviour
         {
             gameObject.AddComponent<CellDebugTool>();
         }
+        // 行動の合法手を確かめるデバッグキー（L。エディタと Development Build のみ）
+        if (FindAnyObjectByType<ActionDebugTool>() == null)
+        {
+            gameObject.AddComponent<ActionDebugTool>();
+        }
 
         // 駒錬成のレシピ、錬成・狙撃のボタン、爆発・狙撃の演出（シーンに置かれていなければ自動で追加する）
         if (ForgeRecipes.Count == 0) Debug.LogWarning("駒錬成のレシピ（Resources/ForgeRecipeBook）が見つかりません");
@@ -403,6 +408,9 @@ public partial class GameSystem : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        // 盤面のシミュレーションの照合（エディタと Development Build のみ。行動が終わって操作できるようになったら）
+        UpdateSimulationCheck();
+
         //TODO: ターン管理
         switch (currentState)
         {
