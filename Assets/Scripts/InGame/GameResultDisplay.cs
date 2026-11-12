@@ -7,6 +7,9 @@ public class GameResultDisplay : MonoBehaviour
 {
     void Start()
     {
+        // 棋譜の保存・読み込んで再生（画面の右下。KifuGameOverPanel）
+        KifuGameOverPanel.Ensure();
+
         TextMeshProUGUI resultText = GetComponent<TextMeshProUGUI>();
         if (GameResult.IsDraw)
         {

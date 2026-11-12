@@ -57,7 +57,7 @@ public partial class GameSystem
     {
         // CPU の手番には、人の入力（盤のクリック・キー・ボタン）からの行動は実行しない。
         // CanDispatch・LegalActions はこれを見ない（CPU が同じ判定で手を選べるように）
-        if (IsCpuTurn && !dispatchingCpu) return false;
+        if (IsCpuTurn && !dispatchingCpu && !replayDispatching) return false; // 棋譜の再生は CPU の手番の行動も出す
         ActionPlan plan = PlanAction(action, out _);
         if (plan == null) return false;
 
@@ -83,6 +83,11 @@ public partial class GameSystem
         if (IsBusy)
         {
             reason = "演出中です";
+            return null;
+        }
+        if (IsReplaying && !replayDispatching)
+        {
+            reason = "棋譜の再生中は操作できません";
             return null;
         }
         PlayerType me = CurrentSide;
@@ -564,6 +569,7 @@ public partial class GameSystem
         record.Owner = owner; // 棋譜には行動したプレイヤーも残す
         record.hash = "";     // 処理が終わったら入れる（UpdateActionHash）
         actionHistory.Add(record);
+        RecordKifuAction(record); // 棋譜にも足す（GameSystem.Kifu.cs。前の行動のハッシュもここで確定する）
         Debug.Log($"[Action] 第{match.Turn.MoveNumber}手 {record}  {record.ToJson()}");
         hashPendingAction = record;
         ActionExecuting?.Invoke(record);

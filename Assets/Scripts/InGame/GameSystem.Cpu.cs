@@ -23,7 +23,7 @@ public partial class GameSystem
     public bool IsCpuTurn => IsInTurn && cpuSide.HasValue && CurrentSide == cpuSide.Value;
 
     // CPU が考え始めてよいか（CPU の手番で、演出・自動行動・選択の途中でない）
-    public bool CanCpuAct => IsCpuTurn && !IsBusy && !isRunningTurnEnd && !isWaitingForPromoteChoice
+    public bool CanCpuAct => IsCpuTurn && !IsReplaying && !IsBusy && !isRunningTurnEnd && !isWaitingForPromoteChoice
         && !IsSelectingSkillTarget && !isSelectingSnipeTarget && match != null && gameBoard != null;
 
     // 今の手番の手数（CPU が考えている間に局面が変わっていないかを確かめる）

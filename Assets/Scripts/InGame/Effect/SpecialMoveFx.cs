@@ -55,11 +55,58 @@ public class SpecialMoveFx : MonoBehaviour
         }
     }
 
+    // 演出の時刻に合わせて行う処理（SpecialContext.Schedule）。盤面を変えるもの（隕石の炎上・破壊砲のマス破壊・落とし穴の設置など）もあるので、
+    // まだ行っていないものを覚えておき、GameSystem が手番を進める前に FlushScheduled で必ず済ませる
+    // （演出の待ち時間・フレームの長さ・再生の速さによって、盤面が変わる順番が前後しないようにする）
+    private class ScheduledAction
+    {
+        public float At;
+        public int Order;
+        public System.Action Action;
+        public bool Done;
+    }
+    private readonly List<ScheduledAction> scheduled = new List<ScheduledAction>();
+    private int scheduleOrder;
+
     // time 秒後に action を行う
     public void At(float time, System.Action action)
     {
-        DOVirtual.DelayedCall(Mathf.Max(0f, time), () => action(), false).SetLink(gameObject);
+        if (action == null) return;
+        ScheduledAction entry = new ScheduledAction { At = Mathf.Max(0f, time), Order = scheduleOrder++, Action = action };
+        scheduled.Add(entry);
+        DOVirtual.DelayedCall(entry.At, () => RunScheduled(entry), false).SetLink(gameObject);
     }
+
+    void RunScheduled(ScheduledAction entry)
+    {
+        if (entry.Done) return;
+        entry.Done = true;
+        scheduled.Remove(entry);
+        try
+        {
+            entry.Action();
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogException(e);
+        }
+    }
+
+    // まだ行っていない処理を、予定の時刻の順にすべて今すぐ行う（演出の途中でも、盤面をその行動の最後の状態にする）
+    public void FlushScheduled()
+    {
+        while (scheduled.Count > 0)
+        {
+            ScheduledAction next = scheduled[0];
+            foreach (ScheduledAction e in scheduled)
+            {
+                if (e.At < next.At || (e.At == next.At && e.Order < next.Order)) next = e;
+            }
+            RunScheduled(next);
+        }
+    }
+
+    public bool HasScheduled => scheduled.Count > 0;
 
     // ------------------------------------------------------------
     //  発動・解放

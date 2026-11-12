@@ -14,8 +14,8 @@ public class GameCursor : MonoBehaviour
         var keyboard = Keyboard.current;
         if (keyboard == null) return;
 
-        // ルール説明を開いている間は動かさない
-        if (RulesOverlayView.IsBlockingInput) return;
+        // ルール説明・棋譜メニューを開いている間は動かさない
+        if (RulesOverlayView.IsBlockingInput || KifuMenuView.IsBlockingInput) return;
 
         // 持ち駒の選択中、または成り選択中は盤面のカーソル移動を行わない
         if (gameSystem != null && (gameSystem.IsSelectingHand || gameSystem.IsWaitingForPromoteChoice)) return;
