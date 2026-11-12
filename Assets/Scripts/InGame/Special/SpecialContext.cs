@@ -123,6 +123,16 @@ public class SpecialContext
         else action();
     }
 
+    // 今の時刻 Time に、盤面を変える action（マスの破壊・炎上・落とし穴の設置・時間停止の開始など）を行う。
+    // 本将棋型は演出の時刻に合わせて行う（手番の交代は演出が終わるまで待つ）。
+    // 合戦将棋型は演出を待たずに進むので、結果がフレームの時間に左右されないように、すぐ行う（Prototype と同じく盤面はすぐ変わる）
+    public void ScheduleState(System.Action action)
+    {
+        if (action == null) return;
+        if (GameSystem != null && GameSystem.AppliesStateImmediately) action();
+        else Schedule(action);
+    }
+
     // 残像（Prototype の ghost）
     public void Afterimage(GamePiece p, Color color)
     {

@@ -8,7 +8,7 @@ using UnityEngine.InputSystem;
 //   0 … 通常に戻す
 // 破壊・炎上・落とし穴は GameSystem の BreakCell / SetBurning / SetTrap を通すので、対局中と同じ処理になる
 // （破壊したマスにいた駒は消失する。王将が消えたら勝敗も決まる）。
-// エディタと Development Build でだけ動く。駒・持ち駒・スキルの対象を選んでいる間とオンライン対戦中は使えない。
+// エディタと Development Build でだけ動く。駒・持ち駒・スキルの対象を選んでいる間とオンライン対戦中・合戦将棋型では使えない。
 // シーンに置かなくても GameSystem が自動で追加する
 public class CellDebugTool : MonoBehaviour
 {
@@ -29,6 +29,8 @@ public class CellDebugTool : MonoBehaviour
     {
         Keyboard keyboard = Keyboard.current;
         if (keyboard == null || gameSystem == null || gameCursor == null) return;
+        // 合戦将棋型では数字キーを魔法に使う（先手 1〜5・後手 6〜0）ので、デバッグキーは使わない
+        if (gameSystem.IsRealtime) return;
 
         bool breakKey = keyboard.digit1Key.wasPressedThisFrame;
         bool burnKey = keyboard.digit2Key.wasPressedThisFrame;

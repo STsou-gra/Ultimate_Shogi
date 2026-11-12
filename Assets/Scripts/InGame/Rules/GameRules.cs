@@ -148,15 +148,16 @@ public class NifuDropRule : IGameRule
 }
 
 /// <summary>
-/// 序盤（第 MatchConfig.EnemyZoneDropLockTurns ターンまで）は、敵陣（相手側の3段）に持ち駒を打てないルール
+/// 序盤は、敵陣（相手側の3段）に持ち駒を打てないルール。
+/// 期間は戦闘型で違う（本将棋型：第 MatchConfig.EnemyZoneDropLockTurns ターンまで ／ 合戦将棋型：開始から 60 秒）ので、MatchPolicy.IsDropLocked を見る
 /// </summary>
 public class EnemyZoneDropLockRule : IGameRule
 {
-    private readonly TurnState turn;
+    private readonly MatchPolicy policy;
 
-    public EnemyZoneDropLockRule(TurnState turn)
+    public EnemyZoneDropLockRule(MatchPolicy policy)
     {
-        this.turn = turn;
+        this.policy = policy;
     }
 
     public bool IsLegalMove(GamePiece piece, int toX, int toY, GameBoard board)
@@ -167,16 +168,24 @@ public class EnemyZoneDropLockRule : IGameRule
     public bool IsLegalDrop(PieceType type, PlayerType player, int toX, int toY, GameBoard board)
     {
         // 段は X（BoardZones の説明を参照）
-        return !(turn.IsEnemyZoneDropLocked && BoardZones.IsEnemyZone(player, toX));
+        return !(policy != null && policy.IsDropLocked && BoardZones.IsEnemyZone(player, toX));
     }
 }
 
 /// <summary>
 /// 打ち歩詰めの禁止（相手の王将が1枚だけのときに適用）
-/// 王手放置や、王将を取られるマスへの移動は禁止しない（放置したら次の手で王将を取られて負け）
+/// 王手放置や、王将を取られるマスへの移動は禁止しない（放置したら次の手で王将を取られて負け）。
+/// 合戦将棋型は詰みがない（王将を取ったら勝ち）ので禁止しない（MatchPolicy.ForbidsUchifuzume）
 /// </summary>
 public class UchifuzumeRule : IGameRule
 {
+    private readonly MatchPolicy policy;
+
+    public UchifuzumeRule(MatchPolicy policy = null)
+    {
+        this.policy = policy;
+    }
+
     public bool IsLegalMove(GamePiece piece, int toX, int toY, GameBoard board)
     {
         return true; // 配置ルールなのでMove判定は常にパス
@@ -184,6 +193,7 @@ public class UchifuzumeRule : IGameRule
 
     public bool IsLegalDrop(PieceType type, PlayerType player, int toX, int toY, GameBoard board)
     {
+        if (policy != null && !policy.ForbidsUchifuzume) return true;
         return !(type == PieceType.Pawn && CheckRules.IsUchifuzume(board, player, toX, toY));
     }
 }

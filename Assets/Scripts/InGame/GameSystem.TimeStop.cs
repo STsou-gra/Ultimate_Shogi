@@ -54,8 +54,18 @@ public partial class GameSystem
 
     // 時間停止中の案内文（Prototype の PlayerPanel.js の timeStopInfo）
     string TimeStopStatusText =>
-        $"【時間停止中】 あと {timeStop.Remaining} 回行動できる（移動・打つ・魔法・必殺技・狙撃。錬成は数えない）\n" +
+        $"【時間停止中】 あと {timeStop.Remaining} 回{TimeStopSecText}行動できる（移動・打つ・魔法・必殺技・狙撃。錬成は数えない）\n" +
         "取り・爆発・成り・マスの変化は、時間が動き出してからまとめて起こる（解除: Q）";
+
+    // 合戦将棋型：「・あと N 秒」（回数か秒数の早いほうで解除。本将棋型は ""）
+    string TimeStopSecText
+    {
+        get
+        {
+            int sec = Policy.TimeStopSecLeft(timeStop);
+            return sec >= 0 ? $"（あと {sec} 秒）" : "";
+        }
+    }
 
     // ------------------------------------------------------------
     //  開始・回数・解除
@@ -306,8 +316,58 @@ public partial class GameSystem
     {
         TimeStopState ts = timeStop;
         if (ts == null) return;
+        if (!Policy.AwaitsEffects)
+        {
+            // 合戦将棋型：その場で予定を処理する（演出は待たない。手番の流れもない）
+            ResolveTimeStopAndReset();
+            return;
+        }
         isResolvingAction = true;
         ResetSelectionState();
+        SpecialContext tl = BeginResolveTimeStop(ts);
+
+        float wait = Mathf.Max(pendingActionFxTime, tl.Time + 0.3f);
+        pendingActionFxTime = 0f;
+        try
+        {
+            await Awaitable.WaitForSecondsAsync(wait, destroyCancellationToken);
+        }
+        catch (System.OperationCanceledException)
+        {
+            return; // シーンを離れた
+        }
+
+        isResolvingAction = false;
+        UpdateActivePlayerSkillUI();
+        if (ResolveKingLoss()) return; // 予定の取り・爆発などで王将がいなくなった
+        if (!IsInTurn) return;
+        if (endsTurn)
+        {
+            NextState(); // 2回行動の続き・ファランクス・アンデッドの自動行動 → 手番交代
+            return;
+        }
+
+        // 手番を使わない魔法で回数を使い切った：手番は続く（Prototype の afterAction の endsTurn === false）
+        isActivePlayerInCheck = Policy.AnnouncesCheck && CheckRules.IsInCheck(gameBoard, ts.Owner);
+        if (HandUIManager.Instance != null) HandUIManager.Instance.SetStatusText(IdleStatusText);
+        CheckTranscendentUnlock();
+    }
+
+    // 合戦将棋型：時間停止を終えて、予定をその場でまとめて処理する（回数を使い切った・「解除」・10 秒たった）。
+    // 盤面はすぐ変わり、ガラスが割れる演出と予定の演出は重ねて再生する。勝敗は呼び出し側が ResolveKingLoss で判定する
+    void ResolveTimeStopNow()
+    {
+        TimeStopState ts = timeStop;
+        if (ts == null) return;
+        BeginResolveTimeStop(ts);
+        pendingActionFxTime = 0f;
+        UpdateActivePlayerSkillUI();
+        if (HandUIManager.Instance != null) HandUIManager.Instance.SetStatusText(IdleStatusText);
+    }
+
+    // 時間停止を終え、ガラスが割れる演出を始めて、予定を記録した順に処理する（本将棋型・合戦将棋型の共通）。処理の時間軸を返す
+    SpecialContext BeginResolveTimeStop(TimeStopState ts)
+    {
         timeStop = null;
         if (gameBoard != null) gameBoard.TimeStop = null;
         resolvingTimeStop = ts;
@@ -336,32 +396,7 @@ public partial class GameSystem
             ActiveSpecial = null;
             resolvingTimeStop = null;
         }
-
-        float wait = Mathf.Max(pendingActionFxTime, tl.Time + 0.3f);
-        pendingActionFxTime = 0f;
-        try
-        {
-            await Awaitable.WaitForSecondsAsync(wait, destroyCancellationToken);
-        }
-        catch (System.OperationCanceledException)
-        {
-            return; // シーンを離れた
-        }
-
-        isResolvingAction = false;
-        UpdateActivePlayerSkillUI();
-        if (ResolveKingLoss()) return; // 予定の取り・爆発などで王将がいなくなった
-        if (!IsInTurn) return;
-        if (endsTurn)
-        {
-            NextState(); // 2回行動の続き・ファランクス・アンデッドの自動行動 → 手番交代
-            return;
-        }
-
-        // 手番を使わない魔法で回数を使い切った：手番は続く（Prototype の afterAction の endsTurn === false）
-        isActivePlayerInCheck = CheckRules.IsInCheck(gameBoard, ts.Owner);
-        if (HandUIManager.Instance != null) HandUIManager.Instance.SetStatusText(IdleStatusText);
-        CheckTranscendentUnlock();
+        return tl;
     }
 
     // 予定を記録した順に処理する。盤面はすぐ変わり、演出は tl の時刻どおりに再生される

@@ -46,6 +46,18 @@ public class TurnState
         MoveNumber++;
     }
 
+    // 合戦将棋型（手番がない）：行動 1 回ごとに手数だけ進める（Prototype の afterRealtimeAction の moveNumber++）
+    public void AdvanceMove()
+    {
+        MoveNumber++;
+    }
+
+    // 合戦将棋型：ターンはない（第1ターンのまま。Prototype の setupGame と同じ）
+    public void BeginRealtime()
+    {
+        if (TurnNumber == 0) TurnNumber = 1;
+    }
+
     // 画面表示用：「第Nターン（第M手）」
     public string Label => $"第{TurnNumber}ターン（第{MoveNumber}手）";
 }

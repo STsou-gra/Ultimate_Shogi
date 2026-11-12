@@ -45,6 +45,8 @@ public class TimeStopView : MonoBehaviour
     private RectTransform hud;
     private Image pieFill;
     private TextMeshProUGUI countText;
+    private TextMeshProUGUI releaseLabel;
+    private int shownSecLeft = -2;
     private Button releaseButton;
     private int shownRemaining = -1;
 
@@ -144,7 +146,9 @@ public class TimeStopView : MonoBehaviour
         if (hud.gameObject.activeSelf != show) hud.gameObject.SetActive(show);
         if (!show) return;
         releaseButton.interactable = gameSystem.CanReleaseTimeStop;
-        if (ts.Remaining != shownRemaining) RefreshHud(false);
+        // 合戦将棋型は残り秒も出す（回数か秒数の早いほうで解除）
+        int sec = gameSystem.Policy.TimeStopSecLeft(ts);
+        if (ts.Remaining != shownRemaining || sec != shownSecLeft) RefreshHud(false);
     }
 
     void LateUpdate()
@@ -540,6 +544,7 @@ public class TimeStopView : MonoBehaviour
         bLine.effectColor = new Color(0f, 0f, 0f, 0.5f);
         bLine.effectDistance = new Vector2(2f, -2f);
         TextMeshProUGUI bLabel = CreateText("Label", brt, "解除  [Q]", 26f, Color.white, TextAlignmentOptions.Center);
+        releaseLabel = bLabel;
         bLabel.rectTransform.anchorMin = Vector2.zero;
         bLabel.rectTransform.anchorMax = Vector2.one;
         bLabel.rectTransform.offsetMin = Vector2.zero;
@@ -561,7 +566,10 @@ public class TimeStopView : MonoBehaviour
             return;
         }
         shownRemaining = ts.Remaining;
-        countText.text = $"残り {ts.Remaining} 回";
+        shownSecLeft = gameSystem.Policy.TimeStopSecLeft(ts);
+        countText.text = shownSecLeft >= 0 ? $"残り {ts.Remaining} 回\n<size=70%>あと {shownSecLeft} 秒</size>" : $"残り {ts.Remaining} 回";
+        // 解除のキーは発動した席のキー（合戦将棋型：先手 Q・後手 U）
+        if (releaseLabel != null) releaseLabel.text = $"解除  [{SeatKeys.Label(gameSystem.KeysOf(ts.Owner).Release)}]";
         pieFill.fillAmount = ts.Total > 0 ? (float)ts.Remaining / ts.Total : 0f;
         if (bump)
         {

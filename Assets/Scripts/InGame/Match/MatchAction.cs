@@ -64,8 +64,12 @@ public class MatchAction
 {
     public MatchActionType type;
 
-    // 行動するプレイヤー（(int)PlayerType。-1 = 手番のプレイヤー）
+    // 行動するプレイヤー（(int)PlayerType。-1 = 手番のプレイヤー。合戦将棋型では操作している席）
     public int owner = -1;
+
+    // 合戦将棋型：行動を実行した時刻（MatchState.Clock.Tick。-1 = 未設定・本将棋型）。
+    // 棋譜に owner と一緒に残し、同じシード・同じ「tick つきの行動の列」で同じ対局を再現する（Prototype の棋譜の t）。Key には含めない
+    public int t = -1;
 
     // Move・Special・Snipe：行動する盤上の駒のマス
     public MatchSquare from = MatchSquare.None;

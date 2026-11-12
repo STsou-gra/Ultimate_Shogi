@@ -35,6 +35,12 @@ public static class MatchConfig
     // 超常魔法「停止世界」の時間停止中に行動できる回数（Prototype の CONFIG.TIME_STOP_MOVES。移動・打つ・魔法・必殺技・狙撃が各 1 回）
     public const int TimeStopMoves = 10;
 
+    // 合戦将棋型の時間の単位：1 tick = 50ms（1 秒に 20 回。Prototype の CONFIG.TICK_MS）。対局の時間 MatchState.Clock はこの整数
+    public const int TickMs = 50;
+
+    // 合戦将棋型：1 フレームで進める時間の上限（ミリ秒。重いフレームのあとに一気に進めすぎない。Prototype の CONFIG.MAX_FRAME_MS）
+    public const int MaxFrameMs = 250;
+
     // 先手（最初に指すプレイヤー）。Player1 = 盤の手前（X = 0〜2 が自陣）
     public const PlayerType FirstPlayer = PlayerType.Player1;
 }

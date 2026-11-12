@@ -26,6 +26,13 @@ public class MatchState
     // 対局の結果に関わる乱数（天変地異・世界の終わりなど）。シードは対局の開始時に決める（GameRng.NewSeed）
     public GameRng Rng { get; }
 
+    // 戦闘型（本将棋型・合戦将棋型）の違いの入口。ほかの処理は戦闘型の Id を見ずに、これの関数を呼ぶ
+    public MatchPolicy Policy { get; }
+    public BattleRuleset Ruleset => Policy.Ruleset;
+
+    // 合戦将棋型の時間（本将棋型は null）
+    public MatchClock Clock { get; }
+
     private readonly List<FallenPieceRecord>[] fallenInitial = { new List<FallenPieceRecord>(), new List<FallenPieceRecord>() };
 
     // 超常魔法（Prototype の state.transcendentUnlocked / transcendentUsed）。添字は (int)PlayerType。
@@ -36,11 +43,13 @@ public class MatchState
     // 超常魔法「世界の終わり」を発動したターン（未発動なら null。Prototype の state.worldEndSince）
     private readonly int?[] worldEndSince = new int?[2];
 
-    public MatchState(PlayerType firstPlayer, uint seed)
+    public MatchState(PlayerType firstPlayer, uint seed, BattleRuleset ruleset = null)
     {
         Turn = new TurnState(firstPlayer);
         Energy = new EnergyState();
         Rng = new GameRng(seed);
+        Policy = new MatchPolicy(ruleset, this);
+        if (Policy.IsRealtime) Clock = new MatchClock();
     }
 
     // 倒された自分の初期配置の駒（持ち主ごと。取り・消失どちらも）
@@ -92,7 +101,7 @@ public class MatchState
     //  世界の終わり（Prototype の src/core/play.js の startWorldEnd・worldEndCellsPerTurn）
     // ------------------------------------------------------------
 
-    // owner が世界の終わりを発動したターン（未発動なら null）
+    // owner が世界の終わりを発動した時刻（Policy.Now。本将棋型：ターン数 ／ 合戦将棋型：Clock.Time。未発動なら null）
     public int? WorldEndSince(PlayerType owner)
     {
         return worldEndSince[(int)owner];
@@ -100,22 +109,23 @@ public class MatchState
 
     public bool IsWorldEndActive => worldEndSince[0].HasValue || worldEndSince[1].HasValue;
 
-    // 世界の終わりを始める（今のターンから。1 対局に 1 回なので、もう始まっていれば何もしない）
+    // 世界の終わりを始める（今から。1 対局に 1 回なので、もう始まっていれば何もしない）
     public void StartWorldEnd(PlayerType owner)
     {
-        if (!worldEndSince[(int)owner].HasValue) worldEndSince[(int)owner] = Turn.TurnNumber;
+        if (!worldEndSince[(int)owner].HasValue) worldEndSince[(int)owner] = Policy.Now;
     }
 
-    // 今のターンの終わりに崩れるマスの数（発動したプレイヤー 1 人につき MatchConfig.WorldEndCells）。
-    // 発動したターンの分は発動したときに崩れているので、そのターンの終わりには数えない
+    // 今のターンの終わり（合戦将棋型は崩壊の間隔ごと）に崩れるマスの数（発動したプレイヤー 1 人につき MatchConfig.WorldEndCells）。
+    // 発動したとき（ターン・時刻）の分は発動したときに崩れているので、その時刻には数えない（Prototype の worldEndCellsPerTurn）
     public int WorldEndCellsThisRound
     {
         get
         {
+            int now = Policy.Now;
             int n = 0;
             foreach (int? since in worldEndSince)
             {
-                if (since.HasValue && since.Value < Turn.TurnNumber) n += MatchConfig.WorldEndCells;
+                if (since.HasValue && since.Value < now) n += MatchConfig.WorldEndCells;
             }
             return n;
         }
