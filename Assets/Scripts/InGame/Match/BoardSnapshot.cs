@@ -81,12 +81,14 @@ public class SnapshotPlayer
     public bool transcendentUnlocked;                             // 超常魔法を解放した（シミュレーションでは変えない）
     public bool transcendentUsed;                                 // 超常魔法を使った（〃）
     public int worldEndSince = -1;                                // 世界の終わりを発動したターン（未発動なら -1）
+    public List<SnapshotSkill> skills = new List<SnapshotSkill>();   // 編成した魔法（編成の枠の順。空の枠は入れない）
 
     public SnapshotPlayer Clone()
     {
         SnapshotPlayer p = (SnapshotPlayer)MemberwiseClone();
         p.hand = (int[])hand.Clone();
         p.fallenInitial = new List<PieceType>(fallenInitial);
+        p.skills = new List<SnapshotSkill>(skills);   // 魔法の定義は書き換えないので同じものを使う
         return p;
     }
 }
@@ -126,10 +128,23 @@ public class BoardSnapshot
     public List<SnapshotRecipe> recipes = new List<SnapshotRecipe>();    // 錬成のレシピ（並びは錬成ボタンの順）
     public bool online;                                                  // オンライン対戦中（錬成・狙撃・必殺技は使えない）
 
+    // 必殺技・魔法をシミュレーションで判定・実行するための情報（SnapshotSkills.cs・BoardSimulator.Skills.cs）。
+    // skillsKnown なら、必殺技・魔法の合法手は BoardSimulator が作る（行動を当てはめたあとも分かる）。
+    // false なら今までどおり skillActions（スナップショットを作った局面の合法手）だけ
+    public bool skillsKnown;
+    public SpecialKind[] specialKinds = new SpecialKind[PieceTypeCount];  // 駒の種類ごとの必殺技（添字は (int)PieceType）
+
+    // 対局の乱数（GameRng。天変地異・世界の終わり・アンデッド）のシードと状態。CPU の先読みは、ここを CPU 自身の乱数で置き換えて
+    // 「対局の結果に関わる乱数」を先読みしない（Prototype の search.js の simulate）
+    public uint rngSeed;
+    public uint rngState;
+
     // 時間停止（停止世界）
     public bool timeStopped;
     public int timeStopOwner = -1;
     public bool timeStopReleasable;                                      // 今「解除」できる状態か（発動した行動のあと・使い切る前）
+    public int timeStopRemaining;                                        // 時間停止の残り回数
+    public bool timeStopJustStarted;                                     // 停止世界を発動した行動の処理中（この行動は回数に数えない）
     public List<MatchSquare> heldSquares = new List<MatchSquare>();      // 予定の駒が残っているマス（持ち駒を打てない）
 
     // 勝敗
@@ -294,6 +309,7 @@ public class BoardSnapshot
         s.players = new SnapshotPlayer[players.Length];
         for (int i = 0; i < players.Length; i++) s.players[i] = players[i].Clone();
         s.specialMoves = (int[])specialMoves.Clone();
+        s.specialKinds = (SpecialKind[])specialKinds.Clone();
         s.recipes = new List<SnapshotRecipe>(recipes);           // レシピは書き換えないので同じものを使う
         s.heldSquares = new List<MatchSquare>(heldSquares);
         s.skillActions = new List<MatchAction>(skillActions.Count);

@@ -9,6 +9,7 @@ using TMPro;
 //  ・候補が選ぶ数以下のランクは、全部を選んだ状態で固定（枠は押せない）。候補がないランクの枠は「候補なし」
 //  ・すべての枠が埋まると「対局開始」を押せる
 // 選んだ魔法は枠の順に SkillDeck に入れて、DeckTransferManager で対局（GameSystem）に渡す
+// CPU と対戦（MatchSetup.IsVsCpu）のときは、人の分の枠だけを出し、CPU の分は CpuLoadout が選ぶ（Prototype と同じ）
 public class DeckSelectController : MonoBehaviour
 {
     [Header("Skill Database Reference")]
@@ -57,7 +58,50 @@ public class DeckSelectController : MonoBehaviour
         RegisterSlotButtons();
         AutoFillLockedRanks(player1SelectedSkills);
         AutoFillLockedRanks(player2SelectedSkills);
+        SetupCpuSlots();
         UpdateSlotDisplays();
+    }
+
+    // CPU と対戦：CPU の分の魔法を選んで、CPU の枠を隠す（代わりに「CPU が自分で選びます」と出す）
+    void SetupCpuSlots()
+    {
+        if (!MatchSetup.IsVsCpu) return;
+        PlayerType cpu = MatchSetup.CpuSide;
+        SkillDefinition[] picked = CpuLoadout.Choose(database != null ? database.allSkills : null, GameRng.NewSeed());
+        System.Array.Copy(picked, SlotsOf(cpu), SkillRanks.SlotCount);
+        Debug.Log($"CPU（{(cpu == PlayerType.Player1 ? "先手" : "後手")}）の編成：{CpuLoadout.Describe(picked)}");
+
+        Button[] buttons = cpu == PlayerType.Player1 ? player1SlotButtons : player2SlotButtons;
+        Button first = null;
+        if (buttons != null)
+        {
+            foreach (Button b in buttons)
+            {
+                if (b == null) continue;
+                if (first == null) first = b;
+                b.gameObject.SetActive(false);
+            }
+        }
+        if (first == null || first.transform.parent == null) return;
+
+        GameObject label = new GameObject("CpuLoadoutLabel", typeof(RectTransform));
+        label.transform.SetParent(first.transform.parent, false);
+        RectTransform src = (RectTransform)first.transform, dst = (RectTransform)label.transform;
+        dst.anchorMin = src.anchorMin;
+        dst.anchorMax = src.anchorMax;
+        dst.pivot = src.pivot;
+        dst.anchoredPosition = src.anchoredPosition;
+        dst.sizeDelta = new Vector2(Mathf.Max(src.sizeDelta.x, 360f), Mathf.Max(src.sizeDelta.y, 60f));
+        TextMeshProUGUI text = label.AddComponent<TextMeshProUGUI>();
+        TextMeshProUGUI like = first.GetComponentInChildren<TextMeshProUGUI>(true);
+        if (like != null)
+        {
+            text.font = like.font;
+            text.fontSize = like.fontSize;
+            text.color = like.color;
+        }
+        text.alignment = TextAlignmentOptions.Center;
+        text.text = $"{MatchSetup.SideLabel(cpu)}\nCPU は魔法を自分で選びます";
     }
 
     // ------------------------------------------------------------
@@ -200,6 +244,7 @@ public class DeckSelectController : MonoBehaviour
     void OpenSelection(PlayerType player, int slotIndex)
     {
         if (slotIndex < 0 || slotIndex >= SkillRanks.SlotCount) return;
+        if (MatchSetup.IsCpu(player)) return; // CPU の分は CPU が選ぶ
         SkillRank rank = SkillRanks.RankOfSlot(slotIndex);
         if (IsLocked(rank)) return; // 候補が少ないランクは自動で選ばれていて、変えられない
 
@@ -299,8 +344,8 @@ public class DeckSelectController : MonoBehaviour
 
     private void UpdateSlotDisplays()
     {
-        UpdateGroup(player1SelectedSkills, player1SlotButtons, player1SlotTexts);
-        UpdateGroup(player2SelectedSkills, player2SlotButtons, player2SlotTexts);
+        if (!MatchSetup.IsCpu(PlayerType.Player1)) UpdateGroup(player1SelectedSkills, player1SlotButtons, player1SlotTexts);
+        if (!MatchSetup.IsCpu(PlayerType.Player2)) UpdateGroup(player2SelectedSkills, player2SlotButtons, player2SlotTexts);
 
         if (playButton != null)
         {

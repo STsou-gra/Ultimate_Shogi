@@ -149,7 +149,7 @@ public partial class GameSystem
         // 手番・表示
         PlayerType side = match.Turn.Current;
         currentState = side == PlayerType.Player1 ? GameState.Player1Turn : GameState.Player2Turn;
-        if (gameCamera != null) gameCamera.RotateToPlayer(side);
+        if (gameCamera != null) gameCamera.RotateToPlayer(CameraSideFor(side));
         isActivePlayerInCheck = CheckRules.IsInCheck(gameBoard, side);
         if (HandUIManager.Instance != null)
         {

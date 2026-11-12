@@ -394,6 +394,9 @@ public partial class GameSystem : MonoBehaviour
             player2.SetSkillDeck(DeckTransferManager.Player2SelectedDeck);
         }
 
+        // CPU と対戦（MatchSetup。オンライン対戦では使わない）
+        SetupCpu();
+
         // スキルボタンのクリックイベントを登録
         for (int i = 0; i < skillSlotUIs.Length; i++)
         {
@@ -469,6 +472,9 @@ public partial class GameSystem : MonoBehaviour
 
         // ルール説明を開いている間（と閉じた直後）は操作しない
         if (RulesOverlayView.IsBlockingInput) return;
+
+        // CPU の手番は人の操作を受け付けない（CPU は CpuPlayer が DispatchFromCpu で指す）
+        if (IsCpuTurn) return;
 
         // 成り確認ダイアログの応答待ち中のキー操作
         if (isWaitingForPromoteChoice)
@@ -1386,6 +1392,7 @@ public partial class GameSystem : MonoBehaviour
         {
             if (!IsInTurn || IsBusy || isWaitingForPromoteChoice || IsSelectingSkillTarget) return false;
             if (IsOnlineMatch && CurrentPlayer.PlayerType != NetworkManager.Instance.MyPlayerType) return false;
+            if (IsCpuTurn) return false; // CPU の手番は人が操作できない（GameSystem.Cpu.cs）
             return true;
         }
     }
@@ -2120,12 +2127,12 @@ public partial class GameSystem : MonoBehaviour
             case GameState.Player1Turn:
                 currentState = GameState.Player2Turn;
                 Debug.Log("プレイヤー2にターンが移りました！");
-                gameCamera.RotateToPlayer(PlayerType.Player2);
+                gameCamera.RotateToPlayer(CameraSideFor(PlayerType.Player2));
                 break;
             case GameState.Player2Turn:
                 currentState = GameState.Player1Turn;
                 Debug.Log("プレイヤー1にターンが移りました！");
-                gameCamera.RotateToPlayer(PlayerType.Player1);
+                gameCamera.RotateToPlayer(CameraSideFor(PlayerType.Player1));
                 break;
             case GameState.GameOver:
                 // ゲームオーバーの処理
@@ -2142,13 +2149,13 @@ public partial class GameSystem : MonoBehaviour
         {
             currentState = GameState.Player1Turn;
             Debug.Log("プレイヤー1のターンです！");
-            gameCamera.RotateToPlayer(PlayerType.Player1);
+            gameCamera.RotateToPlayer(CameraSideFor(PlayerType.Player1));
         }
         else
         {
             currentState = GameState.Player2Turn;
             Debug.Log("プレイヤー2のターンです！");
-            gameCamera.RotateToPlayer(PlayerType.Player2);
+            gameCamera.RotateToPlayer(CameraSideFor(PlayerType.Player2));
         }
         UpdateActivePlayerSkillUI();
         OnTurnStarted();
@@ -2594,7 +2601,7 @@ public partial class GameSystem : MonoBehaviour
     {
         // 成りの選択中・スキルや狙撃の対象選択中・演出中は使えない
         if (isWaitingForPromoteChoice || IsSelectingSkillTarget || isSelectingSnipeTarget || IsBusy) return;
-        if (!IsInTurn) return;
+        if (!IsInTurn || IsCpuTurn) return;
 
         // 自分のターンであるかチェック
         PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
@@ -3037,7 +3044,8 @@ public partial class GameSystem : MonoBehaviour
                     skillSlotUIs[i].nameText.text = skill.skillName;
                     skillSlotUIs[i].costText.text = $"{skill.cost} Pt";
                     // エナジーが足りていて、今の盤面で効果の対象がある（盾をかけられる駒がある など）ときだけ押せる
-                    skillSlotUIs[i].button.interactable = CanUseSkill(activePlayer.PlayerType, skill);
+                    // CPU の手番は、CPU の魔法を見せるだけで押せない
+                    skillSlotUIs[i].button.interactable = !IsCpuSide(activePlayer.PlayerType) && CanUseSkill(activePlayer.PlayerType, skill);
                 }
                 else
                 {

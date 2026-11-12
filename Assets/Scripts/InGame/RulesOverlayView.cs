@@ -197,6 +197,11 @@ public class RulesOverlayView : MonoBehaviour
             src.Specials = gameSystem.SpecialMoves;
             src.Player1Deck = DeckSkills(gameSystem.GetSkillDeck(PlayerType.Player1));
             src.Player2Deck = DeckSkills(gameSystem.GetSkillDeck(PlayerType.Player2));
+            if (gameSystem.Cpu != null)
+            {
+                src.CpuSide = gameSystem.Cpu.Side;
+                src.CpuLevel = gameSystem.Cpu.Level;
+            }
         }
         else
         {

@@ -33,6 +33,48 @@ public static class SnapshotRules
         return !CanEscapePawnCheck(cells, s, pawn, front, opponent);
     }
 
+    // その移動の後に、自分の王将が取られる状態にならないか（CheckRules.IsMoveSafe。詰みの判定）
+    public static bool IsMoveSafe(BoardSnapshot s, SnapshotPiece piece, int toX, int toY)
+    {
+        SnapshotPiece[] cells = s.Grid;
+        if (CountKings(cells, piece.Owner) != 1) return true;
+        int from = GameHelper.CalcPanelNum(piece.x, piece.y);
+        int to = GameHelper.CalcPanelNum(toX, toY);
+        if (from == NONE || to == NONE) return true;
+
+        // 相手の最後の王将を取る手は、その時点で勝ちなので指せる
+        SnapshotPiece target = cells[to];
+        if (target != null && target.owner != piece.owner && target.type == PieceType.King && CountKings(cells, target.Owner) == 1) return true;
+
+        // 最後の王将が炎上・落とし穴のマスに入ると消失して負けになる
+        if (piece.type == PieceType.King && s.IsHazard(toX, toY)) return false;
+
+        SnapshotPiece[] sim = SimulateMove(cells, s, piece, from, to);
+        return !IsInCheck(sim, s, NONE, NONE, piece.Owner);
+    }
+
+    // 狙撃した後に、自分の王将が取られる状態にならないか（CheckRules.IsSnipeSafe）
+    public static bool IsSnipeSafe(BoardSnapshot s, SnapshotPiece sniper, int targetX, int targetY)
+    {
+        SnapshotPiece[] cells = s.Grid;
+        if (CountKings(cells, sniper.Owner) != 1) return true;
+        int target = GameHelper.CalcPanelNum(targetX, targetY);
+        if (target == NONE || cells[target] == null) return true;
+        SnapshotPiece[] sim = (SnapshotPiece[])cells.Clone();
+        if (PieceRules.IsExplosive(sim[target].type)) Explode(sim, targetX, targetY);
+        else sim[target] = null;
+        return !IsInCheck(sim, s, NONE, NONE, sniper.Owner);
+    }
+
+    // 持ち駒を打った後に、自分の王将が取られる状態にならないか（CheckRules.IsDropSafe）
+    public static bool IsDropSafe(BoardSnapshot s, PlayerType player, int x, int y)
+    {
+        SnapshotPiece[] cells = s.Grid;
+        if (CountKings(cells, player) != 1) return true;
+        if (s.IsHazard(x, y)) return !IsInCheck(cells, s, NONE, NONE, player);
+        return !IsInCheck(cells, s, GameHelper.CalcPanelNum(x, y), NONE, player);
+    }
+
     // 歩で王手された側が、駒を動かして王手を回避できるか
     static bool CanEscapePawnCheck(SnapshotPiece[] cells, BoardSnapshot s, int pawn, int pawnAttack, PlayerType defender)
     {

@@ -55,6 +55,9 @@ public partial class GameSystem
     // 行動を実行する（オンライン対戦の移動・打つはサーバーへ送る）。実行できない行動なら何もせずに false
     public bool Dispatch(MatchAction action)
     {
+        // CPU の手番には、人の入力（盤のクリック・キー・ボタン）からの行動は実行しない。
+        // CanDispatch・LegalActions はこれを見ない（CPU が同じ判定で手を選べるように）
+        if (IsCpuTurn && !dispatchingCpu) return false;
         ActionPlan plan = PlanAction(action, out _);
         if (plan == null) return false;
 

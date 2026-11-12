@@ -100,12 +100,41 @@ public partial class GameSystem
         }
         s.online = IsOnlineMatch;
 
+        // 必殺技・魔法をシミュレーションするための種類（BoardSimulator.Skills.cs）と、対局の乱数の状態
+        s.skillsKnown = true;
+        for (int t = 0; t < BoardSnapshot.PieceTypeCount; t++)
+        {
+            SpecialMove move = SpecialMoves != null ? SpecialMoves.For((PieceType)t) : null;
+            s.specialKinds[t] = SpecialKindOf(move);
+        }
+        foreach (PlayerType side in new[] { PlayerType.Player1, PlayerType.Player2 })
+        {
+            Player p = PlayerOf(side);
+            if (p == null || p.SkillDeck == null || p.SkillDeck.skills == null) continue;
+            foreach (SkillDefinition skill in p.SkillDeck.skills)
+            {
+                if (skill == null) continue;
+                s.Player(side).skills.Add(new SnapshotSkill
+                {
+                    id = skill.Id,
+                    kind = MagicKindOf(skill.effect),
+                    cost = skill.cost,
+                    transcendent = skill.rank == SkillRank.Transcendent,
+                    endsTurn = skill.EndsTurn,
+                });
+            }
+        }
+        s.rngSeed = match.Rng.Seed;
+        s.rngState = match.Rng.State;
+
         // 時間停止
         if (timeStop != null)
         {
             s.timeStopped = true;
             s.timeStopOwner = (int)timeStop.Owner;
             s.timeStopReleasable = !timeStop.JustStarted && !timeStop.Ending;
+            s.timeStopRemaining = timeStop.Remaining;
+            s.timeStopJustStarted = timeStop.JustStarted;
             for (int x = 0; x < BoardCells.Size; x++)
             {
                 for (int y = 0; y < BoardCells.Size; y++)
@@ -134,6 +163,45 @@ public partial class GameSystem
         return s;
     }
 
+    // 必殺技のクラスから、シミュレーションでの種類を決める（知らないクラスは Unknown。BoardSimulator.Skills.cs に足すこと）
+    public static SpecialKind SpecialKindOf(SpecialMove move)
+    {
+        switch (move)
+        {
+            case null: return SpecialKind.None;
+            case PawnChargeSpecial _: return SpecialKind.PawnCharge;
+            case LancePierceSpecial _: return SpecialKind.LancePierce;
+            case KnightLeapSpecial _: return SpecialKind.KnightLeap;
+            case GoldShockSpecial _: return SpecialKind.GoldShock;
+            case BishopBeamSpecial _: return SpecialKind.BishopBeam;
+            case RookBeamSpecial _: return SpecialKind.RookBeam;
+            default: return SpecialKind.Unknown;
+        }
+    }
+
+    // 魔法の効果のクラスから、シミュレーションでの種類を決める（知らないクラスは Unknown：シミュレーションでは使えない魔法になる）
+    public static MagicKind MagicKindOf(SkillEffect effect)
+    {
+        switch (effect)
+        {
+            case ShieldEffect _: return MagicKind.Shield;
+            case SwordEffect _: return MagicKind.Sword;
+            case PitfallEffect _: return MagicKind.Pitfall;
+            case DoubleTurnEffect _: return MagicKind.DoubleTurn;
+            case SwapPieceEffect _: return MagicKind.Swap;
+            case ExplosionEffect _: return MagicKind.Explosion;
+            case ReplicateKingEffect _: return MagicKind.ReplicateKing;
+            case PhalanxEffect _: return MagicKind.Phalanx;
+            case MeteorEffect _: return MagicKind.Meteor;
+            case CannonEffect _: return MagicKind.Cannon;
+            case CataclysmEffect _: return MagicKind.Cataclysm;
+            case WorldEndEffect _: return MagicKind.WorldEnd;
+            case UndeadParadiseEffect _: return MagicKind.UndeadParadise;
+            case TimeStopEffect _: return MagicKind.TimeStop;
+            default: return MagicKind.Unknown;
+        }
+    }
+
     // ------------------------------------------------------------
     //  シミュレーションの照合（エディタと Development Build のみ）
     // ------------------------------------------------------------
@@ -145,10 +213,10 @@ public partial class GameSystem
         try
         {
             if (simulationPrediction != null) CompleteSimulationCheck(); // 前の行動の照合がまだなら先に済ませる（錬成を続けたときなど）
-            if (IsOnlineMatch || timeStop != null || !BoardSimulator.CanSimulate(a.type)) return;
+            if (IsOnlineMatch || timeStop != null || a.type == MatchActionType.ReleaseTimeStop) return;
 
             BoardSnapshot before = CaptureSnapshot(false);
-            if (BoardSimulator.HasUnsimulatedTurnEnd(before, CurrentSide)) return;
+            if (!BoardSimulator.CanSimulate(before, a.type) || BoardSimulator.HasUnsimulatedTurnEnd(before, CurrentSide)) return;
 
             BoardSnapshot predicted = before.Clone();
             if (!BoardSimulator.Apply(predicted, a, out string reason))

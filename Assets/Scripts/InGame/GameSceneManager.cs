@@ -27,8 +27,14 @@ public class GameSceneManager : MonoBehaviour
         SceneManager.LoadScene("GameOver");
     }
 
-    // タイトルの「ゲームスタート」から呼び出す（スキル編成画面へ）
+    // タイトルの「ゲームスタート」から呼び出す：対戦モードを選ぶ画面（2人で対戦／CPU と対戦）を開く。
+    // 選んだら ModeSelectView が MatchSetup を決めてスキル編成画面へ移る
     public void PlayGame(){
+        ModeSelectView.Open();
+    }
+
+    // スキル編成画面へ（対戦モードを選ばずに。MatchSetup は前回のまま）
+    public void Organization(){
         SceneManager.LoadScene("OrganizationScene");
     }
 

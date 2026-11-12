@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-static class Program
+static partial class Program
 {
     static int fails, checks;
     static readonly PlayerType P1 = PlayerType.Player1, P2 = PlayerType.Player2;
@@ -28,6 +28,8 @@ static class Program
         TestApply();
         TestJson(new System.Random(2));
         TestPlayouts(400, new System.Random(3));
+        TestSkills();
+        TestCpu();
         Console.WriteLine($"checks={checks} fails={fails}");
         return fails == 0 ? 0 : 1;
     }

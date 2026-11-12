@@ -81,6 +81,8 @@ public class RulesSources
     public IReadOnlyCollection<SkillDefinition> Player1Deck; // この対局の編成（一覧に「先手」の印を付ける。なければ null）
     public IReadOnlyCollection<SkillDefinition> Player2Deck;
     public System.Func<int, string> ForgeKeyLabel;          // 錬成のキー（GameSystem.ForgeKeyLabel。なければ null）
+    public PlayerType? CpuSide;                             // この対局で CPU が指す側（2人で対戦なら null）
+    public int CpuLevel;                                    // その CPU の強さ
 }
 
 public static class RulesBook
@@ -329,6 +331,16 @@ public static class RulesBook
     static RulesPage ControlsPage(RulesSources src)
     {
         RulesPage p = new RulesPage("操作");
+        p.Heading("対戦モード")
+         .Text("タイトルの「ゲームスタート」で選ぶ：「2人で対戦」（1 台の画面で交代に操作）／「CPU と対戦」（自分が先手か後手か・CPU の強さを選ぶ）");
+        for (int lv = CpuLevels.Min; lv <= CpuLevels.Max; lv++) p.Text($"{CpuLevels.Label(lv)}：{CpuLevels.Note(lv)}", 2);
+        p.Text("CPU と対戦では、魔法スキルの編成は自分の分だけ（CPU は自分で選ぶ）。盤は回らず、いつも自分が手前。CPU の手番は操作できない（考えている間も画面は動く）");
+        if (src.CpuSide.HasValue)
+        {
+            string me = src.CpuSide.Value == PlayerType.Player1 ? "後手" : "先手";
+            p.Text($"この対局：あなたは{me}、CPU は {CpuLevels.Label(src.CpuLevel)}", 1, "CPU");
+        }
+
         p.Heading("盤の操作")
          .Text("カーソル移動：W A S D ／ 矢印キー")
          .Text("決定：F　　取り消し：Space")
