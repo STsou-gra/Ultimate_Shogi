@@ -107,7 +107,7 @@ public class RulesOverlayView : MonoBehaviour
 
         if (!isOpen)
         {
-            if (keyboard[toggleKey].wasPressedThisFrame) Open();
+            if (keyboard[toggleKey].wasPressedThisFrame && !KifuMenuView.IsOpenAny) Open(); // 棋譜メニューを開いている間は開かない
             return;
         }
 

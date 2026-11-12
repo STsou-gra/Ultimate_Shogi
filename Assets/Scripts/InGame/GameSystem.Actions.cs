@@ -80,6 +80,11 @@ public partial class GameSystem
             reason = "演出中です";
             return null;
         }
+        if (IsReplaying && !replayDispatching)
+        {
+            reason = "棋譜の再生中は操作できません";
+            return null;
+        }
         PlayerType me = CurrentSide;
         if (a.owner >= 0 && a.owner != (int)me)
         {
@@ -404,6 +409,7 @@ public partial class GameSystem
         MatchAction record = a.Clone();
         record.Owner = owner; // 棋譜には行動したプレイヤーも残す
         actionHistory.Add(record);
+        RecordKifuAction(record); // 棋譜にも足す（GameSystem.Kifu.cs。前の行動のハッシュもここで確定する）
         Debug.Log($"[Action] 第{match.Turn.MoveNumber}手 {record}  {record.ToJson()}");
         ActionExecuting?.Invoke(record);
     }

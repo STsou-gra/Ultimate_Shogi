@@ -355,9 +355,15 @@ public partial class GameSystem : MonoBehaviour
             gameObject.AddComponent<RulesOverlayView>();
         }
 
+        // 棋譜メニュー（「棋譜」ボタン・K キー：保存・読み込んで再生・局面の書き出しと読み込み）と再生中の表示（シーンに置かなくても自動で追加する）
+        if (FindAnyObjectByType<KifuMenuView>() == null)
+        {
+            gameObject.AddComponent<KifuMenuView>();
+        }
+
         // 対局の状態（ターン数・エナジー）
-        // 乱数のシードは対局ごとに決める（後で棋譜に残し、オンラインでは両者で同じ値を使う）
-        uint seed = GameRng.NewSeed();
+        // 乱数のシードは対局ごとに決める（棋譜に残す。棋譜の再生・局面の読み込みでは、その値を使う。GameSystem.Kifu.cs）
+        uint seed = BeginKifuMatch();
         match = new MatchState(MatchConfig.FirstPlayer, seed);
         // エナジーの増減の「+N エナジー」（BasicMoveFx は Start で作られる。対局の準備の前に作られていなければ探す）
         match.Energy.Changed += (player, value, delta) =>
@@ -388,6 +394,8 @@ public partial class GameSystem : MonoBehaviour
         {
             player2.SetSkillDeck(DeckTransferManager.Player2SelectedDeck);
         }
+        ApplyRequestedDecks();        // 棋譜の再生・局面の読み込みでは、その編成を使う
+        BeginKifuRecording(seed);     // 棋譜の記録（KifuSession.Current）
 
         // スキルボタンのクリックイベントを登録
         for (int i = 0; i < skillSlotUIs.Length; i++)
@@ -403,11 +411,24 @@ public partial class GameSystem : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        // 棋譜：盤面が変わり終わったら最後の行動のハッシュを付ける・再生中なら次の行動を出す（GameSystem.Kifu.cs）
+        UpdateKifu();
+
         //TODO: ターン管理
         switch (currentState)
         {
             case GameState.Preparation:
-                DecideTurn();
+                if (pendingImport != null)
+                {
+                    // 局面の読み込み：最初の手番の代わりに、読み込んだ局面から始める
+                    MatchSnapshot snapshot = pendingImport;
+                    pendingImport = null;
+                    ResumeFromSnapshot(snapshot);
+                }
+                else
+                {
+                    DecideTurn();
+                }
                 if (HandUIManager.Instance != null)
                 {
                     PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
@@ -457,8 +478,11 @@ public partial class GameSystem : MonoBehaviour
         // 爆発・狙撃の演出が終わって手番が替わるまで・超常魔法の解放の演出の間は操作しない
         if (IsBusy) return;
 
-        // ルール説明を開いている間（と閉じた直後）は操作しない
-        if (RulesOverlayView.IsBlockingInput) return;
+        // ルール説明・棋譜メニューを開いている間（と閉じた直後）は操作しない
+        if (RulesOverlayView.IsBlockingInput || KifuMenuView.IsBlockingInput) return;
+
+        // 棋譜の再生中は操作しない（行動は再生が出す）
+        if (IsReplaying) return;
 
         // 成り確認ダイアログの応答待ち中のキー操作
         if (isWaitingForPromoteChoice)
@@ -1358,6 +1382,7 @@ public partial class GameSystem : MonoBehaviour
         {
             return;
         }
+        FlushScheduledFx(); // 演出の時刻に合わせた盤面の変更を、手番を進める前に必ず済ませる
         isResolvingAction = false;
         UpdateActivePlayerSkillUI();
         if (ResolveKingLoss()) return;
@@ -1374,7 +1399,7 @@ public partial class GameSystem : MonoBehaviour
     {
         get
         {
-            if (!IsInTurn || IsBusy || isWaitingForPromoteChoice || IsSelectingSkillTarget) return false;
+            if (!IsInTurn || IsBusy || isWaitingForPromoteChoice || IsSelectingSkillTarget || IsReplaying) return false;
             if (IsOnlineMatch && CurrentPlayer.PlayerType != NetworkManager.Instance.MyPlayerType) return false;
             return true;
         }
@@ -1488,6 +1513,7 @@ public partial class GameSystem : MonoBehaviour
     {
         isResolvingAction = true;
         yield return new WaitForSeconds(seconds);
+        FlushScheduledFx();
         isResolvingAction = false;
         if (IsInTurn) NextState();
     }
@@ -2060,6 +2086,7 @@ public partial class GameSystem : MonoBehaviour
                 float wait = Mathf.Max(pendingActionFxTime, timeline.Time + 0.2f);
                 pendingActionFxTime = 0f;
                 await Awaitable.WaitForSecondsAsync(wait, destroyCancellationToken);
+                FlushScheduledFx();
                 UpdateActivePlayerSkillUI();
                 if (ResolveKingLoss()) return; // 自動行動で王将を取った・巻き込んだ
             }
@@ -2584,7 +2611,7 @@ public partial class GameSystem : MonoBehaviour
     {
         // 成りの選択中・スキルや狙撃の対象選択中・演出中は使えない
         if (isWaitingForPromoteChoice || IsSelectingSkillTarget || isSelectingSnipeTarget || IsBusy) return;
-        if (!IsInTurn) return;
+        if (!IsInTurn || IsReplaying) return;
 
         // 自分のターンであるかチェック
         PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
@@ -2706,6 +2733,7 @@ public partial class GameSystem : MonoBehaviour
             {
                 return;
             }
+            FlushScheduledFx();
             isResolvingAction = false;
             UpdateActivePlayerSkillUI();
             if (ResolveKingLoss()) return;
@@ -2714,6 +2742,8 @@ public partial class GameSystem : MonoBehaviour
         }
 
         // 手番を使わないスキル：演出は待たずに、続けて操作できる
+        // （演出の時刻に合わせた盤面の変更があれば、ここで済ませる。次の行動と順番が前後しないように）
+        FlushScheduledFx();
         pendingActionFxTime = 0f;
         isResolvingAction = false;
         UpdateActivePlayerSkillUI();

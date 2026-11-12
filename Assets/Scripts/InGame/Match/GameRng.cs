@@ -30,6 +30,12 @@ public class GameRng
         State = state;
     }
 
+    // 内部状態を戻す（局面の読み込み：MatchSnapshot.rngState）
+    public void Restore(uint state)
+    {
+        State = state;
+    }
+
     // 新しい対局のシード（32 ビット。暗号用の乱数で作る）
     public static uint NewSeed()
     {

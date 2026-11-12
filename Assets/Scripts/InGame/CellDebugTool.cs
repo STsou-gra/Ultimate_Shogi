@@ -35,7 +35,8 @@ public class CellDebugTool : MonoBehaviour
         bool trapKey = keyboard.digit3Key.wasPressedThisFrame;
         bool clearKey = keyboard.digit0Key.wasPressedThisFrame;
         if (!breakKey && !burnKey && !trapKey && !clearKey) return;
-        if (RulesOverlayView.IsBlockingInput) return;
+        if (RulesOverlayView.IsBlockingInput || KifuMenuView.IsBlockingInput) return;
+        if (gameSystem.IsReplaying) return; // 棋譜の再生中は盤面を変えない
 
         if (!CanUse()) return;
 
@@ -92,6 +93,7 @@ public class CellDebugTool : MonoBehaviour
         }
 
         Debug.Log($"[CellDebug] ({x}, {y}) {message}");
+        gameSystem.MarkKifuDebugEdited();     // この対局の棋譜は、再生しても同じ盤面にならない
         gameSystem.RefreshAfterBoardChange(); // 破壊で王将が消えたときの勝敗・王手の表示
         if (gameSystem.IsInTurn) gameSystem.ShowIdleStatus($"【デバッグ】({x}, {y}) {message}");
     }

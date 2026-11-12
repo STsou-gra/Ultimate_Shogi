@@ -121,6 +121,20 @@ public class MatchState
         }
     }
 
+    // 局面の読み込み（MatchSnapshot）：超常魔法の解放・使用・世界の終わりの開始ターン・倒された初期配置の駒を戻す
+    public void RestoreTranscendent(PlayerType owner, bool unlocked, bool used, int? worldEnd)
+    {
+        transcendentUnlocked[(int)owner] = unlocked;
+        transcendentUsed[(int)owner] = used;
+        worldEndSince[(int)owner] = worldEnd;
+    }
+
+    public void RestoreFallenInitial(PlayerType owner, IEnumerable<FallenPieceRecord> records)
+    {
+        fallenInitial[(int)owner].Clear();
+        if (records != null) fallenInitial[(int)owner].AddRange(records);
+    }
+
     // 千日手の「同じ局面」の判定用に、超常魔法の状態を文字列にする
     // （Prototype の hash.js と同じく、解放・使用・世界の終わり・倒された初期配置の駒の種類）
     public void AppendKey(System.Text.StringBuilder sb)

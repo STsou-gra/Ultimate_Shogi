@@ -44,6 +44,12 @@ public class EnergyState
         return true;
     }
 
+    // 局面の読み込み（MatchSnapshot）：値をそのまま戻す。Changed は出さない（「+N エナジー」を出さないため。表示は Player.BindEnergy で合わせる）
+    public void Restore(PlayerType player, int value)
+    {
+        values[(int)player] = value;
+    }
+
     int Set(PlayerType player, int value)
     {
         int delta = value - values[(int)player];

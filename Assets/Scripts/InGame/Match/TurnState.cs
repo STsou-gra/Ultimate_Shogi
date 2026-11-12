@@ -46,6 +46,14 @@ public class TurnState
         MoveNumber++;
     }
 
+    // 局面の読み込み（MatchSnapshot）：手番・ターン数・手数をそのまま戻す（イベントは出さない）
+    public void Restore(PlayerType current, int turnNumber, int moveNumber)
+    {
+        Current = current;
+        TurnNumber = turnNumber;
+        MoveNumber = moveNumber;
+    }
+
     // 画面表示用：「第Nターン（第M手）」
     public string Label => $"第{TurnNumber}ターン（第{MoveNumber}手）";
 }

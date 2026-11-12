@@ -166,6 +166,17 @@ public class GameBoard : MonoBehaviour
         if (piece != null) Destroy(piece.gameObject);
     }
 
+    // 盤上の駒をすべて取り除いて破棄する（局面の読み込み用。対局中のルールでは使わない）
+    public void ClearAllPieces()
+    {
+        for (int i = 0; i < boardData.Length; i++)
+        {
+            if (boardData[i] == null) continue;
+            Destroy(boardData[i].gameObject);
+            boardData[i] = null;
+        }
+    }
+
     // 駒を作って (x, y) に置く（盤面の操作だけ）。作った駒を返す（置けなければ null）。
     // 対局中に持ち駒を打つときは、置いたあとに GameSystem.EnterCell を呼ぶこと（炎上のマスなら消失する）
     public GamePiece SpawnPiece(PieceType type, PlayerType player, int x, int y)

@@ -348,6 +348,7 @@ public partial class GameSystem
             return; // シーンを離れた
         }
 
+        FlushScheduledFx(); // 演出の時刻に合わせた盤面の変更を、勝敗の判定の前に必ず済ませる
         isResolvingAction = false;
         UpdateActivePlayerSkillUI();
         if (ResolveKingLoss()) return; // 予定の取り・爆発などで王将がいなくなった

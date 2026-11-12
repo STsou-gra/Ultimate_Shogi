@@ -24,6 +24,7 @@ public enum CellChange
     TrapSet,       // 落とし穴が仕掛けられた
     TrapSprung,    // 駒が落とし穴に落ちて、穴が消えた
     Cleared,       // デバッグ用に通常へ戻した
+    Restored,      // 局面の読み込みで状態を丸ごと戻した（演出なしで表示だけ合わせる）
 }
 
 // 1マスの状態
@@ -197,6 +198,17 @@ public class BoardCells
         cell.Reset();
         Changed?.Invoke(x, y, CellChange.Cleared);
         return true;
+    }
+
+    // 局面の読み込み（MatchSnapshot）：マスの状態を丸ごと戻す（破壊マスも戻る。対局のルールでは使わない）
+    public void Restore(int x, int y, CellState state, int? burnUntil, PlayerType? trap)
+    {
+        BoardCell cell = At(x, y);
+        if (cell == null) return;
+        cell.State = state;
+        cell.BurnUntil = state == CellState.Burning ? burnUntil : null;
+        cell.Trap = state == CellState.Normal ? trap : null;
+        Changed?.Invoke(x, y, CellChange.Restored);
     }
 
     // 千日手の「同じ局面」の判定用に、マスの状態を文字列にする（Prototype の hash.js と同じく、状態・終わるターン・穴の持ち主）
