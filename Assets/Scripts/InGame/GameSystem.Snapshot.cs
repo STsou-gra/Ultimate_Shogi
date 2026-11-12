@@ -50,6 +50,7 @@ public partial class GameSystem
                 shield = p.hasShield,
                 phalanx = p.hasPhalanx,
                 undead = p.isUndead,
+                wing = p.hasWing,
                 initial = p.IsInitial,
                 frozen = IsFrozenInTimeStop(p),
                 pendingPromote = timeStop != null && timeStop.HasPendingPromote(p),
@@ -66,6 +67,7 @@ public partial class GameSystem
                 sc.state = c.State;
                 sc.burnUntil = c.IsBurning && c.BurnUntil.HasValue ? c.BurnUntil.Value : -1;
                 sc.trap = c.Trap.HasValue ? (int)c.Trap.Value : -1;
+                sc.wall = c.IsWall && c.WallOwner.HasValue ? (int)c.WallOwner.Value : -1;
             }
         }
 

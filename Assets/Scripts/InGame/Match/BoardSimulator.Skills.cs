@@ -748,13 +748,14 @@ public static partial class BoardSimulator
         c.state = CellState.Broken;
         c.burnUntil = -1;
         c.trap = -1;
-        if (q != null) Vanish(s, q);
+        c.wall = -1; // 壁は崩れる
+        if (q != null && !q.wing) Vanish(s, q); // 魔法「翼」の駒は残る（鳥は消失する）
     }
 
     static void SetBurning(BoardSnapshot s, int x, int y, int turns)
     {
         SnapshotCell c = s.Cell(x, y);
-        if (c == null || c.IsBroken || turns <= 0) return;
+        if (c == null || c.IsBlocked || turns <= 0) return; // 破壊マス・壁は炎上しない
         int until = s.turnNumber + turns - 1;
         c.burnUntil = c.IsBurning && c.burnUntil >= 0 ? System.Math.Max(c.burnUntil, until) : until;
         c.state = CellState.Burning;
@@ -1067,7 +1068,7 @@ public static partial class BoardSimulator
             {
                 for (int y = 0; y < BoardCells.Size; y++)
                 {
-                    if (CanDropTo(s, side, type, x, y) && SnapshotRules.IsDropSafe(s, side, x, y)) return false;
+                    if (CanDropTo(s, side, type, x, y) && SnapshotRules.IsDropSafe(s, side, type, x, y)) return false;
                 }
             }
         }

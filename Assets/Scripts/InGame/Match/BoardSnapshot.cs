@@ -22,11 +22,15 @@ public class SnapshotPiece
     public bool shield;            // 盾状態
     public bool phalanx;           // ファランクス状態
     public bool undead;            // アンデッド
+    public bool wing;              // 翼状態（通常魔法「翼」。鳥は駒の種類で決まるので false のまま。HasWing を使う）
     public bool initial;           // 初期配置の駒（倒されると fallenInitial に記録する）
     public bool frozen;            // 時間停止中：消失・爆発の予定があり、もう動かせない
     public bool pendingPromote;    // 時間停止中：成りの予定がある（もう成れない）
 
     public PlayerType Owner => (PlayerType)owner;
+
+    // 翼状態か（鳥、または魔法「翼」。PieceRules.HasWing と同じ）
+    public bool HasWing => wing || PieceRules.IsWingType(type);
 
     public SnapshotPiece Clone()
     {
@@ -43,6 +47,7 @@ public class SnapshotPiece
         if (shield) sb.Append(" 盾");
         if (phalanx) sb.Append(" ファランクス");
         if (undead) sb.Append(" アンデッド");
+        if (wing) sb.Append(" 翼");
         if (!initial) sb.Append(" (初期配置でない)");
         return sb.ToString();
     }
@@ -54,8 +59,11 @@ public class SnapshotCell
     public CellState state = CellState.Normal;
     public int burnUntil = -1;     // 炎上が終わるターン（炎上中でなければ -1）
     public int trap = -1;          // 落とし穴の持ち主（(int)PlayerType。なければ -1）
+    public int wall = -1;          // 壁を建てた側（(int)PlayerType。壁でなければ -1）
 
     public bool IsBroken => state == CellState.Broken;
+    public bool IsWall => state == CellState.Wall;
+    public bool IsBlocked => IsBroken || IsWall;   // 入れない・通れない（BoardCell.IsBlocked）
     public bool IsBurning => state == CellState.Burning;
     public bool HasTrap => trap >= 0;
     public bool IsHazard => IsBurning || HasTrap;
@@ -67,6 +75,7 @@ public class SnapshotCell
 
     public string Describe()
     {
+        if (IsWall) return $"壁（{(wall == 0 ? "先手" : "後手")}）";
         string s = state == CellState.Broken ? "破壊" : state == CellState.Burning ? $"炎上（第{burnUntil}ターンまで）" : "通常";
         return HasTrap ? $"{s}・落とし穴（{(trap == 0 ? "先手" : "後手")}）" : s;
     }
@@ -220,6 +229,40 @@ public class BoardSnapshot
         return c != null && c.IsHazard;
     }
 
+    public bool IsWall(int x, int y)
+    {
+        SnapshotCell c = Cell(x, y);
+        return c != null && c.IsWall;
+    }
+
+    // 翼状態（PieceRules の IsBlockedFor・IsBlockedForType・IsHazardFor・IsHazardForType・Detonates と同じ判定）。
+    // 翼状態の駒は破壊マスにも入れ、炎上・落とし穴で消失しない。壁は翼状態でも入れない・通れない
+    public bool IsBlockedFor(SnapshotPiece p, int x, int y)
+    {
+        return IsWall(x, y) || (IsBroken(x, y) && !(p != null && p.HasWing));
+    }
+
+    public bool IsBlockedForType(PieceType type, int x, int y)
+    {
+        return IsWall(x, y) || (IsBroken(x, y) && !PieceRules.IsWingType(type));
+    }
+
+    public bool IsHazardFor(SnapshotPiece p, int x, int y)
+    {
+        return IsHazard(x, y) && !(p != null && p.HasWing);
+    }
+
+    public bool IsHazardForType(PieceType type, int x, int y)
+    {
+        return IsHazard(x, y) && !PieceRules.IsWingType(type);
+    }
+
+    // mover が火薬 target のマスに入ると爆発するか（鳥は爆発させずに取る）
+    public static bool Detonates(SnapshotPiece mover, SnapshotPiece target)
+    {
+        return target != null && PieceRules.IsExplosive(target.type) && !(mover != null && PieceRules.IsWingType(mover.type));
+    }
+
     // p が盤上にいるか
     public bool Contains(SnapshotPiece p)
     {
@@ -369,7 +412,7 @@ public class BoardSnapshot
                 string a = PieceKey(At(x, y), all), b = PieceKey(other.At(x, y), all);
                 if (a != b) d.Add($"({x}, {y}) の駒: {Describe(At(x, y))} ／ {Describe(other.At(x, y))}");
                 SnapshotCell ca = Cell(x, y), cb = other.Cell(x, y);
-                if (ca.state != cb.state || ca.trap != cb.trap || (ca.IsBurning && ca.burnUntil != cb.burnUntil))
+                if (ca.state != cb.state || ca.trap != cb.trap || (ca.IsWall && ca.wall != cb.wall) || (ca.IsBurning && ca.burnUntil != cb.burnUntil))
                 {
                     d.Add($"({x}, {y}) のマス: {ca.Describe()} ／ {cb.Describe()}");
                 }
@@ -416,7 +459,7 @@ public class BoardSnapshot
     static string PieceKey(SnapshotPiece p, bool all)
     {
         if (p == null) return "";
-        string key = $"{p.type}|{p.owner}|{p.promoted}|{p.moveCount}|{p.shield}|{p.phalanx}|{p.undead}|{p.initial}";
+        string key = $"{p.type}|{p.owner}|{p.promoted}|{p.moveCount}|{p.shield}|{p.phalanx}|{p.undead}|{p.wing}|{p.initial}";
         return all ? $"{key}|{p.frozen}|{p.pendingPromote}" : key;
     }
 

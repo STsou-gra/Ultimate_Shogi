@@ -227,21 +227,28 @@ public static partial class BoardSimulator
     public static bool CanMoveTo(BoardSnapshot s, SnapshotPiece p, int x, int y)
     {
         if (!BoardCells.InBounds(x, y)) return false;
-        // 駒の動き（GamePiece.CanMove：破壊マスには行けない）
-        if (s.IsBroken(x, y)) return false;
+        // 駒の動き（GamePiece.CanMove：破壊マス・壁には行けない。翼状態の駒は破壊マスには行ける）
+        if (s.IsBlockedFor(p, x, y)) return false;
         if (!PieceMoves.CanMoveByPattern(p.type, p.Owner, p.promoted, x - p.x, y - p.y)) return false;
-        // 通り道（桂馬以外）：途中の駒・破壊マス・炎上・落とし穴
-        if (p.type != PieceType.Knight && IsPathBlocked(s.Grid, s, p.x, p.y, x, y)) return false;
-        // 移動先：空き・相手の駒・火薬（自分の火薬にも入れる）
+        // 通り道（桂馬以外）：途中の駒・破壊マス・壁・炎上・落とし穴（翼の駒は壁以外と火薬を通り抜ける）
+        if (p.type != PieceType.Knight && IsPathBlocked(s.Grid, s, p, p.x, p.y, x, y)) return false;
+        // 移動先：空き・相手の駒・火薬（自分の火薬にも入れる。鳥は味方の火薬には入れない。PieceRules.CanLandOn）
         SnapshotPiece target = s.At(x, y);
         if (target == p) return false;
-        return target == null || target.owner != p.owner || PieceRules.IsExplosive(target.type);
+        return target == null || target.owner != p.owner || BoardSnapshot.Detonates(p, target);
     }
 
     // 走り駒の通り道（GameHelper.IsPathBlocked と同じ）：移動先の手前までに駒・破壊マス・炎上・落とし穴があれば通れない。
     // 駒は grid（SnapshotRules では動かしたあとの配列）、マスの状態は s から見る
     public static bool IsPathBlocked(SnapshotPiece[] grid, BoardSnapshot s, int fromX, int fromY, int toX, int toY)
     {
+        return IsPathBlocked(grid, s, null, fromX, fromY, toX, toY);
+    }
+
+    // mover が翼状態なら、破壊・炎上・落とし穴のマスと火薬の上を通り抜ける（壁は通れない。GameHelper.IsPathBlocked の mover と同じ）
+    public static bool IsPathBlocked(SnapshotPiece[] grid, BoardSnapshot s, SnapshotPiece mover, int fromX, int fromY, int toX, int toY)
+    {
+        bool wing = mover != null && mover.HasWing;
         int dx = toX - fromX;
         int dy = toY - fromY;
         if (System.Math.Abs(dx) <= 1 && System.Math.Abs(dy) <= 1) return false;
@@ -256,8 +263,9 @@ public static partial class BoardSimulator
             safetyCount++;
             if (checkX < 0 || checkX > 8 || checkY < 0 || checkY > 8) break;
             int index = GameHelper.CalcPanelNum(checkX, checkY);
-            if (index != -1 && grid[index] != null) return true;
-            if (s.IsBroken(checkX, checkY) || s.IsHazard(checkX, checkY)) return true;
+            SnapshotPiece q = index != -1 ? grid[index] : null;
+            if (q != null && !(wing && PieceRules.IsExplosive(q.type))) return true;
+            if (s.IsBlockedFor(mover, checkX, checkY) || s.IsHazardFor(mover, checkX, checkY)) return true;
             checkX += stepX;
             checkY += stepY;
         }
@@ -272,11 +280,12 @@ public static partial class BoardSimulator
         if (s.heldSquares.Contains(new MatchSquare(x, y))) return false;
         // EmptyCellDropRule
         if (s.At(x, y) != null) return false;
-        // CellStateDropRule：破壊マス・落とし穴には打てない（炎上には打てる）
+        // CellStateDropRule：破壊マス・落とし穴・壁には打てない（炎上には打てる。鳥は破壊マス・落とし穴にも打てる）
         SnapshotCell cell = s.Cell(x, y);
-        if (cell.IsBroken || cell.HasTrap) return false;
-        // NoLegalMoveDropRule：行き所のない駒
-        if (type == PieceType.Pawn || type == PieceType.Lance)
+        if (s.IsBlockedForType(type, x, y)) return false;
+        if (cell.HasTrap && !PieceRules.IsWingType(type)) return false;
+        // NoLegalMoveDropRule：行き所のない駒（鳥は歩と同じ）
+        if (type == PieceType.Pawn || type == PieceType.Lance || type == PieceType.Bird)
         {
             if (owner == PlayerType.Player1 && x == 8) return false;
             if (owner == PlayerType.Player2 && x == 0) return false;
@@ -327,7 +336,7 @@ public static partial class BoardSimulator
     public static bool WillBeDestroyedEntering(BoardSnapshot s, SnapshotPiece p, int x, int y)
     {
         SnapshotPiece target = s.At(x, y);
-        return target != null && target != p && PieceRules.IsExplosive(target.type) && PieceRules.IsDestroyedByExplosion(p.type);
+        return target != null && target != p && BoardSnapshot.Detonates(p, target) && PieceRules.IsDestroyedByExplosion(p.type);
     }
 
     // 成る（promote）／成らないを選べるか（GameSystem.IsPromoteChoiceAllowed と同じ）
@@ -464,7 +473,8 @@ public static partial class BoardSimulator
     static void ApplyMove(BoardSnapshot s, SnapshotPiece p, int x, int y, bool promote)
     {
         SnapshotPiece target = s.At(x, y);
-        if (target != null && target != p && PieceRules.IsExplosive(target.type))
+        // 火薬のマスに入ったら爆発する（鳥は爆発させずに火薬を取る：下の取りの処理へ）
+        if (target != null && target != p && BoardSnapshot.Detonates(p, target))
         {
             EnterGunpowder(s, p, x, y, promote);
             return;
@@ -573,6 +583,7 @@ public static partial class BoardSimulator
     {
         SnapshotCell cell = s.Cell(x, y);
         if (cell == null) return true;
+        if (p.HasWing) return true; // 翼状態の駒はマスの効果を受けない（落とし穴も残る）
         if (cell.HasTrap) cell.trap = -1; // 落とし穴：敵味方に関係なく落ちて、穴は消える
         else if (!cell.IsBurning && !cell.IsBroken) return true;
         Vanish(s, p);
