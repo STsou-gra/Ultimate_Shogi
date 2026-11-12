@@ -3,7 +3,7 @@
 // 2回行動のように手番を渡さずに続けて指すときは、どちらも呼ばない（ターン数・手数は進まない）
 public class TurnState
 {
-    public PlayerType FirstPlayer { get; }   // 先手
+    public PlayerType FirstPlayer { get; private set; }   // 先手
     public PlayerType Current { get; private set; }
     public int TurnNumber { get; private set; }     // 第Nターン（対局開始前は 0）
     public int MoveNumber { get; private set; } = 1; // 第M手
@@ -44,6 +44,15 @@ public class TurnState
         }
         Current = BoardZones.Opponent(Current);
         MoveNumber++;
+    }
+
+    // 書き出した局面から戻す（GameSystem.ImportState。通知は出さない）
+    public void Restore(PlayerType firstPlayer, PlayerType current, int turnNumber, int moveNumber)
+    {
+        FirstPlayer = firstPlayer;
+        Current = current;
+        TurnNumber = turnNumber;
+        MoveNumber = moveNumber;
     }
 
     // 画面表示用：「第Nターン（第M手）」

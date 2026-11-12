@@ -12,7 +12,7 @@ using System.Collections.Generic;
 public class GameRng
 {
     // 対局の開始時に決めたシード（棋譜に残す値）
-    public uint Seed { get; }
+    public uint Seed { get; private set; }
 
     // 内部状態（Prototype の state.rng.s）。棋譜の途中から再開するときに使う
     public uint State { get; private set; }
@@ -25,6 +25,13 @@ public class GameRng
 
     // 途中の状態から作る（保存した State から再開する）
     public GameRng(uint seed, uint state)
+    {
+        Seed = seed;
+        State = state;
+    }
+
+    // 書き出した局面の乱数の状態に戻す（GameSystem.ImportState。続きから同じ値の列を引ける）
+    public void Restore(uint seed, uint state)
     {
         Seed = seed;
         State = state;

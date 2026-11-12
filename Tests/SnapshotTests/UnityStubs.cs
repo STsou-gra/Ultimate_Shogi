@@ -55,6 +55,10 @@ namespace UnityEngine
 
 public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn, Gunpowder, Sniper }
 public enum PlayerType { Player1, Player2 }
+// MatchSnapshot.cs が使う列挙（本体は Match/MatchState.cs・Match/TimeStopState.cs。Unity の型に依存するので複製している。値を変えたらこちらも合わせる）
+public enum DefeatKind { Capture, Vanish }
+public enum TimeStopKind { Capture, Explode, Vanish, Promote, Cell }
+public enum TimeStopCellEffect { Trap, Break, Burn }
 
 // GameObject の駒の代わり：動きの形は main の各駒のクラス（oracle）で判定する
 public class GamePiece

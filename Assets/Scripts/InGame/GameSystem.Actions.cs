@@ -9,10 +9,12 @@ using UnityEngine;
 //    （手番・演出中でないか・オンライン対戦で使えるか・ルール）。駒や持ち駒を選んでいる途中かどうか（UI の状態）は見ない
 //  ・オンライン対戦中の移動・打つは、Dispatch がサーバーへ送り、サーバーからの通知（OnServerMovePiece など）で
 //    ExecuteRemote が実行する（サーバーが認めた行動なので、ここでは判定し直さない。今までと同じ）
-//  ・実行した行動は ActionHistory に順に残す（棋譜の元。オンラインではサーバーの通知で実行した行動も残る）
+//  ・実行した行動は ActionHistory に順に残す（棋譜の元。オンラインではサーバーの通知で実行した行動も残る）。
+//    行動の処理（演出・手番の終わりの自動行動・手番交代まで）が終わったら、その時点の盤面のハッシュを hash に入れる
 public partial class GameSystem
 {
-    // 実行した行動（実行した順。棋譜の元）
+    // 実行した行動（実行した順。棋譜の元）。各行動の hash には、その行動の処理が終わった時点の盤面のハッシュが入る
+    // （処理が終わるまでは ""。GameSystem.State.cs の UpdateActionHash）
     private readonly List<MatchAction> actionHistory = new List<MatchAction>();
     public IReadOnlyList<MatchAction> ActionHistory => actionHistory;
 
@@ -546,10 +548,13 @@ public partial class GameSystem
 
     void RecordAction(MatchAction a, PlayerType owner)
     {
+        FinishActionHash(); // 前の行動のハッシュがまだなら、今の局面（前の行動の処理が終わった局面）で残す
         MatchAction record = a.Clone();
         record.Owner = owner; // 棋譜には行動したプレイヤーも残す
+        record.hash = "";     // 処理が終わったら入れる（UpdateActionHash）
         actionHistory.Add(record);
         Debug.Log($"[Action] 第{match.Turn.MoveNumber}手 {record}  {record.ToJson()}");
+        hashPendingAction = record;
         ActionExecuting?.Invoke(record);
     }
 }

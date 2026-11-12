@@ -16,6 +16,7 @@
     <Compile Include="*.cs" />
     <!-- テストする本体（GameObject に依存しないクラスと、照合に使う今のルール） -->
     <Compile Include="../../Assets/Scripts/InGame/Match/BoardCells.cs" Link="Game/BoardCells.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/MatchSnapshot.cs" Link="Game/MatchSnapshot.cs" />
     <Compile Include="../../Assets/Scripts/InGame/Match/BoardZones.cs" Link="Game/BoardZones.cs" />
     <Compile Include="../../Assets/Scripts/InGame/Match/MatchConfig.cs" Link="Game/MatchConfig.cs" />
     <Compile Include="../../Assets/Scripts/InGame/Match/PieceRules.cs" Link="Game/PieceRules.cs" />

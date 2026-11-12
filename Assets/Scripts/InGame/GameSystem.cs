@@ -410,6 +410,8 @@ public partial class GameSystem : MonoBehaviour
     {
         // 盤面のシミュレーションの照合（エディタと Development Build のみ。行動が終わって操作できるようになったら）
         UpdateSimulationCheck();
+        // 前の行動の処理が終わっていれば、その時点の盤面のハッシュを棋譜に残す（入力を受け付ける前・結果画面へ移る前に）
+        UpdateActionHash();
 
         //TODO: ターン管理
         switch (currentState)

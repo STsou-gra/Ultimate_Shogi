@@ -1,6 +1,6 @@
 # アルティメット将棋 開発予定
 
-最終更新: 2026-11-08
+最終更新: 2026-11-11
 目標: ゲーム出展型イベント『大阪ゲームダンジョン2』（2026-12-26）に試遊できる状態で出展する
 
 > この資料は「現状」「決まったこと」「今後入れる案」をまとめたものです。
@@ -28,6 +28,7 @@
 | ルール説明 | 対局中に「ルール」ボタン（Tab キー）で開閉するオーバーレイ（5-6）。錬成・必殺技・魔法の一覧は定義データから自動で並べる |
 | 対戦形式 | 同一PCでの2人対戦（キーボード操作）／自作サーバーでのオンライン対戦（移動・打つのみ同期。錬成・狙撃・必殺技はオンラインでは使えない） |
 | 行動（Action） | 操作はすべて「行動」（`MatchAction`。移動・打つ・必殺技・狙撃・魔法・錬成・停止世界の解除）にして `GameSystem.Dispatch` で実行する（5-7）。CPU・棋譜・合戦将棋型・討伐任務の土台 |
+| 局面の書き出し・ハッシュ | 今の局面を `MatchSnapshot`（JSON）に書き出し・読み込みできる（`GameSystem.ExportState` / `ImportState`）。盤面のハッシュ（`MatchHash`）を行動ごとに棋譜（`ActionHistory`）へ残す（5-8）。遊び方は変えていない |
 
 **オンライン対戦のサーバー側**には、王手・詰み・千日手などの判定はまだ入っていない（クライアント側で判定している）。
 
@@ -519,6 +520,30 @@ GameObject に依存しない対局の状態（`BoardSnapshot`）と、それに
 - デバッグキー `L` は、スナップショットの合法手が `GameSystem.LegalActions` と同じか・JSON にして読み戻しても同じかも確かめる。
 - **単体テスト**：`Tests/SnapshotTests`（Unity の外で動かす。.NET 8 SDK があれば、そのフォルダで `dotnet run`）。`PieceMoves` が移す前の各駒のクラス（`OracleMain.cs`）と全マスで同じか、ランダムな 6000 局面で `BoardSimulator`・`SnapshotRules` が今のルール（`GameRules.cs`）と同じ判定か、当てはめたときの取り・盾・火薬・成り・炎上・手番などの結果、JSON の往復、ランダムに 400 局指し続けても壊れないかを確かめる。
 
+### 5-8. 局面の書き出し・読み込みと盤面のハッシュ（Prototype の `src/core/state.js`・`src/core/hash.js`・`Game.exportState` / `importState` を移植）
+
+棋譜の再生・CPU・オンラインの同期・不具合の再現の土台として、今の局面を 1 つのデータにまとめて JSON にできるようにした。
+**遊び方・画面は変えていない**（書き出し・読み込みはコードとエディターのメニューからだけ使う）。
+
+| 機能 | 内容 |
+|---|---|
+| 局面（`MatchSnapshot`） | 盤の駒（種類・持ち主・位置・成り・移動回数・初期配置か・盾・ファランクス・アンデッド・時間停止の予定の駒か）、持ち駒、エナジー、マスの状態（破壊・炎上と終わるターン・落とし穴と持ち主）、ターン数・手数・先手・手番、2回行動の続き、魔法の編成（`SkillDefinition.Id`）・超常魔法の解放と使用、世界の終わり、倒された初期配置の駒、停止世界（残り回数・移動の記録・予定）、乱数 `GameRng` のシードと状態、千日手の記録、勝敗。`JsonUtility` でそのまま JSON にできる（`ToJson` / `FromJson`） |
+| 書き出し | `GameSystem.ExportState()`（JSON は `ExportStateJson()`）。いつでも書き出せる（演出の途中だと、行動の処理の途中の局面になる） |
+| 読み込み | `GameSystem.ImportState(snapshot)`（JSON は `ImportStateJson`）。盤・駒の GameObject・マスの見た目・持ち駒・エナジー・スキルボタン・時間停止の表示（色の反転・灰色の予定の駒・予定の印・残り回数）・世界の終わりの表示・手番のカメラを作り直し、その局面から続けて指せる。対局中の手番で演出中でないときだけ（オンライン対戦中は読み込まない）。操作の途中（駒・持ち駒・対象の選択、成りの確認）は取り消す。棋譜（`ActionHistory`）は読み込んだ局面から記録し直す（Prototype と同じ） |
+| 盤面のハッシュ | `MatchHash.Compute(snapshot)`／`GameSystem.StateHash()`。FNV-1a 32bit の 16 進 8 桁。入れる項目は Prototype の hash.js と同じ（手番・ターン数・手数・勝敗・エナジー・持ち駒・盤の駒・マス・超常魔法・世界の終わり・倒された初期配置の駒・停止世界の残り回数と予定）。乱数・編成・千日手の記録は入れない |
+| 行動ごとのハッシュ | `ActionHistory` の各行動の `MatchAction.hash` に、その行動の処理（演出・手番の終わりの自動行動・手番交代・超常魔法の解放の演出）が終わった時点のハッシュが入る。Console に `[Action] … のあとの盤面のハッシュ: xxxxxxxx` と出る。`ActionHashed` イベントもある |
+
+**実装メモ**
+- データは `Assets/Scripts/InGame/Match/MatchSnapshot.cs`（プレーンなクラス）、詰める・戻す処理は `MatchSnapshotIO.cs`（シーンに依存しない）、ハッシュは `MatchHash.cs`、`GameSystem` 側は `GameSystem.State.cs`（partial）。
+- 座標は `GamePiece` の X・Y と同じ（x = 段、y = 筋。**Prototype とは x と y が逆**）。ハッシュの盤は Prototype と同じく「段ごとに筋を並べる」ので、外側を x（段）・内側を y（筋）で回している。
+- `JsonUtility` は null を書けないので、「なし」は -1（駒の id・プレイヤー・ターン）。列挙は数値で書かれる。マスは通常でないマスだけを書く。
+- 駒の id は書き出すたびに 1 から振り直す（盤の添字の順 → 停止世界の予定の駒）。停止世界の移動の記録・予定は駒を id、移動を添字で指す（Unity 側の `TimeStopState` は参照で持つので、書き出し・読み込みで付け替える）。同じ局面からは必ず同じ JSON になる。
+- 読み込みは、データ（`MatchState`・`TurnState`・`EnergyState`・`GameRng`・`BoardCells` の `Restore`。通知は出さない）を戻してから、駒を `GameBoard.SpawnPiece` で作り直す（予定の駒は盤のデータに入れない）。見た目は `GameSystem.StateImported` と `BoardCells.Reloaded` で合わせ直す（`BoardCellView`・`TimeStopView`・`WorldEndView`）。
+- 魔法の編成は Id から探す（今の編成 → `Resources/SkillDatabase`）。見つからない魔法の枠は空にする。
+- 形式の名前は `ultimate-shogi-state`、版は `MatchSnapshot.CurrentVersion`（今は 1）。形を変えたら版を上げ、`MatchSnapshotIO.Validate` で古い版を読めるようにする。ハッシュの項目・並びを変えると、今までに残したハッシュと比べられなくなるので注意。
+- エディターでは、`GameSystem` のコンポーネントの右クリックメニュー「局面を書き出す（クリップボードへ）」「局面を読み込む（クリップボードから）」で試せる。
+- **テスト**：EditMode テスト `Assets/Tests/EditMode/MatchSnapshotTests.cs`（Test Runner の EditMode）。書き出し → 読み込み → 書き出しで同じ JSON になること、読み込んだ駒・停止世界の参照、乱数の続き、ハッシュ（駒・エナジー・マスで変わり、予定の駒・乱数では変わらない、盤の向き）、読めない局面の判定、行動の hash を確かめる。ゲームのスクリプトは asmdef を持たない（Assembly-CSharp）のでテストの asmdef から直接参照できず、確認の中身は `Assets/Editor/MatchSnapshotChecks.cs`（Assembly-CSharp-Editor。ビルドには入らない）に書いて、テストからリフレクションで 1 つずつ呼んでいる。メニュー「UltimateShogi/局面の書き出しを確かめる」からも実行できる。確認を足すときは `MatchSnapshotChecks` に `Check〜` のメソッドを足す。
+
 ---
 
 ## 6. 今後実装したいスキル・駒案（たたき台）
@@ -714,6 +739,9 @@ GameObject に依存しない対局の状態（`BoardSnapshot`）と、それに
 - [ ] 必殺技・魔法の効果もシミュレーションする（`SkillEffect`・`SpecialMove` の判定と効果を、`GameBoard` ではなく盤面のインターフェース越しに書き直す）
 - [ ] 詰み・千日手をシミュレーションに入れる（CPU が終局を読むため）
 - [ ] CPU（`LegalActions` から選んで `Dispatch`。先読みは `BoardSimulator`）・棋譜の保存と再生（`ActionHistory` と乱数のシード）
+- [x] 局面の書き出し・読み込み（`MatchSnapshot`・`GameSystem.ExportState` / `ImportState`）と盤面のハッシュ（`MatchHash`）、行動ごとのハッシュ（`MatchAction.hash`）。EditMode テスト（5-8）
+- [ ] Unity エディターでの動作確認（Test Runner の EditMode テストが通ること・テストが一覧に出ること、右クリックメニューでの書き出し → 読み込みで盤・持ち駒・エナジー・スキルボタン・マス・停止世界の表示・世界の終わりの表示が戻ること、読み込んだ局面から続けて指せること、Console の行動ごとのハッシュの行）
+- [ ] 棋譜の保存・再生（シード・編成・行動の列。再生で各行動の hash と比べて、ずれた手を知らせる。Prototype の `src/game/kifu.js`・`ReplayController`）
 
 ---
 
