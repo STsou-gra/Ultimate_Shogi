@@ -48,7 +48,7 @@ public class WorldEndEffect : SkillEffect
     foreach (Vector2Int c in picked)
     {
       GamePiece q = system.Board.GetPieceAt(c.x, c.y);
-      if (q != null) victims.Add($"{TurnEndAction.SideName(q.player)}の{HandUIManager.GetJapaneseName(q.type)}");
+      if (q != null && !PieceRules.HasMagicWing(q)) victims.Add($"{TurnEndAction.SideName(q.player)}の{HandUIManager.GetJapaneseName(q.type)}");
     }
     string where = string.Join("・", picked.ConvertAll(c => $"({c.x}, {c.y})"));
     string log = $"世界の終わり：{where} が崩れ落ちた" + (victims.Count > 0 ? $"（{string.Join("・", victims)}が消失）" : "");

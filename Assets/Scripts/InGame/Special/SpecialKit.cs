@@ -19,24 +19,27 @@ public static class SpecialKit
     //  突進（歩「突撃」・香「貫通槍」）
     // ------------------------------------------------------------
 
-    // 前方への突進経路（pierce = true なら相手の駒を貫通して進む）
+    // 前方への突進経路（pierce = true なら相手の駒を貫通して進む）。
+    // 翼状態の駒は破壊・炎上・落とし穴のマスを通り抜け、火薬の上は飛び越える（経路に入れない＝爆発させない。盤の端の手前の火薬なら、その手前で止まる）
     public static List<Vector2Int> ChargePath(SpecialContext ctx, GamePiece p, bool pierce)
     {
         List<Vector2Int> path = new List<Vector2Int>();
+        bool wing = PieceRules.HasWing(p);
         int f = SpecialContext.Forward(p.player);
         int y = p.Y;
         for (int x = p.X + f; SpecialContext.InBounds(x, y); x += f)
         {
-            if (ctx.IsBroken(x, y)) break;                       // 破壊マスの手前で止まる
+            if (ctx.IsBlockedFor(p, x, y)) break;                // 破壊マスの手前で止まる（翼の駒は通り抜ける）
             GamePiece q = ctx.PieceAt(x, y);
             if (q == null)
             {
                 path.Add(new Vector2Int(x, y));
-                if (ctx.IsHazard(x, y)) break;                    // 炎上・落とし穴に入ると消失
+                if (ctx.IsHazardFor(p, x, y)) break;              // 炎上・落とし穴に入ると消失（翼の駒は通り抜ける）
                 continue;
             }
             if (SpecialContext.IsExplosive(q))
             {
+                if (wing) continue;                               // 翼の駒は火薬を飛び越える
                 path.Add(new Vector2Int(x, y));                   // 火薬に突っ込む → 爆発
                 break;
             }
@@ -87,8 +90,8 @@ public static class SpecialKit
             while (SpecialContext.InBounds(x, y))
             {
                 beam.End = new Vector2Int(x, y);
-                if (ctx.IsBroken(x, y)) break;                   // 破壊マスに吸い込まれて止まる
                 GamePiece q = ctx.PieceAt(x, y);
+                if (ctx.IsBroken(x, y) && q == null) break;      // 破壊マスに吸い込まれて止まる（破壊マスの上の翼の駒には当たる）
                 if (q != null)
                 {
                     if (q.player != p.player || SpecialContext.IsExplosive(q)) beam.Hit = q;

@@ -51,7 +51,7 @@ public static class MagicKit
         return result;
     }
 
-    // 駒 p の前方 1×3 マス（左前・前・右前）。盤外・破壊マスは除く（Prototype の frontSquares）
+    // 駒 p の前方 1×3 マス（左前・前・右前）。盤外・破壊マス（駒のいない）は除く（Prototype の frontSquares）
     public static List<Vector2Int> FrontSquares(GameBoard board, GamePiece p)
     {
         List<Vector2Int> result = new List<Vector2Int>();
@@ -59,7 +59,8 @@ public static class MagicKit
         int x = p.X + SpecialContext.Forward(p.player);
         for (int y = p.Y - 1; y <= p.Y + 1; y++)
         {
-            if (!BoardCells.InBounds(x, y) || board.Cells.IsBroken(x, y)) continue;
+            // 破壊マスは除く。ただし破壊マスの上の駒（翼状態の駒）は残す（剣・槍は届く）
+            if (!BoardCells.InBounds(x, y) || (board.Cells.IsBroken(x, y) && !board.HasPieceAt(x, y))) continue;
             result.Add(new Vector2Int(x, y));
         }
         return result;
