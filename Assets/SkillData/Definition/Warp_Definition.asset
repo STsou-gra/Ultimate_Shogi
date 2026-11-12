@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 587807e885a34223916094a16ba027e7, type: 3}
+  m_Name: Warp_Definition
+  m_EditorClassIdentifier: Assembly-CSharp::SkillDefinition
+  skillName: "\u30EF\u30FC\u30D7"
+  icon: {fileID: 0}
+  cost: 3
+  description: "\u81EA\u5206\u306E\u99D2\u30921\u3064\u9078\u3073\u3001\u81EA\u9663\u304B\u4E2D\u7ACB\u306E\u7A7A\u304D\u30DE\u30B9\u3078\u77AC\u9593\u79FB\u52D5\u3055\u305B\u308B\u3002\u81EA\u5206\u306E\u99D2\u304C\u6575\u9663\u306B\u4FB5\u5165\u3057\u3066\u3044\u308C\u3070\u3001\u6575\u9663\u306B\u3082\u98DB\u3070\u305B\u308B\u3002"
+  effect: {fileID: 11400000, guid: d3b017636f0b4b329f828a07643a2c08, type: 2}
+  rank: 0
+  endsTurn: 1
+  color: {r: 0.8784314, g: 0.2509804, b: 0.9843137, a: 1}

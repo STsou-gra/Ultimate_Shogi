@@ -104,6 +104,15 @@ public partial class GameSystem : MonoBehaviour
         public int Orient;                                         // 今の向き
         public System.Action<int> SetOrient;                       // 向きを変えた
         public System.Func<int, string> OrientLabel;               // 向きの名前
+
+        // 2 段階で選ぶ（スキルのみ。SkillEffect.UsesDestination。ワープの「駒 → 行き先」）。
+        // Count 個の対象を選び終わったら行き先を 1 つ選び、OnCompleteTo を呼ぶ（OnComplete は呼ばない）
+        public System.Func<Vector2Int, bool> IsValidDestination;   // その行き先を選べるか（null なら行き先を選ばない）
+        public System.Func<string> DestinationPrompt;              // 行き先を選んでいるときの案内文
+        public System.Action<Vector2Int> OnCompleteTo;             // 行き先まで選び終わった
+
+        // 行き先を選んでいる段階か
+        public bool IsChoosingDestination => IsValidDestination != null && Chosen.Count >= Count;
     }
     private TargetSelection targetSelection;
     private Vector2Int lastPreviewCursor;
@@ -2747,6 +2756,14 @@ public partial class GameSystem : MonoBehaviour
             Orient = context.Orient,
             SetOrient = orient => context.Orient = orient,
             OrientLabel = effect.GetOrientLabel,
+            // 2 段階で選ぶ魔法（ワープ）：対象のあとに行き先 →「魔法」行動に行き先 to を付けて Dispatch
+            IsValidDestination = effect.UsesDestination ? (System.Func<Vector2Int, bool>)(pos => effect.IsValidDestination(context, pos)) : null,
+            DestinationPrompt = effect.GetDestinationPrompt,
+            OnCompleteTo = to =>
+            {
+                context.Destination = to;
+                Dispatch(MatchAction.Magic(skill.Id, context.Targets, context.Orient, to));
+            },
         });
     }
 
@@ -2793,7 +2810,9 @@ public partial class GameSystem : MonoBehaviour
     {
         if (HandUIManager.Instance == null || targetSelection == null) return;
         TargetSelection selection = targetSelection;
-        string prompt = selection.Prompt(selection.Chosen.Count);
+        string prompt = selection.IsChoosingDestination
+            ? $"{selection.DestinationPrompt()}（同じ駒で F：選び直し）"
+            : selection.Prompt(selection.Chosen.Count);
         string orient = "";
         if (selection.OrientCount > 1)
         {
@@ -2841,6 +2860,11 @@ public partial class GameSystem : MonoBehaviour
 
         if (gameController.IsOkTrigger())
         {
+            if (selection.IsChoosingDestination)
+            {
+                ChooseTargetDestination(selection, cursor);
+                return;
+            }
             SkillPreview preview = selection.Preview(cursor);
             if (preview.IsBlocked)
             {
@@ -2856,6 +2880,12 @@ public partial class GameSystem : MonoBehaviour
 
             selection.Chosen.Add(cursor);
             lastPreviewCursor = new Vector2Int(-1, -1); // 選択状態が変わったので光らせ直す
+            if (selection.IsChoosingDestination)
+            {
+                HighlightTargetOrigin(selection); // 2 段階で選ぶ魔法：次は行き先
+                UpdateTargetPrompt(null);
+                return;
+            }
             if (selection.Chosen.Count < selection.Count)
             {
                 UpdateTargetPrompt(null);
@@ -2869,6 +2899,55 @@ public partial class GameSystem : MonoBehaviour
         {
             CancelTargetSelection();
         }
+    }
+
+    // 2 段階で選ぶ魔法の行き先を選んでいる段階で F（Prototype の HumanController.tap・pickOrigin）：
+    //  最後に選んだ対象と同じマス … 対象選びに戻る
+    //  行き先に選べるマス          … 発動（OnCompleteTo）
+    //  ほかの選べる対象            … その対象で選び直す
+    //  それ以外                    … 何もしない（Unity の対象選択は、選べないマスを押しても解除しない）
+    void ChooseTargetDestination(TargetSelection selection, Vector2Int cursor)
+    {
+        int last = selection.Chosen.Count - 1;
+        Vector2Int origin = selection.Chosen[last];
+        if (cursor == origin)
+        {
+            selection.Chosen.RemoveAt(last);
+            ClearBoardHighlight();
+            lastPreviewCursor = new Vector2Int(-1, -1);
+            UpdateTargetPrompt(null);
+            return;
+        }
+        if (selection.IsValidDestination(cursor))
+        {
+            EndTargetSelection();
+            selection.OnCompleteTo(cursor);
+            return;
+        }
+        selection.Chosen.RemoveAt(last);
+        if (!selection.Preview(cursor).IsBlocked && selection.IsValid(cursor))
+        {
+            selection.Chosen.Add(cursor);
+            HighlightTargetOrigin(selection);
+        }
+        else
+        {
+            selection.Chosen.Add(origin);
+            Debug.Log("そのマスは選べません");
+        }
+        lastPreviewCursor = new Vector2Int(-1, -1);
+        UpdateTargetPrompt(null);
+    }
+
+    // 行き先を選ぶ段階に入った：選んだ対象の駒を光らせる（選び直したら光らせ直す）
+    void HighlightTargetOrigin(TargetSelection selection)
+    {
+        ClearBoardHighlight();
+        Vector2Int origin = selection.Chosen[selection.Chosen.Count - 1];
+        GamePiece piece = gameBoard.GetPieceAt(origin.x, origin.y);
+        if (piece == null) return;
+        piece.SetHighlight(true);
+        highlightedPieces.Add(piece);
     }
 
     // 対象選択をやめる（スキルのポイント・必殺技のチャージは減らない）。「必殺技をやめる」ボタン・Space

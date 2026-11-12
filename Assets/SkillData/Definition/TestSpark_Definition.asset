@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 587807e885a34223916094a16ba027e7, type: 3}
+  m_Name: TestSpark_Definition
+  m_EditorClassIdentifier: Assembly-CSharp::SkillDefinition
+  skillName: "\u9B54\u529B\u306E\u706B\u82B1"
+  icon: {fileID: 0}
+  cost: 1
+  description: "\u3010\u52D5\u4F5C\u78BA\u8A8D\u7528\u3011\u81EA\u5206\u306E\u99D2\u30921\u3064\u9078\u3073\u3001\u9B54\u529B\u306E\u706B\u82B1\u3092\u6563\u3089\u3059\u3002\u76E4\u9762\u3078\u306E\u52B9\u679C\u306F\u306A\u3044\u3002"
+  effect: {fileID: 11400000, guid: 7df1dee0be4147c28a51f3edfae8fa94, type: 2}
+  rank: 0
+  endsTurn: 1
+  color: {r: 0.4862745, g: 0.3019608, b: 1.0000000, a: 1}

@@ -240,6 +240,16 @@ public class SpecialContext
         if (Fx != null) Fx.Bump(q, dir, Time); // 押し出し先が塞がっている
     }
 
+    // 駒 p を (tx, ty) へ瞬間移動させる（Prototype の play.js の warpPiece。魔法「ワープ」）。盤面のデータだけ動かす（見た目は呼び出し側）。
+    // 移動ではないので、取り・成り・移動回数（必殺技のチャージ）は起こらず、時間停止の移動の記録にも残さない。
+    // 移動先は空きマスであること（入ったマスの効果 EnterCell は通常どおり）。そのマスに残れたら true
+    public bool Teleport(GamePiece p, int tx, int ty)
+    {
+        if (!IsAlive(p) || !InBounds(tx, ty) || Board.HasPieceAt(tx, ty)) return false;
+        MoveData(p, tx, ty);
+        return EnterCell(p, tx, ty);
+    }
+
     // 盤面のデータだけ動かす（見た目は呼び出し側）
     void MoveData(GamePiece p, int tx, int ty)
     {

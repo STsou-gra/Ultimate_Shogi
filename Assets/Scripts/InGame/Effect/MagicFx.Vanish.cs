@@ -4,7 +4,7 @@ using UnityEngine;
 // 消失のポップアップ（Prototype の view/events.js の vanished と config.js の VANISH_COLORS）。MagicFx の続き（partial）
 //
 //  駒が消失すると、駒の上に「〈理由〉！」が理由ごとの色で飛び出す（王将なら下に「王 消失！」も）。
-//  爆発・隕石・破壊砲は、それぞれの大きな文字（「爆発!!」「隕石落下!!」「破壊!!」）を出すので、駒ごとには出さない（Prototype の quiet）。
+//  爆発・隕石・破壊砲・ボムは、それぞれの大きな文字（「爆発!!」「隕石落下!!」「破壊!!」「ボム!!」）を出すので、駒ごとには出さない（Prototype の quiet）。
 //  出す時刻は、駒が消える見た目に合わせる：
 //   ・必殺技・魔法・自動行動の中 … 攻撃が届く時刻（ActiveSpecial.HitTime）
 //   ・移動して炎上・落とし穴のマスに入った … そのマスに着いたとき（GameSystem.EnterCellFxDelay）
@@ -28,7 +28,7 @@ public partial class MagicFx
     // 駒ごとには出さない理由（大きな文字を別に出すもの）
     static bool IsQuietVanish(string reason)
     {
-        return reason == GameSystem.ReasonExplosion || reason == MeteorEffect.Reason || reason == CannonEffect.Reason;
+        return reason == GameSystem.ReasonExplosion || reason == MeteorEffect.Reason || reason == CannonEffect.Reason || reason == BombEffect.Reason;
     }
 
     public static Color VanishColor(string reason)

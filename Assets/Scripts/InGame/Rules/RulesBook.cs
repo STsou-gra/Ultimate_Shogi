@@ -51,8 +51,10 @@ public class RulesPage
         return this;
     }
 
+    // text が null なら何も足さない（候補にある魔法だけ説明を足すとき用）
     public RulesPage Text(string text, int indent = 1, string badge = null)
     {
+        if (text == null) return this;
         Lines.Add(new RulesLine { Kind = RulesLineKind.Text, Indent = indent, Text = text, Badge = badge });
         return this;
     }
@@ -150,7 +152,7 @@ public static class RulesBook
 
         p.Heading("取りと消失")
          .Text("取り（通常の移動・必殺技・狙撃・剣・ファランクスなど）：上のエナジー配分あり。取った駒は持ち駒になる。")
-         .Text("消失（火薬の爆発・爆発・隕石・破壊砲・炎上・落とし穴・マス破壊など）：エナジーなし。持ち駒にもならない。")
+         .Text("消失（火薬の爆発・爆発・ボム・隕石・破壊砲・炎上・落とし穴・マス破壊など）：エナジーなし。持ち駒にもならない。")
          .Text("王将は爆発（火薬・魔法の「爆発」）では倒せない（範囲にいても残る）。")
          .Text("盾：盾状態の駒（水色の六角形のバリア）は、相手の取りを1回だけ防ぐ（盾は割れる）。消失は防げない。")
          .Text("通常の移動で盾の駒を取ろうとした駒は、元のマスへ跳ね返る（手番は使う）。必殺技の突進は盾の駒の手前で止まる。", 2);
@@ -238,6 +240,7 @@ public static class RulesBook
          .Text("自分の手番に、画面の魔法ボタン（名前とコスト）を押す。発動するとエナジーを払う。")
          .Text("対象を選ぶ魔法は、光っているマスにカーソルを合わせて F。Space で取り消せる（取り消したらエナジーは減らない）。")
          .Text("範囲を選ぶ魔法は、カーソル位置の範囲が塗られる。赤い範囲は選べない。向きのある魔法は R キーで向きを変える。")
+         .Text(HasDestinationMagic(src) ? "2段階で選ぶ魔法（ワープなど）は、対象の駒で F → 光っている行き先で F。行き先を選んでいるときに同じ駒で F を押すと駒を選び直せる（ほかの光る駒で F でも選び直せる）。" : null)
          .Text("「手番を使う」魔法は、駒を動かす・打つ代わりになる。「手番を使わない」魔法は、使ったあとも続けて指せる。")
          .Text("エナジーが足りない・効果の対象がないときは押せない。");
         if (HasRank(src, SkillRank.Transcendent))
@@ -283,6 +286,26 @@ public static class RulesBook
              .Text("② 生き残っていれば（前進できなくても）、前方1×3マス（左前・前・右前）の相手の駒を取る（盾で防がれる。相手の火薬は爆発する）。", 2)
              .Text("複数いるときは、盤の奥（相手の陣地側）にいる駒から順に動く。2回行動で手番が続くときは動かない。")
              .Text("盾が割れてもファランクス状態は続く。取られて持ち駒になると解除される。");
+        }
+
+        SkillDefinition warp = FindEffect<WarpEffect>(src);
+        if (warp != null)
+        {
+            p.Heading($"{warp.skillName}（通常魔法）")
+             .Text("自分の駒（王将も可。アンデッドは不可）→ 行き先のマス、の順に選んで瞬間移動させる。")
+             .Text("行き先は、駒がいない通常のマス（破壊・炎上・落とし穴のマスは不可）で、自陣か中立。自分の駒が1つでも敵陣にいれば、敵陣のマスも選べる。")
+             .Text("移動ではないので、取り・成り・必殺技の移動回数にはならない。行き所のない駒になるマス（成っていない歩・香の一番奥、桂の奥2段）には飛ばせない。")
+             .Text("停止世界の時間停止中も使える（消失・爆発の予定ができた駒は選べない）。");
+        }
+
+        SkillDefinition bomb = FindEffect<BombEffect>(src);
+        if (bomb != null)
+        {
+            p.Heading($"{bomb.skillName}（通常魔法）")
+             .Text("自分の駒を1つ選び、その2マス先の前方1×3マス（左前・前・右前）に爆弾を3つ投げる。投げたマスそれぞれを中心に3×3が爆発する。")
+             .Text("爆発の範囲は、選んだ駒の前方1〜3マス × 横5マス。選んだ駒自身は巻き込まれない。盤外にはみ出した分は何も起こらない。", 2)
+             .Text("範囲の駒は敵味方問わず消失する（取りではないので盾では防げない。火薬は誘爆せずにそのまま消える）。")
+             .Text("範囲にどちらかの王将が入る駒・2マス先が盤外になる駒は選べない。対象選択中は、カーソルの駒の爆発の範囲が塗られる（選べない駒は赤）。");
         }
 
         if (HasRank(src, SkillRank.Transcendent))
@@ -373,6 +396,17 @@ public static class RulesBook
         foreach (SkillDefinition s in src.Magics)
         {
             if (s != null && s.rank == rank) return true;
+        }
+        return false;
+    }
+
+    // 2 段階で選ぶ魔法（SkillEffect.UsesDestination。ワープ）が候補にあるか
+    static bool HasDestinationMagic(RulesSources src)
+    {
+        if (src.Magics == null) return false;
+        foreach (SkillDefinition s in src.Magics)
+        {
+            if (s != null && s.effect != null && s.effect.UsesDestination) return true;
         }
         return false;
     }

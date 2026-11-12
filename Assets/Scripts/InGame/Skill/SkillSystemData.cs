@@ -18,6 +18,10 @@ public class SkillContext
   // 範囲を選ぶスキルの向き（0 〜 SkillEffect.OrientCount - 1。対象選択中に R キーで切り替える）
   public int Orient { get; set; }
 
+  // 2 段階で選ぶスキル（SkillEffect.UsesDestination。ワープ）の行き先（Prototype の Action の to）。
+  // 対象を選び終わったあとに選ぶ。行き先を選ばないスキル・選んでいる途中は null
+  public Vector2Int? Destination { get; set; }
+
   // 演出の時間軸（発動からの秒数）。必殺技と同じ SpecialContext を使う（Capture・Explode・Wait・Schedule など）。
   // 盤面のデータはすぐ変わり、演出は Time に合わせて後から再生される。発動するときに GameSystem が作る（判定だけのときは null）
   public SpecialContext Timeline { get; set; }
@@ -143,9 +147,61 @@ public abstract class SkillEffect : ScriptableObject
     return "";
   }
 
-  // 対象選択中の表示（GetPreviewCells に、カーソル位置の範囲と選べない原因を足したもの）
+  // ------------------------------------------------------------
+  //  2 段階で選ぶ（Prototype の skill.getDestinations。ワープの「駒 → 行き先」）
+  //  TargetCount 個の対象を選び終わったあとに、行き先のマスを 1 つ選ぶ。行き先の候補は選んだ対象（context.Targets）で変わる。
+  //  選んだ行き先は MatchAction.to に入り、Execute では context.Destination で受け取る。
+  //  行き先を選ぶ段階で、最後に選んだ対象をもう一度選ぶと対象選びに戻り、ほかの対象を選ぶとその対象で選び直す
+  //  （IsValidTarget は「行き先が 1 つ以上ある対象」だけを true にしておくこと）
+  // ------------------------------------------------------------
+
+  // true なら、対象を選んだあとに行き先を選ぶ
+  public virtual bool UsesDestination => false;
+
+  // 選んだ対象（context.Targets）から、to を行き先に選べるか
+  public virtual bool IsValidDestination(SkillContext context, Vector2Int to)
+  {
+    return false;
+  }
+
+  // 行き先を選んでいるときの案内文
+  public virtual string GetDestinationPrompt()
+  {
+    return "行き先のマスを選択";
+  }
+
+  // 選んだ対象（context.Targets）からの行き先の候補（盤の全マスのうち IsValidDestination が true のもの）
+  public List<Vector2Int> GetDestinations(SkillContext context)
+  {
+    List<Vector2Int> cells = new List<Vector2Int>();
+    if (!UsesDestination) return cells;
+    for (int x = 0; x < BoardCells.Size; x++)
+    {
+      for (int y = 0; y < BoardCells.Size; y++)
+      {
+        Vector2Int pos = new Vector2Int(x, y);
+        if (IsValidDestination(context, pos)) cells.Add(pos);
+      }
+    }
+    return cells;
+  }
+
+  // 行き先を選んでいる段階か（対象を選び終わった）
+  public bool IsChoosingDestination(SkillContext context)
+  {
+    return UsesDestination && context.Targets.Count >= TargetCount;
+  }
+
+  // 対象選択中の表示（GetPreviewCells に、カーソル位置の範囲と選べない原因を足したもの）。
+  // 行き先を選んでいる段階は、選んだ対象と行き先の候補を光らせる（範囲は塗らない）
   public SkillPreview GetPreview(SkillContext context, Vector2Int cursor)
   {
+    if (IsChoosingDestination(context))
+    {
+      SkillPreview dest = SkillPreview.FromPanels(context.Targets);
+      dest.Panels.AddRange(GetDestinations(context));
+      return dest;
+    }
     SkillPreview preview = SkillPreview.FromPanels(GetPreviewCells(context, cursor));
     if (!BoardCells.InBounds(cursor.x, cursor.y)) return preview;
     List<Vector2Int> area = GetAreaCells(context, cursor);
