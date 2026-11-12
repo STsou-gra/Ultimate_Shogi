@@ -66,6 +66,8 @@ public class SpecialContext
     public static bool InBounds(int x, int y) => BoardCells.InBounds(x, y);
     public GamePiece PieceAt(int x, int y) => Board.GetPieceAt(x, y);
     public bool IsBroken(int x, int y) => Cells != null && Cells.IsBroken(x, y);
+    public bool IsWall(int x, int y) => Cells != null && Cells.IsWall(x, y);       // 壁（通常魔法「壁」）
+    public bool IsBlocked(int x, int y) => Cells != null && Cells.IsBlocked(x, y); // 入れない・通れない（破壊マス・壁）
     public bool IsHazard(int x, int y) => Cells != null && Cells.IsHazard(x, y); // 炎上・落とし穴（入ると消失）
     public static bool IsExplosive(GamePiece q) => q != null && PieceRules.IsExplosive(q.type);
     // 駒ごとのマスの効果（翼状態の駒は破壊マスにも入れて、炎上・落とし穴で消失しない。PieceRules の翼状態の判定）
@@ -78,7 +80,7 @@ public class SpecialContext
         return p != null && Board.GetPieceAt(p.X, p.Y) == p;
     }
 
-    // 駒 p が (x, y) に入れるか：破壊マス以外の 空き / 相手の駒 / 火薬（Prototype の board.js の canLandOn）。
+    // 駒 p が (x, y) に入れるか：破壊マス・壁のマス以外の 空き / 相手の駒 / 火薬（Prototype の board.js の canLandOn）。
     // 翼状態の駒は破壊マスにも入れる。鳥は味方の火薬には入れない
     public bool CanLandOn(GamePiece p, int x, int y)
     {
@@ -218,7 +220,7 @@ public class SpecialContext
     // 駒 q を (dx, dy) へ 1 マス押し出す（Prototype の play.js の pushPiece。金剛衝）。
     //  盤外 … 取り（持ち駒になる。火薬は持ち駒にならない）
     //  空き・火薬 … そのマスへ動く（炎上・落とし穴なら消失、火薬なら爆発）。翼状態の駒は破壊マスへも押し出される
-    //  駒・破壊マス … ぶつかって止まる（鳥は火薬のマスでも止まる＝爆発させない）
+    //  駒・破壊マス・壁 … ぶつかって止まる（鳥は火薬のマスでも止まる＝爆発させない）
     public void Push(GamePiece q, int dx, int dy)
     {
         if (!IsAlive(q)) return;

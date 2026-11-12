@@ -1,7 +1,7 @@
 using UnityEngine;
 
 // 必殺技：香「貫通槍」（Prototype の src/defs/specials/ky.js）
-// 前方へ突き抜け、通過した相手の駒をすべて取る。味方の駒か盤端で止まる
+// 前方へ突き抜け、通過した相手の駒をすべて取る。味方の駒・破壊マス・壁か盤端で止まる
 [CreateAssetMenu(menuName = "UltimateShogi/Special Moves/Lance Pierce (貫通槍)")]
 public class LancePierceSpecial : SpecialMove
 {

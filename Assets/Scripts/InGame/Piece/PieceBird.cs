@@ -10,9 +10,7 @@ public class PieceBird : GamePiece
 {
     protected override bool CanMoveByPattern(int toX, int toY)
     {
-        int dx = toX - X;
-        int dy = toY - Y;
-        int forwardX = (player == PlayerType.Player1) ? 1 : -1; // Player1 は +X が前
-        return dx == forwardX && Mathf.Abs(dy) <= 1;
+        // 動きの形は PieceMoves（GameObject に依存しない盤面のシミュレーションと同じ判定）
+        return PieceMoves.CanMoveByPattern(type, player, isPromoted, toX - X, toY - Y);
     }
 }

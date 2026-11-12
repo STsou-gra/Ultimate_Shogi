@@ -172,6 +172,7 @@ public class PieceSnapshot
     public bool shield;     // 盾状態
     public bool phalanx;    // ファランクス状態
     public bool undead;     // アンデッド
+    public bool wing;       // 翼状態（通常魔法「翼」。鳥は駒の種類で決まるので入れない）
     public bool held;       // 時間停止の予定の駒（盤のデータから外して、その場に残している）
 }
 
@@ -184,6 +185,7 @@ public struct CellSnapshot
     public CellState state;
     public int burnUntil; // 炎上が終わるターン（なければ -1）
     public int trap;      // 落とし穴の持ち主（(int)PlayerType。なければ -1）
+    public int wall;      // 壁を建てた側（(int)PlayerType。state が Wall のときだけ使う）
 }
 
 // 時間停止の状態（TimeStopState）。駒は PieceSnapshot.id、移動は moves の添字で指す（なければ -1）

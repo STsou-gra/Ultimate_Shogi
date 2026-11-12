@@ -389,7 +389,7 @@ public partial class GameSystem : MonoBehaviour
         // ルールの登録
         gameRules.Add(new BaseMoveRule());
         gameRules.Add(new EmptyCellDropRule());
-        gameRules.Add(new CellStateDropRule()); // 破壊マス・落とし穴には打てない
+        gameRules.Add(new CellStateDropRule()); // 破壊マス・落とし穴・壁には打てない
         gameRules.Add(new NoLegalMoveDropRule());
         gameRules.Add(new NifuDropRule());
         gameRules.Add(new EnemyZoneDropLockRule(match.Turn));
@@ -1734,15 +1734,15 @@ public partial class GameSystem : MonoBehaviour
     }
 
     // ------------------------------------------------------------
-    //  マスの状態（破壊・炎上・落とし穴）の共通入口
-    //  Prototype の effects.js の breakCell / setBurning / setTrap / enterCell。
+    //  マスの状態（破壊・炎上・落とし穴・壁）の共通入口
+    //  Prototype の effects.js の breakCell / setBurning / setTrap / setWall / enterCell。
     //  データは GameBoard.Cells（BoardCells）が持ち、見た目は BoardCellView が Cells.Changed を受けて更新する
     // ------------------------------------------------------------
 
     public BoardCells Cells => gameBoard != null ? gameBoard.Cells : null;
     public GameBoard Board => gameBoard;
 
-    // マスを破壊する（対局終了まで戻らない）。そこにいた駒は消失する（魔法「翼」の駒は残る。鳥は消失する）。破壊したら true。
+    // マスを破壊する（対局終了まで戻らない）。そこにいた駒は消失し（魔法「翼」の駒は残る。鳥は消失する）、壁は崩れる。破壊したら true。
     // 王将が消えることもあるので、呼び出し側で ResolveKingLoss を呼ぶこと（スキルなら ExecuteSkill が呼ぶ）
     public bool BreakCell(int x, int y)
     {
@@ -1763,7 +1763,7 @@ public partial class GameSystem : MonoBehaviour
     }
 
     // マスを turns ターンのあいだ炎上させる（今のターンを 1 ターン目として数え、最後のターンの終わりに鎮火）。
-    // すでにいる駒には影響せず、あとから入った駒が消失する。破壊マスは炎上しない。炎上させたら true
+    // すでにいる駒には影響せず、あとから入った駒が消失する。破壊マス・壁のマスは炎上しない。炎上させたら true
     public bool SetBurning(int x, int y, int turns)
     {
         BoardCells cells = Cells;
@@ -1772,7 +1772,7 @@ public partial class GameSystem : MonoBehaviour
         {
             // 時間停止中は予定にする（時間が動き出したターンから数える）
             BoardCell c = cells.At(x, y);
-            if (c == null || c.IsBroken || turns <= 0) return false;
+            if (c == null || c.IsBlocked || turns <= 0) return false;
             DeferCell(TimeStopCellEffect.Burn, x, y, timeStop.Owner, turns);
             return true;
         }
@@ -1796,10 +1796,30 @@ public partial class GameSystem : MonoBehaviour
         return cells.SetTrap(x, y, owner);
     }
 
+    // 壁を建てる（通常魔法「壁」。owner は建てたプレイヤー。Prototype の effects.js の setWall）。
+    // 駒がいるマス・破壊マス・炎上のマス・落とし穴のマス・壁のマスには建てられない。建てたら true。
+    // 壁のマスは敵味方問わず移動・通過・打ち込みができない（判定は GamePiece.CanMove・GameHelper.IsPathBlocked・CellStateDropRule）。
+    // 対局終了まで残る（BreakCell で壁ごと崩れる。天変地異ではマスと一緒に動く）
+    public bool SetWall(int x, int y, PlayerType owner)
+    {
+        BoardCells cells = Cells;
+        if (cells == null || gameBoard.HasPieceAt(x, y)) return false;
+        if (timeStop != null)
+        {
+            // 時間停止中は予定にする（時間が動き出してから建つ。そのときマスに駒がいれば建たない）
+            BoardCell c = cells.At(x, y);
+            if (c == null || c.State != CellState.Normal || c.HasTrap) return false;
+            DeferCell(TimeStopCellEffect.Wall, x, y, owner, 0);
+            return true;
+        }
+        return cells.SetWall(x, y, owner);
+    }
+
     // 駒 piece が (x, y) に入ったときのマスの効果（移動・持ち駒を打つ・スキルで動かしたあとに呼ぶ）。
     //  落とし穴：敵味方に関係なく消失し、穴も消える
     //  炎上    ：消失する
     //  破壊    ：消失する（通常は入れない。念のため）
+    //  壁      ：何もしない（入れないマス。GamePiece.CanMove などが除く）
     // そのマスに残れたら true（false = 消失した）。消失は VanishPiece を通すので、盾などの割り込みで残ることもある。
     // 翼状態の駒（鳥・魔法「翼」）はマスの効果を受けない（落とし穴も閉じずに残る。時間停止中も消失の予定にならない）
     public bool EnterCell(GamePiece piece, int x, int y)
@@ -2387,7 +2407,7 @@ public partial class GameSystem : MonoBehaviour
             }
         }
         sb.Append(sideToMove == PlayerType.Player1 ? '1' : '2');
-        gameBoard.Cells.AppendKey(sb); // マスの状態（破壊・炎上・落とし穴）も局面に含める
+        gameBoard.Cells.AppendKey(sb); // マスの状態（破壊・炎上・落とし穴・壁と建てた側）も局面に含める
         match.AppendKey(sb);           // 超常魔法の解放・使用・世界の終わり（Prototype の hash.js と同じ）
         return sb.ToString();
     }
@@ -2507,7 +2527,7 @@ public partial class GameSystem : MonoBehaviour
     //  乱数は対局の乱数（match.Rng）を使う
     // ------------------------------------------------------------
 
-    // 破壊されていないすべてのマスを、駒・マスの状態（炎上と残りターン・落とし穴）ごとランダムに入れ替える。
+    // 破壊されていないすべてのマスを、駒・マスの状態（炎上と残りターン・落とし穴・壁）ごとランダムに入れ替える。
     // 破壊マスは動かない。マスごとの移動なので、成り・火薬の爆発・炎上・落とし穴は発動しない（盾・必殺技の移動回数なども、そのまま駒と一緒に動く）。
     // 盤面のデータだけ変える（見た目は呼び出し側が MagicFx.Cataclysm で飛ばす）。入れ替えの一覧を返す
     public List<CellMove> ShuffleCells()
@@ -2535,6 +2555,7 @@ public partial class GameSystem : MonoBehaviour
                 Piece = gameBoard.GetPieceAt(from[i].x, from[i].y),
                 Burning = cell != null && cell.IsBurning,
                 Trap = cell != null && cell.HasTrap,
+                Wall = cell != null && cell.IsWall,
             });
         }
         gameBoard.RearrangePieces(from, squares);

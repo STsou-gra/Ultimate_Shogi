@@ -3,13 +3,14 @@ using UnityEngine;
 using DG.Tweening;
 
 // 魔法スキルの演出（Prototype の view/events.js の magicCast・shieldGiven・shieldBroken・bounce、
-// view/skillFx.js の pitfall.cast・pitfall.set・sword.slash、view/fx.js の magicCircle・implode・shards・slash）
+// view/skillFx.js の pitfall.cast・pitfall.set・wall.cast・wall.set・sword.slash、view/fx.js の magicCircle・implode・shards・slash）
 //
 //  発動     … 対象のマスに魔法陣（GameSystem がこのあとカットインを出す）
 //  盾       … 魔法陣・光の粒・「盾！」。水色のバリアは GameTickEffects が駒に重ねて出す
 //  盾が割れる … 破片・衝撃波・閃光・画面シェイク・「GUARD!」。取ろうとして動いた駒はバリアにぶつかって跳ね返る
 //  剣       … 駒が構えて弾む → 前方へ三日月形の斬撃の弧（刃先から火花）→ 閃光・シェイク・範囲の駒に火花
 //  落とし穴 … 魔法陣に闇の粒が吸い込まれる → 穴が開く（衝撃波・土くれ・「落とし穴 設置！」。穴の見た目は BoardCellView）
+//  壁       … 魔法陣から土煙が立ち上る → 壁がせり上がる（衝撃波・石くれ・シェイク・「壁 建造！」。石積みの壁の見た目は BoardCellView）
 //  ファランクス … 魔法陣・衝撃波・「ファランクス！」。槍のマーカーは GameTickEffects。自動行動では槍が弾む → 前進 → 槍の突き
 //  隕石     … 落下予告（範囲が赤く明滅）→ 斜め上から光の尾を引いて落下 → 着弾（爆発・閃光・衝撃波・土くれ・「隕石落下!!」）
 //  破壊砲   … 充填（範囲が明滅・発射口に光が集まる）→ 盤の端から端へ極太の破壊光線 →「破壊!!」
@@ -39,6 +40,9 @@ public partial class MagicFx : MonoBehaviour
     public static readonly Color ShieldPaleColor = Hex(0xe1f5fe);
     public static readonly Color SwordColor = Hex(0x90caf9);
     public static readonly Color PitfallColor = Hex(0x7e57c2);
+    public static readonly Color WallColor = Hex(0xa1887f);
+    private static readonly Color[] WallDustColors = { Hex(0xd7ccc8), Hex(0xbcaaa4), Hex(0x8d6e63) };
+    private static readonly Color[] WallRubbleColors = { Hex(0x8d6e63), Hex(0x5d4037), Hex(0xbcaaa4) };
     public static readonly Color PhalanxColor = Hex(0xffc400);
     // 翼（Prototype の wing.js の color 0xccff90。翼の光・羽の色）
     public static readonly Color WingColor = Hex(0xccff90);
@@ -346,6 +350,40 @@ public partial class MagicFx : MonoBehaviour
             fx.Burst(pos, burst);
             fx.Shake(4f, 0.2f);
             PopText("落とし穴 設置！", pos + ScreenUp * (36f * PX), 30f, Color.white, Hex(0xb388ff), Hex(0x1a0033), 40f, 0.9f);
+        });
+    }
+
+    // ------------------------------------------------------------
+    //  壁（Prototype の skillFx.js の wall.cast・wall.set）。石積みの壁の見た目は BoardCellView（せり上がる）
+    // ------------------------------------------------------------
+
+    // 魔法陣から土煙が立ち上る
+    public void WallCast(Vector2Int cell, PlayerType owner, float time)
+    {
+        At(time, () =>
+        {
+            Vector3 pos = CellWorld(cell.x, cell.y);
+            MagicCircle(pos, WallColor, 1.1f);
+            PieceFx.BurstOptions burst = PieceFx.BurstOptions.Default;
+            burst.count = 16; burst.colors = WallDustColors;
+            burst.speed = 110f * PX; burst.life = 0.5f; burst.size = 0.24f; burst.gravity = -60f * PX; burst.alpha = 0.7f;
+            fx.Burst(pos - ScreenUp * (20f * PX), burst);
+        });
+    }
+
+    // 壁が建つ（衝撃波・石くれ・画面シェイク・「壁 建造！」）
+    public void WallSet(Vector2Int cell, PlayerType owner, float time)
+    {
+        At(time, () =>
+        {
+            Vector3 pos = CellWorld(cell.x, cell.y);
+            fx.Shockwave(pos, PlayerColor(owner), 1.6f, 0.4f);
+            PieceFx.BurstOptions burst = PieceFx.BurstOptions.Default;
+            burst.count = 20; burst.colors = WallRubbleColors;
+            burst.speed = 170f * PX; burst.life = 0.6f; burst.size = 0.24f; burst.gravity = 420f * PX;
+            fx.Burst(pos - ScreenUp * (18f * PX), burst);
+            fx.Shake(7f, 0.25f);
+            PopText("壁 建造！", pos + ScreenUp * (36f * PX), 30f, Color.white, Hex(0xd7ccc8), Hex(0x3e2723), 40f, 0.9f);
         });
     }
 

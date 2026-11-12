@@ -29,7 +29,7 @@ public static class SpecialKit
         int y = p.Y;
         for (int x = p.X + f; SpecialContext.InBounds(x, y); x += f)
         {
-            if (ctx.IsBlockedFor(p, x, y)) break;                // 破壊マスの手前で止まる（翼の駒は通り抜ける）
+            if (ctx.IsBlockedFor(p, x, y)) break;                // 破壊マス・壁の手前で止まる（翼の駒は破壊マスを通り抜ける）
             GamePiece q = ctx.PieceAt(x, y);
             if (q == null)
             {
@@ -74,7 +74,7 @@ public static class SpecialKit
     public struct Beam
     {
         public Vector2Int Direction;
-        public Vector2Int? End;   // 光線が届く最後のマス（盤の端・駒・破壊マス）
+        public Vector2Int? End;   // 光線が届く最後のマス（盤の端・駒・破壊マス・壁）
         public GamePiece Hit;     // 当たって取る駒（相手の駒か火薬。なければ null）
     }
 
@@ -90,6 +90,7 @@ public static class SpecialKit
             while (SpecialContext.InBounds(x, y))
             {
                 beam.End = new Vector2Int(x, y);
+                if (ctx.IsWall(x, y)) break;                     // 壁に当たって止まる
                 GamePiece q = ctx.PieceAt(x, y);
                 if (ctx.IsBroken(x, y) && q == null) break;      // 破壊マスに吸い込まれて止まる（破壊マスの上の翼の駒には当たる）
                 if (q != null)

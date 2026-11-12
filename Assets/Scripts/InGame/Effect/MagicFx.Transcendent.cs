@@ -5,7 +5,7 @@ using DG.Tweening;
 // 超常魔法の演出（Prototype の view/skillFx.js の cataclysm・worldEnd.doom、view/events.js の collapseWarning・collapsed、
 // view/fx.js の doom・dangerFlash）。MagicFx の続き（partial）
 //
-//  天変地異   … 地鳴り（画面が揺れ、盤から土ぼこり）→ 駒とマスの状態（炎上・落とし穴）が宙に浮く
+//  天変地異   … 地鳴り（画面が揺れ、盤から土ぼこり）→ 駒とマスの状態（炎上・落とし穴・壁）が宙に浮く
 //               → 放物線を描いて一斉に新しいマスへ飛ぶ（駒は 1 回転）→ 着地（大きな揺れ・閃光・「天変地異！」）
 //  世界の終わり … 画面が赤黒く暗くなり、盤の中央から画面の外までひびが走る →「世界が崩れ始める……」
 //  崩壊       … 崩れるマスが赤く点滅 →（マスの板が抜け落ちるのは BoardCellView）→ 揺れ
@@ -43,12 +43,12 @@ public partial class MagicFx
     //  天変地異
     // ------------------------------------------------------------
 
-    // 飛んでいく 1 マス分（駒と、炎上・落とし穴の表示）
+    // 飛んでいく 1 マス分（駒と、炎上・落とし穴・壁の表示）
     private class Flyer
     {
         public GamePiece piece;
         public Transform body;        // 駒（なければ null）
-        public Transform token;       // 炎上・落とし穴の表示（BoardCellView のマスの表示。なければ null）
+        public Transform token;       // 炎上・落とし穴・壁の表示（BoardCellView のマスの表示。なければ null）
         public Vector3 from, to;      // 盤のローカル座標
         public float z;               // 駒の元の z
         public float baseRot;         // 駒の元の向き（度）
@@ -68,7 +68,7 @@ public partial class MagicFx
         BoardCellView view = CellView;
         foreach (CellMove m in moves)
         {
-            Transform token = (m.Burning || m.Trap) && view != null ? view.VisualRoot(m.To.x, m.To.y) : null;
+            Transform token = (m.Burning || m.Trap || m.Wall) && view != null ? view.VisualRoot(m.To.x, m.To.y) : null;
             if (m.Piece == null && token == null) continue;
 
             Vector2 f = GameHelper.CalcPanelLocation(m.From.x, m.From.y);

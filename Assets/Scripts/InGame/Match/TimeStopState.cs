@@ -129,7 +129,7 @@ public class TimeStopMove
 }
 
 public enum TimeStopKind { Capture, Explode, Vanish, Promote, Cell }
-public enum TimeStopCellEffect { Trap, Break, Burn }
+public enum TimeStopCellEffect { Trap, Break, Burn, Wall }
 
 // 時間停止の予定 1 つ（Prototype の pending の 1 件）
 public class TimeStopPending
@@ -147,6 +147,6 @@ public class TimeStopPending
     public Vector2Int HitDirection; // 倒されるときに飛ばされる向き（演出用）
 
     public TimeStopCellEffect CellEffect; // マスの変化の種類
-    public PlayerType CellOwner;          // 落とし穴を仕掛けたプレイヤー
+    public PlayerType CellOwner;          // 落とし穴を仕掛けた・壁を建てたプレイヤー
     public int Turns;                     // 炎上のターン数
 }

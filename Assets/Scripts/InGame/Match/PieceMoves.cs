@@ -61,6 +61,10 @@ public static class PieceMoves
                 // 王将：周囲 1 マス
                 return Abs(dx) <= 1 && Abs(dy) <= 1;
 
+            case PieceType.Bird:
+                // 鳥：前の 1×3 マス（左前・前・右前）。成らない
+                return dx == Forward(owner) && Abs(dy) <= 1;
+
             default:
                 // 火薬・狙撃手：自分では動けない
                 return false;

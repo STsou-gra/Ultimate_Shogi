@@ -10,7 +10,7 @@ using TMPro;
 //               始まるときは少しずつ反転し、解除のときはガラスが砕けた瞬間（MagicFx.TimeStopBreakTime）に戻る
 //  ・残り回数 … 画面の上に「時間停止中」・残り回数の円グラフと「残り N 回」・「解除 [Q]」ボタン（発動したプレイヤーが操作できるときだけ押せる）
 //  ・予定の駒 … 取られる予定・消える予定の駒は灰色にして、ほかの駒の下に残す（上に駒が重なっていれば少しずらす）。爆発する予定の火薬は色のまま
-//  ・予定の印 … 取（取り）・爆（爆発。範囲を枠で囲む）・消（消失）・成（成り）・穴／壊／炎（マスの変化。マスを枠で囲む）のバッジ
+//  ・予定の印 … 取（取り）・爆（爆発。範囲を枠で囲む）・消（消失）・成（成り）・穴／壁／壊／炎（マスの変化。マスを枠で囲む）のバッジ
 // 時間停止の決まりと処理は GameSystem.TimeStop.cs。シーンに置かなくても GameSystem が自動で追加する
 public class TimeStopView : MonoBehaviour
 {
@@ -335,8 +335,16 @@ public class TimeStopView : MonoBehaviour
                     break;
                 case TimeStopKind.Cell:
                 {
-                    string text = e.CellEffect == TimeStopCellEffect.Trap ? "穴" : e.CellEffect == TimeStopCellEffect.Break ? "壊" : "炎";
-                    Color color = e.CellEffect == TimeStopCellEffect.Trap ? Hex(0x7e57c2) : e.CellEffect == TimeStopCellEffect.Break ? Hex(0x8d6e63) : Hex(0xff6d00);
+                    // Prototype の Game.js の予定の印（穴・壁・壊・炎）
+                    string text;
+                    Color color;
+                    switch (e.CellEffect)
+                    {
+                        case TimeStopCellEffect.Trap: text = "穴"; color = Hex(0x7e57c2); break;
+                        case TimeStopCellEffect.Wall: text = "壁"; color = Hex(0xa1887f); break;
+                        case TimeStopCellEffect.Break: text = "壊"; color = Hex(0x8d6e63); break;
+                        default: text = "炎"; color = Hex(0xff6d00); break;
+                    }
                     Frame(e.At.x, e.At.x, e.At.y, e.At.y, color, 0.15f, 2f);
                     Badge(e.At, 4, text, color);
                     break;

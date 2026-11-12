@@ -12,7 +12,7 @@ public static class MagicKit
         return piece != null && piece.player == context.Player && !piece.isUndead;
     }
 
-    // 駒がいない通常状態（破壊・炎上・落とし穴がない）のマスか（Prototype の emptyNormalSquares・kit.js の空きマス）
+    // 駒がいない通常状態（破壊・炎上・落とし穴・壁がない）のマスか（Prototype の emptyNormalSquares・kit.js の空きマス）
     public static bool IsEmptyNormal(GameBoard board, Vector2Int pos)
     {
         if (!BoardCells.InBounds(pos.x, pos.y) || board.HasPieceAt(pos.x, pos.y)) return false;

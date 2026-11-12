@@ -111,3 +111,10 @@ public class OracleGunpowder : OracleBase { public override bool CanMoveByPatter
 public class OracleSniper : OracleBase { public override bool CanMoveByPattern(int toX, int toY) {
         return false;
 } }
+// 鳥（Piece/PieceBird.cs の CanMoveByPattern をそのまま写したもの）：前の 1×3 マス
+public class OracleBird : OracleBase { public override bool CanMoveByPattern(int toX, int toY) {
+        int dx = toX - X;
+        int dy = toY - Y;
+        int forwardX = (player == PlayerType.Player1) ? 1 : -1; // Player1 は +X が前
+        return dx == forwardX && Mathf.Abs(dy) <= 1;
+} }

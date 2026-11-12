@@ -1,7 +1,7 @@
 using UnityEngine;
 
 // 必殺技：角「光芒四射」（Prototype の src/defs/specials/ka.js）
-// 斜め 4 方向に光線を放ち、各方向で最初に当たった相手の駒を取る（火薬なら爆発。味方の駒・破壊マスで止まる）
+// 斜め 4 方向に光線を放ち、各方向で最初に当たった相手の駒を取る（火薬なら爆発。味方の駒・破壊マス・壁で止まる）
 [CreateAssetMenu(menuName = "UltimateShogi/Special Moves/Bishop Beam (光芒四射)")]
 public class BishopBeamSpecial : SpecialMove
 {

@@ -49,8 +49,8 @@ public static class GameHelper
     }
 
     // 走り駒（香・角・飛・竜・馬）の通り道の判定（Prototype の moves.js の getMoves の slides）。
-    // 移動先の手前までのマスに、駒・破壊マス・炎上・落とし穴があれば通れない
-    // （破壊マスの手前で止まる／炎上・落とし穴のマスには入れるが、そこで止まるので先へは行けない）。
+    // 移動先の手前までのマスに、駒・破壊マス・壁・炎上・落とし穴があれば通れない
+    // （破壊マス・壁の手前で止まる／炎上・落とし穴のマスには入れるが、そこで止まるので先へは行けない）。
     // mover が翼状態の駒（PieceRules.HasWing）なら、破壊・炎上・落とし穴のマスと火薬の上を通り抜ける（通っただけでは爆発しない。壁は通れない）。
     // cells が null ならマスの状態は見ない。mover が null なら翼状態ではない駒として扱う
     public static bool IsPathBlocked(GamePiece[] boardData, BoardCells cells, GamePiece mover, int fromX, int fromY, int toX, int toY)
@@ -82,7 +82,7 @@ public static class GameHelper
             }
             if (cells != null && (PieceRules.IsBlockedFor(cells, mover, checkX, checkY) || PieceRules.IsHazardFor(cells, mover, checkX, checkY)))
             {
-                return true; // 途中に破壊マス・炎上・落とし穴があった（翼の駒は通り抜ける）
+                return true; // 途中に破壊マス・壁・炎上・落とし穴があった（翼の駒は壁以外を通り抜ける）
             }
 
             checkX += stepX;

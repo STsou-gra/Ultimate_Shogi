@@ -80,11 +80,10 @@ public static class PieceRules
         return target != null && IsExplosive(target.type) && !(mover != null && IsWingType(mover.type));
     }
 
-    // 壁のマスか（Prototype の通常魔法「壁」の isWallCell）。Unity にはまだ壁がないので常に false。
-    // 壁を入れるときはここで BoardCells の壁を返せば、翼状態の駒も含めて「入れない・通れない」になる（翼状態でも壁は通れない）
+    // 壁のマスか（Prototype の通常魔法「壁」の isWallCell）。翼状態の駒も含めて「入れない・通れない」（翼状態でも壁は通れない）
     public static bool IsWallCell(BoardCells cells, int x, int y)
     {
-        return false;
+        return cells != null && cells.IsWall(x, y);
     }
 
     // 駒 p にとって (x, y) が入れない・通れないマスか（破壊マス・壁。翼の駒は破壊マスにも入れるが、壁は通れない）

@@ -3,7 +3,7 @@ using UnityEngine;
 
 // 必殺技：金「金剛衝」（Prototype の src/defs/specials/ki.js）
 // 周囲 8 マスの相手の駒を 1 マス吹き飛ばす。盤外に押し出した駒は取る（持ち駒になる）。
-// 押し出し先に駒・破壊マスがあればぶつかって止まる。炎上・落とし穴なら消失、火薬なら爆発
+// 押し出し先に駒・破壊マス・壁があればぶつかって止まる。炎上・落とし穴なら消失、火薬なら爆発
 [CreateAssetMenu(menuName = "UltimateShogi/Special Moves/Gold Shock (金剛衝)")]
 public class GoldShockSpecial : SpecialMove
 {
