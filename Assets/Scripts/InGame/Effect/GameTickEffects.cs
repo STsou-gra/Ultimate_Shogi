@@ -651,8 +651,8 @@ public class GameTickEffects : MonoBehaviour
             }
         }
 
-        GameCursor cursor = FindAnyObjectByType<GameCursor>();
-        if (cursor != null)
+        // カーソル（合戦将棋型は先手・後手の 2 つ）
+        foreach (GameCursor cursor in FindObjectsByType<GameCursor>(FindObjectsSortMode.None))
         {
             foreach (SpriteRenderer sr in cursor.GetComponentsInChildren<SpriteRenderer>(true)) AddHighlight(sr);
         }

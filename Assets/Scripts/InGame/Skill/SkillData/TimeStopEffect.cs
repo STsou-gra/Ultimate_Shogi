@@ -30,7 +30,7 @@ public class TimeStopEffect : SkillEffect
     // 時計の針が止まった瞬間に時間が止まる（色が反転し始める）
     if (context.Fx != null) context.Fx.TimeStopClock(tl.Time);
     tl.Wait(MagicFx.TimeStopClockTime);
-    tl.Schedule(() => system.StartTimeStop(owner, MatchConfig.TimeStopMoves));
+    tl.ScheduleState(() => system.StartTimeStop(owner, MatchConfig.TimeStopMoves));
     if (context.Fx != null) context.Fx.TimeStopFreeze(tl.Time);
     tl.Wait(0.6f);
   }

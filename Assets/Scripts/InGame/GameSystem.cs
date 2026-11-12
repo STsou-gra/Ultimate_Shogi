@@ -13,8 +13,15 @@ public partial class GameSystem : MonoBehaviour
     private bool isResultLoading = false; // 結果画面への遷移を開始したか
     private GameBoard gameBoard;
     private GameCamera gameCamera;
-    private GameCursor gameCursor;
-    private GamePiece selectedPiece; // 現在選択されている駒
+    private GameCursor sceneCursor; // シーンに置かれたカーソル（本将棋型の共通の席・合戦将棋型の先手の席）
+
+    // 操作する席（InputSeat.cs）。選択の状態（選んでいる駒・持ち駒・成りの確認・対象選択など）は席ごとに持つ。
+    // 本将棋型は共通の席 1 つ、合戦将棋型は先手・後手の席 2 つ（GameSystem.Realtime.cs が切り替える）
+    private readonly InputSeat sharedSeat = new InputSeat(null, SeatKeys.Shared);
+    private InputSeat seat;
+    InputSeat Seat => seat ?? sharedSeat;
+    private GameCursor gameCursor => Seat.Cursor != null ? Seat.Cursor : sceneCursor;
+    private GamePiece selectedPiece { get => Seat.SelectedPiece; set => Seat.SelectedPiece = value; } // 現在選択されている駒
     public GameSceneManager sceneManager;
     [SerializeField] private GameController gameController;
     [SerializeField] private PieceMoveAnimator moveAnimator; // 未設定ならシーンから探す（無ければ自動で作る）
@@ -42,18 +49,21 @@ public partial class GameSystem : MonoBehaviour
     private string turnNotice = "";
 
     // 持ち駒打つ系の状態変数
-    private bool isSelectingHand = false; // 持ち駒の種類を選択中か
-    private bool isDroppingHand = false;  // 持ち駒を打つ位置を選択中か
-    private PieceType selectedHandType;   // 選択した持ち駒の種類
-    private List<PieceType> availableHandTypes = new List<PieceType>(); // 現在のプレイヤーが持っている駒のリスト
-    private int selectedHandIndex = 0;    // 選択中のインデックス
+    private bool isSelectingHand { get => Seat.IsSelectingHand; set => Seat.IsSelectingHand = value; } // 持ち駒の種類を選択中か
+    private bool isDroppingHand { get => Seat.IsDroppingHand; set => Seat.IsDroppingHand = value; }   // 持ち駒を打つ位置を選択中か
+    private PieceType selectedHandType { get => Seat.SelectedHandType; set => Seat.SelectedHandType = value; } // 選択した持ち駒の種類
+    private List<PieceType> availableHandTypes => Seat.AvailableHandTypes; // 現在のプレイヤーが持っている駒のリスト
+    private int selectedHandIndex { get => Seat.SelectedHandIndex; set => Seat.SelectedHandIndex = value; } // 選択中のインデックス
 
     public bool IsSelectingHand => isSelectingHand;
 
     [Header("Promotion UI Reference")]
     [SerializeField] private GameObject promoteConfirmPanel; // 成り確認ダイアログパネル
-    private bool isWaitingForPromoteChoice = false;
-    private int pendingFromX, pendingFromY, pendingToX, pendingToY;
+    private bool isWaitingForPromoteChoice { get => Seat.IsWaitingForPromoteChoice; set => Seat.IsWaitingForPromoteChoice = value; }
+    private int pendingFromX { get => Seat.PendingFromX; set => Seat.PendingFromX = value; }
+    private int pendingFromY { get => Seat.PendingFromY; set => Seat.PendingFromY = value; }
+    private int pendingToX { get => Seat.PendingToX; set => Seat.PendingToX = value; }
+    private int pendingToY { get => Seat.PendingToY; set => Seat.PendingToY = value; }
 
     public bool IsWaitingForPromoteChoice => isWaitingForPromoteChoice;
 
@@ -61,9 +71,9 @@ public partial class GameSystem : MonoBehaviour
     [SerializeField] private GameObject darkOverlay; // 画面を暗くする半透明パネル
     [SerializeField] private RectTransform promoteYesButtonRect; // 成る(Yes)ボタン
     [SerializeField] private RectTransform promoteNoButtonRect;  // 成らない(No)ボタン
-    private bool promoteChoice = true;
+    private bool promoteChoice { get => Seat.PromoteChoice; set => Seat.PromoteChoice = value; }
 
-    private List<Vector2Int> currentMovablePositions = new List<Vector2Int>();
+    private List<Vector2Int> currentMovablePositions => Seat.MovablePositions;
     public List<Vector2Int> CurrentMovablePositions => currentMovablePositions;
     public bool IsDroppingHand => isDroppingHand;
     public GamePiece SelectedPiece => selectedPiece;
@@ -114,8 +124,8 @@ public partial class GameSystem : MonoBehaviour
         // 行き先を選んでいる段階か
         public bool IsChoosingDestination => IsValidDestination != null && Chosen.Count >= Count;
     }
-    private TargetSelection targetSelection;
-    private Vector2Int lastPreviewCursor;
+    private TargetSelection targetSelection { get => Seat.TargetSelection as TargetSelection; set => Seat.TargetSelection = value; }
+    private Vector2Int lastPreviewCursor { get => Seat.LastPreviewCursor; set => Seat.LastPreviewCursor = value; }
     private SkillAreaView skillAreaView; // 範囲の表示（盤を塗る）
 
     public bool IsSelectingSkillTarget => targetSelection != null;
@@ -152,9 +162,9 @@ public partial class GameSystem : MonoBehaviour
     public const float ExplosionFxDuration = 0.9f; // 爆発が始まってから手番が替わるまで
 
     // 狙撃の対象選択
-    private bool isSelectingSnipeTarget = false;
-    private GamePiece snipingPiece;
-    private readonly List<Vector2Int> snipeTargets = new List<Vector2Int>();
+    private bool isSelectingSnipeTarget { get => Seat.IsSelectingSnipeTarget; set => Seat.IsSelectingSnipeTarget = value; }
+    private GamePiece snipingPiece { get => Seat.SnipingPiece; set => Seat.SnipingPiece = value; }
+    private List<Vector2Int> snipeTargets => Seat.SnipeTargets;
     public bool IsSelectingSnipeTarget => isSelectingSnipeTarget;
 
     // ------------------------------------------------------------
@@ -256,8 +266,9 @@ public partial class GameSystem : MonoBehaviour
     private float pendingActionFxTime = 0f; // この行動の演出があと何秒かかるか（爆発・狙撃で増える）
     public bool IsResolvingAction => IsBusy;
 
-    // 演出の途中（行動の演出・超常魔法の解放の演出）で、操作を受け付けないか
-    bool IsBusy => isResolvingAction || isShowingUnlock;
+    // 演出の途中（行動の演出・超常魔法の解放の演出）で、操作を受け付けないか。
+    // 合戦将棋型は演出を待たない（MatchPolicy.AwaitsEffects）ので、演出中でも操作できる
+    bool IsBusy => (isResolvingAction || isShowingUnlock) && (match == null || match.Policy.AwaitsEffects);
 
     [System.Serializable]
     public struct SkillButtonUI
@@ -281,6 +292,13 @@ public partial class GameSystem : MonoBehaviour
     public bool IsInTurn => currentState == GameState.Player1Turn || currentState == GameState.Player2Turn;
 
     // Start is called once before the first execution of Update after the MonoBehaviour is created
+    // シーンを離れる：partial ごとの後片付け
+    void OnDestroy()
+    {
+        OnDestroyRealtime(); // 合戦将棋型の案内文の読み替えを戻す（GameSystem.Realtime.cs）
+        OnDestroyKifu();     // 棋譜の再生の速さを戻す（GameSystem.Kifu.cs）
+    }
+
     void Start()
     {
         currentState = GameState.Preparation;
@@ -292,7 +310,9 @@ public partial class GameSystem : MonoBehaviour
         //遷移画面の管理
         sceneManager = FindAnyObjectByType<GameSceneManager>();
 
-        gameCursor = Object.FindObjectsByType<GameCursor>(FindObjectsSortMode.None)[0];
+        sceneCursor = Object.FindObjectsByType<GameCursor>(FindObjectsSortMode.None)[0];
+        sceneCursor.Bind(this, sharedSeat);
+        seat = sharedSeat;
 
         if (moveAnimator == null) moveAnimator = FindAnyObjectByType<PieceMoveAnimator>();
         if (moveAnimator == null) moveAnimator = new GameObject("PieceMoveAnimator").AddComponent<PieceMoveAnimator>();
@@ -378,16 +398,22 @@ public partial class GameSystem : MonoBehaviour
         }
 
         // 対局の状態（ターン数・エナジー）
-        // 乱数のシードは対局ごとに決める（棋譜に残す。棋譜の再生では、その値を使う。局面の読み込みは乱数の状態ごと戻す。GameSystem.Kifu.cs）
+        // 乱数のシードは対局ごとに決める（棋譜に残す。棋譜の再生では、その値を使う。局面の読み込みは乱数の状態ごと戻す。GameSystem.Kifu.cs。
+        // MatchSetup.Seed があればそれを使う）
         uint seed = BeginKifuMatch();
-        match = new MatchState(MatchConfig.FirstPlayer, seed);
+        // 戦闘型（本将棋型・合戦将棋型）は編成画面で選んだもの（MatchSetup）。次のときは本将棋型だけ：
+        //  オンライン対戦（合戦将棋型は通信に乗せていない）・CPU と対戦（CPU は手番のある本将棋型だけ。合戦将棋型の CPU は
+        //  IRealtimeSeatController でつなぐ予定）・棋譜の再生（棋譜は本将棋型だけ記録する。GameSystem.Kifu.cs）
+        bool honshogiOnly = IsOnlineMatch || MatchSetup.IsVsCpu || IsReplaying;
+        BattleRuleset ruleset = honshogiOnly ? BattleRulesets.Honshogi : MatchSetup.Ruleset;
+        match = new MatchState(MatchConfig.FirstPlayer, seed, ruleset);
         // エナジーの増減の「+N エナジー」（BasicMoveFx は Start で作られる。対局の準備の前に作られていなければ探す）
         match.Energy.Changed += (player, value, delta) =>
         {
             if (basicMoveFx == null) basicMoveFx = FindAnyObjectByType<BasicMoveFx>();
-            if (basicMoveFx != null) basicMoveFx.Energy(player, delta);
+            if (basicMoveFx != null && !match.Energy.IsQuietChange) basicMoveFx.Energy(player, delta); // 合戦将棋型の毎秒の +1 は出さない
         };
-        Debug.Log($"対局の乱数のシード: {seed}");
+        Debug.Log($"対局の乱数のシード: {seed}　戦闘型: {ruleset.Name}");
         match.Turn.RoundEnded += OnRoundEnd;
         if (player1 != null) player1.BindEnergy(match.Energy);
         if (player2 != null) player2.BindEnergy(match.Energy);
@@ -398,8 +424,8 @@ public partial class GameSystem : MonoBehaviour
         gameRules.Add(new CellStateDropRule()); // 破壊マス・落とし穴・壁には打てない
         gameRules.Add(new NoLegalMoveDropRule());
         gameRules.Add(new NifuDropRule());
-        gameRules.Add(new EnemyZoneDropLockRule(match.Turn));
-        gameRules.Add(new UchifuzumeRule()); // 他のルールを満たした手だけを調べるので最後に置く
+        gameRules.Add(new EnemyZoneDropLockRule(match.Policy)); // 期間は戦闘型で違う（第10ターンまで／開始から60秒）
+        gameRules.Add(new UchifuzumeRule(match.Policy)); // 他のルールを満たした手だけを調べるので最後に置く（合戦将棋型は詰みがないので禁止しない）
 
         // デッキの初期化
         if (DeckTransferManager.Player1SelectedDeck != null && player1 != null)
@@ -425,6 +451,9 @@ public partial class GameSystem : MonoBehaviour
                 skillSlotUIs[i].button.onClick.AddListener(() => OnSkillSlotClicked(index));
             }
         }
+
+        // 合戦将棋型：先手・後手の席とカーソル・経過時間と一時停止の表示（GameSystem.Realtime.cs）
+        if (match.Policy.IsRealtime) SetupRealtime();
     }
 
     // Update is called once per frame
@@ -451,7 +480,8 @@ public partial class GameSystem : MonoBehaviour
                 break;
             case GameState.Player1Turn:
             case GameState.Player2Turn:
-                HandleTurnUpdate();
+                if (IsRealtime) HandleRealtimeUpdate(); // 合戦将棋型：両方の席の入力 → 固定刻みで時間を進める
+                else HandleTurnUpdate();
                 break;
             case GameState.GameOver:
                 // ゲームオーバーの処理（シーン遷移は1回だけ行う）
@@ -483,10 +513,12 @@ public partial class GameSystem : MonoBehaviour
         }
     }
 
+    // 今の席（Seat）の入力を処理する（本将棋型は毎フレーム。合戦将棋型は席ごとに GameSystem.Realtime.cs から呼ぶ）
     void HandleTurnUpdate()
     {
         var keyboard = Keyboard.current;
         if (keyboard == null) return;
+        SeatKeys keys = Seat.Keys;
 
         // 爆発・狙撃の演出が終わって手番が替わるまで・超常魔法の解放の演出の間は操作しない
         if (IsBusy) return;
@@ -503,10 +535,8 @@ public partial class GameSystem : MonoBehaviour
         // 成り確認ダイアログの応答待ち中のキー操作
         if (isWaitingForPromoteChoice)
         {
-            bool toggleChoice = keyboard.aKey.wasPressedThisFrame || keyboard.wKey.wasPressedThisFrame ||
-                                keyboard.sKey.wasPressedThisFrame || keyboard.dKey.wasPressedThisFrame ||
-                                keyboard.leftArrowKey.wasPressedThisFrame || keyboard.upArrowKey.wasPressedThisFrame ||
-                                keyboard.downArrowKey.wasPressedThisFrame || keyboard.rightArrowKey.wasPressedThisFrame;
+            bool toggleChoice = SeatKeys.Pressed(keys.Left) || SeatKeys.Pressed(keys.Up) ||
+                                SeatKeys.Pressed(keys.Down) || SeatKeys.Pressed(keys.Right);
 
             if (toggleChoice)
             {
@@ -514,16 +544,16 @@ public partial class GameSystem : MonoBehaviour
                 UpdatePromoteChoiceVisuals();
             }
 
-            if (gameController.IsOkTrigger())
+            if (OkPressed())
             {
                 ResolvePromotionChoice(promoteChoice);
             }
-            else if (keyboard.jKey.wasPressedThisFrame)
+            else if (SeatKeys.Pressed(keys.NoPromote))
             {
                 // J で「成らない」を選ぶ
                 ResolvePromotionChoice(false);
             }
-            else if (gameController.IsCancelTrigger())
+            else if (CancelPressed())
             {
                 // Space でこの駒の移動自体を取り消す
                 CancelPromotionChoice();
@@ -555,15 +585,13 @@ public partial class GameSystem : MonoBehaviour
         }
 
         // 錬成のキー操作（Z・X …：レシピの順。ボタンでも錬成できる）
-        HandleForgeKeys(keyboard);
+        HandleForgeKeys(keys);
 
         if (isSelectingHand)
         {
             // 持ち駒選択モード
-            bool selectPrev = keyboard.aKey.wasPressedThisFrame || keyboard.wKey.wasPressedThisFrame ||
-                              keyboard.leftArrowKey.wasPressedThisFrame || keyboard.upArrowKey.wasPressedThisFrame;
-            bool selectNext = keyboard.dKey.wasPressedThisFrame || keyboard.sKey.wasPressedThisFrame ||
-                              keyboard.rightArrowKey.wasPressedThisFrame || keyboard.downArrowKey.wasPressedThisFrame;
+            bool selectPrev = SeatKeys.Pressed(keys.Left) || SeatKeys.Pressed(keys.Up);
+            bool selectNext = SeatKeys.Pressed(keys.Right) || SeatKeys.Pressed(keys.Down);
 
             if (availableHandTypes.Count > 0)
             {
@@ -577,7 +605,7 @@ public partial class GameSystem : MonoBehaviour
                     selectedHandIndex++;
                     UpdateSelectingHandUI();
                 }
-                else if (gameController.IsOkTrigger())
+                else if (OkPressed())
                 {
                     isSelectingHand = false;
                     HandUIManager.Instance.HidePanel();
@@ -588,7 +616,7 @@ public partial class GameSystem : MonoBehaviour
                 }
             }
 
-            if (gameController.IsCancelTrigger())
+            if (CancelPressed())
             {
                 isSelectingHand = false;
                 if (HandUIManager.Instance != null)
@@ -603,7 +631,7 @@ public partial class GameSystem : MonoBehaviour
         else if (isDroppingHand)
         {
             // 持ち駒打つ位置選択モード：決定したら「打つ」行動を Dispatch（オンラインならサーバーへ送る）
-            if (gameController.IsOkTrigger())
+            if (OkPressed())
             {
                 MatchAction drop = MatchAction.Drop(selectedHandType, new Vector2Int(gameCursor.X, gameCursor.Y));
                 if (!Dispatch(drop))
@@ -611,7 +639,7 @@ public partial class GameSystem : MonoBehaviour
                     Debug.Log("そこには配置できません（将棋ルール違反、またはすでに駒があります）");
                 }
             }
-            else if (gameController.IsCancelTrigger())
+            else if (CancelPressed())
             {
                 isDroppingHand = false;
                 isSelectingHand = true;
@@ -628,12 +656,19 @@ public partial class GameSystem : MonoBehaviour
         else
         {
             // 通常モード
-            if (keyboard.qKey.wasPressedThisFrame && CanReleaseTimeStop)
+            int skillKey = PressedIndex(keys.Skills);
+            if (SeatKeys.Pressed(keys.Release) && CanReleaseTimeStop)
             {
                 // 時間停止の「解除」（Q キー・「解除」ボタン）
                 ReleaseTimeStop();
             }
-            else if (keyboard.hKey.wasPressedThisFrame)
+            else if (skillKey >= 0)
+            {
+                // 魔法のキー（合戦将棋型：先手 1〜5・後手 6〜0。本将棋型はスキルボタンをクリック）
+                UseSkill(CurrentSide, skillKey);
+                UpdateActivePlayerSkillUI();
+            }
+            else if (SeatKeys.Pressed(keys.Hand))
             {
                 UpdateHandList();
                 isSelectingHand = true;
@@ -647,19 +682,19 @@ public partial class GameSystem : MonoBehaviour
                 }
                 SetDarkOverlayActive(true);
             }
-            else if (keyboard.gKey.wasPressedThisFrame && selectedPiece != null && PieceRules.IsSniper(selectedPiece.type))
+            else if (SeatKeys.Pressed(keys.Snipe) && selectedPiece != null && PieceRules.IsSniper(selectedPiece.type))
             {
                 BeginSnipe();
             }
-            else if (keyboard.eKey.wasPressedThisFrame && selectedPiece != null)
+            else if (SeatKeys.Pressed(keys.Special) && selectedPiece != null)
             {
                 BeginSpecial();
             }
-            else if (gameController.IsOkTrigger())
+            else if (OkPressed())
             {
                 HandlePieceSelection();
             }
-            else if (gameController.IsCancelTrigger())
+            else if (CancelPressed())
             {
                 selectedPiece = null;
                 if (HandUIManager.Instance != null) HandUIManager.Instance.SetStatusText(IdleStatusText);
@@ -669,6 +704,21 @@ public partial class GameSystem : MonoBehaviour
                 currentMovablePositions.Clear();
             }
         }
+    }
+
+    // 今の席の決定・取消（本将棋型は今までどおり GameController の F・Space。合戦将棋型は席のキー）
+    bool OkPressed() => Seat.Keys.UsesGameController && gameController != null ? gameController.IsOkTrigger() : SeatKeys.Pressed(Seat.Keys.Ok);
+    bool CancelPressed() => Seat.Keys.UsesGameController && gameController != null ? gameController.IsCancelTrigger() : SeatKeys.Pressed(Seat.Keys.Cancel);
+
+    // keys のうちこのフレームに押されたものの番号（なければ -1）
+    static int PressedIndex(UnityEngine.InputSystem.Key[] keys)
+    {
+        if (keys == null) return -1;
+        for (int i = 0; i < keys.Length; i++)
+        {
+            if (SeatKeys.Pressed(new[] { keys[i] })) return i;
+        }
+        return -1;
     }
 
     void HandlePieceSelection()
@@ -698,6 +748,16 @@ public partial class GameSystem : MonoBehaviour
                 if (HandUIManager.Instance != null)
                 {
                     HandUIManager.Instance.SetStatusText($"【{HandUIManager.GetJapaneseName(piece.type)}】 消失・爆発の予定があるので、もう動かせない（時間が動き出すと消える）");
+                }
+                return;
+            }
+
+            // 合戦将棋型：動いたばかりの駒は、連打の間隔（0.3 秒）が過ぎるまで選べない
+            if (piece != null && IsMyPiece(piece) && Policy.IsCoolingDown(piece))
+            {
+                if (HandUIManager.Instance != null)
+                {
+                    HandUIManager.Instance.SetStatusText($"【{HandUIManager.GetJapaneseName(piece.type)}】 動いたばかり（{Policy.Ruleset.PieceCooldownSec:0.0} 秒は次の行動ができない）");
                 }
                 return;
             }
@@ -1136,7 +1196,7 @@ public partial class GameSystem : MonoBehaviour
 
     void HandleSnipeTargetSelection()
     {
-        if (gameController.IsOkTrigger())
+        if (OkPressed())
         {
             Vector2Int cursor = new Vector2Int(gameCursor.X, gameCursor.Y);
             if (!snipeTargets.Contains(cursor))
@@ -1149,7 +1209,7 @@ public partial class GameSystem : MonoBehaviour
             EndSnipeTargetSelection();
             Dispatch(snipe);
         }
-        else if (gameController.IsCancelTrigger())
+        else if (CancelPressed())
         {
             CancelSnipe();
         }
@@ -1319,6 +1379,11 @@ public partial class GameSystem : MonoBehaviour
     void StartSpecial(GamePiece caster, SpecialMove move, Vector2Int? target)
     {
         ResetSelectionState();
+        if (!Policy.AwaitsEffects)
+        {
+            ExecuteSpecialNow(caster, move, target); // 合戦将棋型：カットインなし・その場で効果
+            return;
+        }
         ExecuteSpecial(caster, move, target);
     }
 
@@ -1417,6 +1482,7 @@ public partial class GameSystem : MonoBehaviour
         get
         {
             if (!IsInTurn || IsBusy || isWaitingForPromoteChoice || IsSelectingSkillTarget || IsReplaying) return false;
+            if (IsRealtimePaused) return false; // 合戦将棋型の一時停止中（ルール説明・ウィンドウが非アクティブを含む）
             if (IsOnlineMatch && CurrentPlayer.PlayerType != NetworkManager.Instance.MyPlayerType) return false;
             if (IsCpuTurn) return false; // CPU の手番は人が操作できない（GameSystem.Cpu.cs）
             return true;
@@ -1480,12 +1546,19 @@ public partial class GameSystem : MonoBehaviour
         return index >= 0 && index < ForgeKeys.Length ? ForgeKeys[index].ToString() : "";
     }
 
-    void HandleForgeKeys(Keyboard keyboard)
+    // 今の席（合戦将棋型は操作している席）の錬成のキー（ボタンの表示用）
+    public string FocusForgeKeyLabel(int index)
+    {
+        return SeatKeys.Label(Seat.Keys.Forge ?? ForgeKeys, index);
+    }
+
+    void HandleForgeKeys(SeatKeys keys)
     {
         IReadOnlyList<ForgeRecipe> recipes = ForgeRecipes;
-        for (int i = 0; i < recipes.Count && i < ForgeKeys.Length; i++)
+        Key[] forgeKeys = keys.Forge ?? ForgeKeys;
+        for (int i = 0; i < recipes.Count && i < forgeKeys.Length; i++)
         {
-            if (keyboard[ForgeKeys[i]].wasPressedThisFrame)
+            if (SeatKeys.Pressed(new[] { forgeKeys[i] }))
             {
                 if (!Forge(recipes[i]) && recipes[i] != null && CurrentPlayer != null && !CurrentPlayer.HasEnoughPoint(recipes[i].cost))
                 {
@@ -1517,6 +1590,12 @@ public partial class GameSystem : MonoBehaviour
     // ------------------------------------------------------------
     void EndActionTurn()
     {
+        if (IsRealtime)
+        {
+            // 合戦将棋型：手番はない。行動のあとの処理は AfterRealtimeAction（演出は待たない）
+            pendingActionFxTime = 0f;
+            return;
+        }
         float wait = pendingActionFxTime;
         pendingActionFxTime = 0f;
         if (wait <= 0f)
@@ -1581,7 +1660,10 @@ public partial class GameSystem : MonoBehaviour
     }
 
     // エナジー（旧ポイント）の加算。手番の始まり・駒が取られたとき・スキル（GainCostEffect）から呼ばれる
-    public void AddPoint(PlayerType player, int amount)
+    public void AddPoint(PlayerType player, int amount) => AddPoint(player, amount, false);
+
+    // quiet なら「+N エナジー」のポップアップを出さない（合戦将棋型の毎秒のエナジー）
+    public void AddPoint(PlayerType player, int amount, bool quiet)
     {
         if (match == null || amount <= 0) return;
         if (timeStop != null)
@@ -1590,7 +1672,7 @@ public partial class GameSystem : MonoBehaviour
             Debug.Log($"（時間停止中）{player} のエナジー +{amount} は入らない");
             return;
         }
-        match.Energy.Gain(player, amount); // 表示は Player.BindEnergy で PointManager に反映される
+        match.Energy.Gain(player, amount, quiet); // 表示は Player.BindEnergy で PointManager に反映される
         UpdateActivePlayerSkillUI();
     }
 
@@ -1778,6 +1860,7 @@ public partial class GameSystem : MonoBehaviour
     }
 
     // マスを turns ターンのあいだ炎上させる（今のターンを 1 ターン目として数え、最後のターンの終わりに鎮火）。
+    // 合戦将棋型は 1 ターン = 2 秒（MatchPolicy.BurnUntilFor）。
     // すでにいる駒には影響せず、あとから入った駒が消失する。破壊マス・壁のマスは炎上しない。炎上させたら true
     public bool SetBurning(int x, int y, int turns)
     {
@@ -1791,7 +1874,8 @@ public partial class GameSystem : MonoBehaviour
             DeferCell(TimeStopCellEffect.Burn, x, y, timeStop.Owner, turns);
             return true;
         }
-        return cells.SetBurning(x, y, turns, match.Turn.TurnNumber);
+        if (turns <= 0) return false;
+        return cells.SetBurningUntil(x, y, match.Policy.BurnUntilFor(turns)); // 期限の単位は戦闘型で違う（ターン数／対局の時間）
     }
 
     // 落とし穴を仕掛ける（owner は仕掛けたプレイヤー。穴は両プレイヤーに見える）。
@@ -1880,7 +1964,7 @@ public partial class GameSystem : MonoBehaviour
         if (!IsInTurn) return;
         if (ResolveKingLoss()) return;
         PlayerType side = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
-        isActivePlayerInCheck = CheckRules.IsInCheck(gameBoard, side);
+        isActivePlayerInCheck = Policy.AnnouncesCheck && CheckRules.IsInCheck(gameBoard, side);
     }
 
     // 操作中でないときのステータス表示に、一時的なお知らせを添えて出す（デバッグ表示など）
@@ -2205,6 +2289,14 @@ public partial class GameSystem : MonoBehaviour
 
     void DecideTurn()
     {
+        if (IsRealtime)
+        {
+            // 合戦将棋型：手番はない。盤は先手の側から見たまま回さない
+            currentState = GameState.Player1Turn;
+            gameCamera.RotateToPlayer(PlayerType.Player1);
+            StartRealtime();
+            return;
+        }
         // 先手は MatchConfig.FirstPlayer（Player1）で固定（Prototype と同じく、盤の手前側が先手）
         if (match.Turn.FirstPlayer == PlayerType.Player1)
         {
@@ -2247,18 +2339,18 @@ public partial class GameSystem : MonoBehaviour
             HandUIManager.Instance.SetTurnInfo(match.Turn.Label);
         }
 
-        isActivePlayerInCheck = CheckRules.IsInCheck(gameBoard, side);
+        isActivePlayerInCheck = Policy.AnnouncesCheck && CheckRules.IsInCheck(gameBoard, side);
         if (isActivePlayerInCheck && basicMoveFx != null) basicMoveFx.Check();
 
         // 詰み（王将が1枚のときのみ。スキルは回避手に含めない）
-        if (isActivePlayerInCheck && IsCheckmated(side))
+        if (Policy.JudgesCheckmate && isActivePlayerInCheck && IsCheckmated(side))
         {
             Debug.Log($"詰み！ {side} の負け");
             EndGame(CheckRules.Opponent(side));
             return;
         }
 
-        if (RecordPositionAndCheckRepetition(side, isActivePlayerInCheck))
+        if (Policy.JudgesRepetition && RecordPositionAndCheckRepetition(side, isActivePlayerInCheck))
         {
             return;
         }
@@ -2496,7 +2588,17 @@ public partial class GameSystem : MonoBehaviour
             match.UnlockTranscendent(owner);
             SkillDefinition skill = GetTranscendentSkill(owner);
             Debug.Log($"{TurnEndAction.SideName(owner)}：超常魔法の解放条件を満たした" + (skill != null ? $"（「{skill.skillName}」が使える。1対局に1回だけ）" : ""));
-            if (skill != null) unlockQueue.Enqueue(owner);
+            if (skill == null) continue;
+            if (Policy.ShowsCutIns)
+            {
+                unlockQueue.Enqueue(owner);
+            }
+            else
+            {
+                // 合戦将棋型：カットインは出さず、スキルボタンの「解放！」だけ（演出で進行を止めない）
+                TranscendentUnlocked?.Invoke(owner);
+                ShowSeatNotice(owner, $"【超常魔法 解放！】 「{skill.skillName}」が使えるようになった（1対局に1回だけ）");
+            }
         }
         UpdateActivePlayerSkillUI();
         if (unlockQueue.Count > 0 && !isShowingUnlock) ShowTranscendentUnlocks();
@@ -2656,6 +2758,7 @@ public partial class GameSystem : MonoBehaviour
         // 手番を使う魔法・剣などの演出は、まだオンライン対戦の通信に乗せていない
         if (skill.EndsTurn && IsOnlineMatch) return "オンライン対戦ではまだ使えません";
         if (timeStop != null && skill.effect is DoubleTurnEffect) return "時間停止中は使えません";
+        if (!Policy.HasTurns && skill.effect is DoubleTurnEffect) return $"{Policy.Ruleset.Name}では使えません（手番がない）";
         if (!skill.effect.CanUse(new SkillContext(this, gameBoard, player))) return "今は効果の対象がありません";
         return null;
     }
@@ -2664,7 +2767,7 @@ public partial class GameSystem : MonoBehaviour
     {
         // 成りの選択中・スキルや狙撃の対象選択中・演出中は使えない
         if (isWaitingForPromoteChoice || IsSelectingSkillTarget || isSelectingSnipeTarget || IsBusy) return;
-        if (!IsInTurn || IsCpuTurn || IsReplaying) return;
+        if (!IsInTurn || IsCpuTurn || IsReplaying || IsRealtimePaused) return;
 
         // 自分のターンであるかチェック
         PlayerType activePlayer = IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
@@ -2711,6 +2814,11 @@ public partial class GameSystem : MonoBehaviour
     // 発動（Dispatch の ExecutePlan から）：エナジー消費 → 魔法陣 → カットイン → 効果 →（手番を使うスキルは）演出を待って手番交代
     async void ExecuteSkill(SkillDefinition skill, SkillContext context)
     {
+        if (!Policy.AwaitsEffects)
+        {
+            ExecuteSkillNow(skill, context); // 合戦将棋型：カットインなし・その場で効果
+            return;
+        }
         PlayerType player = context.Player;
         Player targetPlayer = PlayerOf(player);
         bool endsTurn = skill.EndsTurn;
@@ -2912,8 +3020,7 @@ public partial class GameSystem : MonoBehaviour
         TargetSelection selection = targetSelection;
         Vector2Int cursor = new Vector2Int(gameCursor.X, gameCursor.Y);
 
-        Keyboard keyboard = Keyboard.current;
-        if (keyboard != null && keyboard.rKey.wasPressedThisFrame)
+        if (SeatKeys.Pressed(Seat.Keys.Orient))
         {
             RotateTargetOrient();
         }
@@ -2924,15 +3031,18 @@ public partial class GameSystem : MonoBehaviour
             lastPreviewCursor = cursor;
             SkillPreview preview = selection.Preview(cursor);
             gameBoard.AllDeactivePanel();
+            Seat.PreviewPanels.Clear();
             foreach (Vector2Int pos in preview.Panels)
             {
                 gameBoard.ActivePanel(GameHelper.CalcPanelNum(pos.x, pos.y));
+                Seat.PreviewPanels.Add(pos);
             }
+            MarkSelectionsDirty();
             if (skillAreaView != null) skillAreaView.Show(preview.Area, preview.Blockers, selection.AreaColor);
             UpdateTargetPrompt(preview);
         }
 
-        if (gameController.IsOkTrigger())
+        if (OkPressed())
         {
             if (selection.IsChoosingDestination)
             {
@@ -2969,7 +3079,7 @@ public partial class GameSystem : MonoBehaviour
             EndTargetSelection();
             selection.OnComplete();
         }
-        else if (gameController.IsCancelTrigger())
+        else if (CancelPressed())
         {
             CancelTargetSelection();
         }
@@ -3038,6 +3148,7 @@ public partial class GameSystem : MonoBehaviour
     void EndTargetSelection()
     {
         targetSelection = null;
+        Seat.PreviewPanels.Clear();
         selectedPiece = null;
         gameBoard.AllDeactivePanel();
         if (skillAreaView != null) skillAreaView.Hide();
@@ -3059,10 +3170,12 @@ public partial class GameSystem : MonoBehaviour
 
     private Color originalAmbientColor;
     private bool isAmbientSaved = false;
-    private List<GamePiece> highlightedPieces = new List<GamePiece>();
+    private List<GamePiece> highlightedPieces => Seat.HighlightedPieces;
 
     void SetDarkOverlayActive(bool active)
     {
+        // 合戦将棋型：両者が同時に操作するので、片方の選択で画面を暗くしない
+        if (IsRealtime) active = false;
         if (darkOverlay != null)
         {
             darkOverlay.SetActive(active);
@@ -3177,7 +3290,8 @@ public partial class GameSystem : MonoBehaviour
                 if (skill != null)
                 {
                     skillSlotUIs[i].button.gameObject.SetActive(true);
-                    skillSlotUIs[i].nameText.text = skill.skillName;
+                    string key = SeatKeys.Label(Seat.Keys.Skills, i);
+                    skillSlotUIs[i].nameText.text = string.IsNullOrEmpty(key) ? skill.skillName : $"{skill.skillName} [{key}]";
                     skillSlotUIs[i].costText.text = $"{skill.cost} Pt";
                     // エナジーが足りていて、今の盤面で効果の対象がある（盾をかけられる駒がある など）ときだけ押せる
                     // CPU の手番は、CPU の魔法を見せるだけで押せない

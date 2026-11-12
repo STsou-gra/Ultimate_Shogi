@@ -192,7 +192,7 @@ public class BoardCellView : MonoBehaviour
         Vector2 up = ScreenUp;
         Vector2 right = new Vector2(up.y, -up.x);
         float fireAlpha = 0.75f + 0.15f * Mathf.Sin(t * 11f) + 0.1f * Mathf.Sin(t * 17f);
-        int turnNumber = gameSystem != null && gameSystem.Match != null ? gameSystem.Match.Turn.TurnNumber : 0;
+        MatchPolicy policy = gameSystem != null && gameSystem.Match != null ? gameSystem.Match.Policy : null;
 
         foreach (CellVisual v in visuals)
         {
@@ -213,7 +213,8 @@ public class BoardCellView : MonoBehaviour
                     v.flames[i].localScale = s;
                 }
 
-                int remaining = cells.BurnRemaining(v.x, v.y, turnNumber);
+                // 残り（本将棋型：残りターン ／ 合戦将棋型：残り秒。MatchPolicy.BurnRemaining）
+                int remaining = policy != null ? policy.BurnRemaining(cells.At(v.x, v.y)) : cells.BurnRemaining(v.x, v.y, 0);
                 if (remaining != v.shownRemaining && v.label != null)
                 {
                     v.shownRemaining = remaining;

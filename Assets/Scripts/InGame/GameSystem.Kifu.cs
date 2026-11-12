@@ -77,7 +77,7 @@ public partial class GameSystem
     uint BeginKifuMatch()
     {
         KifuSession.MatchRequest request = KifuSession.TakeRequest();
-        uint seed = GameRng.NewSeed();
+        uint seed = MatchSetup.Seed ?? GameRng.NewSeed();
         if (request != null)
         {
             seed = request.Seed;
@@ -118,10 +118,17 @@ public partial class GameSystem
             KifuSession.SetCurrent(null, "オンライン対戦は、棋譜を記録しません");
             return;
         }
+        if (IsRealtime)
+        {
+            // 合戦将棋型の行動は時刻（MatchAction.t）で決まるが、再生（StepReplay）は手番ごとに出すので、まだ記録しない
+            KifuSession.SetCurrent(null, "合戦将棋型は、棋譜をまだ記録しません");
+            return;
+        }
         KifuSession.SetCurrent(KifuFile.Create(seed, GetSkillDeck(PlayerType.Player1), GetSkillDeck(PlayerType.Player2)), null);
     }
 
-    void OnDestroy()
+    // シーンを離れる（GameSystem.OnDestroy から）
+    void OnDestroyKifu()
     {
         // 再生中にシーンを離れた（タイトルへ・結果画面へ）：速さを元に戻す
         if (replay != null) Time.timeScale = 1f;
@@ -338,6 +345,7 @@ public partial class GameSystem
         else if (IsBusy || isRunningTurnEnd) reason = "演出が終わってから書き出してください";
         else if (IsReplaying) reason = "再生中は書き出せません";
         else if (IsOnlineMatch) reason = "オンライン対戦では使えません";
+        else if (IsRealtime) reason = "合戦将棋型ではまだ使えません（対局の時間・連打の間隔を局面に入れていないため）";
         return reason == null;
     }
 

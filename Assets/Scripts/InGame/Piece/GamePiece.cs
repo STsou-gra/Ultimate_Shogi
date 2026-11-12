@@ -26,6 +26,10 @@ public abstract class GamePiece : MonoBehaviour
     // 打った駒は 0 から。成っても数え直さない（成った駒も同じ必殺技を使える）
     public int moveCount = 0;
 
+    // 合戦将棋型：この tick（MatchState.Clock.Tick）になるまで次の行動ができない（動いた駒の連打の間隔。Prototype の p.cd）。
+    // 判定は MatchPolicy.IsCoolingDown。本将棋型では使わない
+    [System.NonSerialized] public int cooldownUntilTick = 0;
+
     [Header("Tick Effects")]
     public bool isSpecialReady = false; // 必殺技を発動できる（オーラが光り、光の粒が立ち上る）。moveCount から GameSystem が設定する
     public bool hasFuse = false;        // 火薬の導火線（先端で火花が散る）

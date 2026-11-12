@@ -75,6 +75,7 @@ public partial class GameSystem
             if (!IsInTurn) return "対局中の手番ではありません";
             if (IsBusy || isRunningTurnEnd) return "演出中です";
             if (IsOnlineMatch) return "オンライン対戦中は読み込めません";
+            if (IsRealtime) return "合戦将棋型ではまだ読み込めません（対局の時間・連打の間隔を局面に入れていないため）";
             return null;
         }
     }

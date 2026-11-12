@@ -92,7 +92,7 @@ public class CannonEffect : SkillEffect
       int step = c.x * f;
       if (prev != int.MinValue && step != prev) tl.Wait(0.035f);
       prev = step;
-      tl.Schedule(() => system.BreakCell(c.x, c.y));
+      tl.ScheduleState(() => system.BreakCell(c.x, c.y));
     }
     if (context.Fx != null) context.Fx.CannonDone(cells, owner, tl.Time);
     Debug.Log($"破壊砲が筋 {cells[0].y}〜{cells[cells.Count - 1].y} を撃ち抜いた！ 駒 {lost[0] + lost[1]} 枚が消失（先手 {lost[0]}・後手 {lost[1]}）");

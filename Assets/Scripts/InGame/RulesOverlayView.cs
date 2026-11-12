@@ -202,6 +202,7 @@ public class RulesOverlayView : MonoBehaviour
                 src.CpuSide = gameSystem.Cpu.Side;
                 src.CpuLevel = gameSystem.Cpu.Level;
             }
+            src.Ruleset = gameSystem.Match != null ? gameSystem.Match.Ruleset : null;
         }
         else
         {

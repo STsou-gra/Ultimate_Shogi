@@ -133,11 +133,17 @@ static partial class Program
         return pos;
     }
 
-    static List<IGameRule> Rules(TurnState turn) => new List<IGameRule>
+    // 本将棋型の対局（ターン数は turn に合わせる）のルール（GameSystem.Start と同じ並び）
+    static List<IGameRule> Rules(TurnState turn)
     {
-        new BaseMoveRule(), new EmptyCellDropRule(), new CellStateDropRule(), new NoLegalMoveDropRule(),
-        new NifuDropRule(), new EnemyZoneDropLockRule(turn), new UchifuzumeRule(),
-    };
+        MatchState match = new MatchState(P1, 1);
+        while (match.Turn.TurnNumber < turn.TurnNumber) match.Turn.BeginTurn();
+        return new List<IGameRule>
+        {
+            new BaseMoveRule(), new EmptyCellDropRule(), new CellStateDropRule(), new NoLegalMoveDropRule(),
+            new NifuDropRule(), new EnemyZoneDropLockRule(match.Policy), new UchifuzumeRule(match.Policy),
+        };
+    }
 
     static int uchifuzumeHits, checkHits;
 

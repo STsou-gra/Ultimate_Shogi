@@ -151,9 +151,17 @@ public class BoardCells
     // すでに炎上中なら、終わるターンの遅い方を残す。破壊マス・壁のマスは炎上しない。炎上させたら true
     public bool SetBurning(int x, int y, int turns, int turnNumber)
     {
+        if (turns <= 0) return false;
+        return SetBurningUntil(x, y, turnNumber + turns - 1);
+    }
+
+    // マスを炎上させる（BurnUntil = until。期限が ExtinguishExpired の now 以下になったら鎮火する）。
+    // 期限は戦闘型で単位が違う（本将棋型：ターン数 ／ 合戦将棋型：対局の時間の tick。MatchPolicy.BurnUntilFor が計算する）。
+    // すでに炎上中なら、終わるのが遅い方を残す。破壊マス・壁のマスは炎上しない。炎上させたら true
+    public bool SetBurningUntil(int x, int y, int until)
+    {
         BoardCell cell = At(x, y);
-        if (cell == null || cell.IsBlocked || turns <= 0) return false;
-        int until = turnNumber + turns - 1;
+        if (cell == null || cell.IsBlocked) return false; // 破壊マス・壁は炎上しない
         cell.BurnUntil = cell.IsBurning && cell.BurnUntil.HasValue ? Mathf.Max(cell.BurnUntil.Value, until) : until;
         cell.State = CellState.Burning;
         Changed?.Invoke(x, y, CellChange.Burning);
@@ -194,7 +202,8 @@ public class BoardCells
         return true;
     }
 
-    // 1ターンの終わり：BurnUntil が turnNumber 以下の炎上を鎮火する。鎮火したマスを返す
+    // 期限切れの炎上を鎮火する：BurnUntil が turnNumber（MatchPolicy.Now）以下の炎上。鎮火したマスを返す。
+    // 本将棋型は 1 ターンの終わり、合戦将棋型は毎 tick に呼ぶ
     public List<Vector2Int> ExtinguishExpired(int turnNumber)
     {
         List<Vector2Int> ended = new List<Vector2Int>();

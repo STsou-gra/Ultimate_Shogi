@@ -34,7 +34,7 @@ public class PitfallEffect : SkillEffect
     }
     tl.Wait(0.4f);
     if (context.Fx != null) context.Fx.PitfallSet(at, owner, tl.Time);
-    tl.Schedule(() =>
+    tl.ScheduleState(() =>
     {
       if (system.SetTrap(at.x, at.y, owner)) Debug.Log($"({at.x}, {at.y}) に落とし穴を仕掛けた");
     });

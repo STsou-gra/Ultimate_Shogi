@@ -85,6 +85,8 @@ public class RulesSources
     public System.Func<int, string> ForgeKeyLabel;          // 錬成のキー（GameSystem.ForgeKeyLabel。なければ null）
     public PlayerType? CpuSide;                             // この対局で CPU が指す側（2人で対戦なら null）
     public int CpuLevel;                                    // その CPU の強さ
+    public BattleRuleset Ruleset;                           // この対局の戦闘型（なければ null。「戦闘型」ページの印に使う）
+    public IReadOnlyList<BattleRuleset> Rulesets;           // 戦闘型の一覧（なければ BattleRulesets.All）
 }
 
 public static class RulesBook
@@ -95,6 +97,7 @@ public static class RulesBook
         List<RulesPage> pages = new List<RulesPage>
         {
             BasicPage(),
+            RulesetPage(src),
             EnergyPage(src),
             ForgeAndSpecialPage(src),
             MagicPage(src),
@@ -124,7 +127,47 @@ public static class RulesBook
         p.Heading("ターンと陣地")
          .Text("先手・後手が1回ずつ指して1ターン（画面に「第Nターン（第M手）」）。手番が替わるたびに盤が回り、手番の側が手前になる。")
          .Text("盤の手前3段＝自陣 ／ 中央3段＝中立 ／ 奥3段＝敵陣（色分けと境界線で表示）。")
-         .Text($"第 {MatchConfig.EnemyZoneDropLockTurns} ターンまでは、敵陣に持ち駒を打てない。");
+         .Text($"第 {MatchConfig.EnemyZoneDropLockTurns} ターンまでは、敵陣に持ち駒を打てない。")
+         .Text("（手番のない「合戦将棋型」の違いは「戦闘型」のページ）");
+        return p;
+    }
+
+    // ------------------------------------------------------------
+    //  戦闘型（本将棋型・合戦将棋型。BattleRulesets の定義から作る）
+    // ------------------------------------------------------------
+    static RulesPage RulesetPage(RulesSources src)
+    {
+        RulesPage p = new RulesPage("戦闘型");
+        IReadOnlyList<BattleRuleset> all = src.Rulesets ?? BattleRulesets.All;
+        p.Heading("戦闘型")
+         .Text("「時間がどう進むか」の違い。編成画面の右上で選ぶ（オンライン対戦は本将棋型だけ）。");
+        foreach (BattleRuleset r in all)
+        {
+            if (r == null) continue;
+            string badge = src.Ruleset == r ? "この対局" : null;
+            p.Text($"{r.Name}：{Clean(r.Description)}", 1, badge);
+        }
+
+        foreach (BattleRuleset r in all)
+        {
+            if (r == null || !r.Realtime) continue;
+            RulesetDurations d = r.Durations ?? new RulesetDurations();
+            p.Heading(r.Name);
+            p.Text("手番がない。両者ともいつでも何度でも自分の駒を動かせる（移動・打つ・必殺技・狙撃・魔法・錬成）。")
+             .Text("1 台のキーボードを左右に分けて、先手・後手が同時に操作する（キーは「操作」のページ）。自分の駒・持ち駒・魔法のキーを使えば、その人の行動になる。")
+             .Text($"エナジーは 1 秒ごとに +{r.EnergyPerSec}（取り・取られのエナジーは本将棋型と同じ）。動いた駒は {r.PieceCooldownSec:0.0} 秒だけ次の行動ができない。")
+             .Text("必殺技・魔法の全画面のカットインは出ない（スキルごとの演出は出る）。演出の再生で対局の進行は止まらない。")
+             .Text("勝ち負け：相手の王将をすべて取った（倒した）ら勝ち。詰み・千日手・王手の表示はなく、打ち歩詰めも禁止しない。")
+             .Text("ターン数で決まる規則は秒に読み替える：")
+             .Text($"敵陣への打ち込み禁止 … 開始から {d.DropLockSec:0} 秒", 2)
+             .Text($"炎上 … 1 ターン = {d.BurnSecPerTurn:0} 秒（隕石は {10 * d.BurnSecPerTurn:0} 秒。マスの数字は残り秒）", 2)
+             .Text($"世界の終わり … {d.WorldEndIntervalSec:0} 秒ごとに {MatchConfig.WorldEndCells} マス", 2)
+             .Text($"ファランクス・アンデッドの自動行動 … {d.AutoActSec:0} 秒ごと（先手 → 後手の順）", 2)
+             .Text($"停止世界 … {MatchConfig.TimeStopMoves} 回行動か {d.TimeStopSec:0} 秒の早いほう（その間、相手は操作できず、対局の時間も止まる）", 2)
+             .Text($"超常魔法の解放 … 行動のあとと {d.UnlockCheckSec:0} 秒ごとに判定", 2)
+             .Text("「2回行動」は使えない（手番がない）。")
+             .Text("画面の上に経過時間。「一時停止」（Esc）で止められる。ルール説明を開いている間・ウィンドウが非アクティブの間も止まる。");
+        }
         return p;
     }
 
@@ -437,6 +480,16 @@ public static class RulesBook
          .Text("棋譜メニュー：K（左下の「棋譜」ボタン）。この対局の棋譜の保存（.json）・棋譜を読み込んで再生（等速・4倍速）・今の局面の書き出しと読み込み")
          .Text("棋譜の再生中は操作できない（画面の上に進み具合。「再生を止める」でその局面から続けて指せる）。最後まで再生しても、その局面から続けて指せる")
          .Text("結果画面の「棋譜を保存」でも保存できる");
+        p.Heading("合戦将棋型の操作（先手・後手が同時に操作する）");
+        foreach (SeatKeys k in new[] { SeatKeys.KassenSente, SeatKeys.KassenGote })
+        {
+            p.Sub(k.Name)
+             .Text($"カーソル {SeatKeys.Labels(k.Up, k.Left, k.Down, k.Right)}　決定 {SeatKeys.Label(k.Ok)}　取消 {SeatKeys.Label(k.Cancel)}　持ち駒 {SeatKeys.Label(k.Hand)}", 2)
+             .Text($"必殺技 {SeatKeys.Label(k.Special)}　狙撃 {SeatKeys.Label(k.Snipe)}　範囲の向き {SeatKeys.Label(k.Orient)}　時間停止の解除 {SeatKeys.Label(k.Release)}", 2)
+             .Text($"魔法 {SeatKeys.Label(k.Skills, 0)}〜{SeatKeys.Label(k.Skills, k.Skills.Length - 1)}（編成の枠の順）　錬成 {SeatKeys.Labels(new[] { k.Forge[0] })}・{SeatKeys.Label(k.Forge, 1)}", 2);
+        }
+        p.Text("成る・成らない：カーソルのキーで選んで決定。画面のボタン（魔法・錬成・必殺技・狙撃）は、最後にキーを押した側（「操作中」）の分。")
+         .Text("一時停止：Esc（画面の上の「一時停止」ボタン）。");
 
         p.Heading("この画面")
          .Text("開く・閉じる：Tab（「ルール」ボタン）。閉じる：Esc・Space・枠の外をクリックでも閉じる")

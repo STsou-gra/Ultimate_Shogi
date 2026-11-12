@@ -215,7 +215,8 @@ public partial class GameSystem
         try
         {
             if (simulationPrediction != null) CompleteSimulationCheck(); // 前の行動の照合がまだなら先に済ませる（錬成を続けたときなど）
-            if (IsOnlineMatch || timeStop != null || a.type == MatchActionType.ReleaseTimeStop) return;
+            // 合戦将棋型は照合しない（シミュレーションは手番のある本将棋型だけ。毎秒のエナジー・時刻の炎上などは入れていない）
+            if (IsOnlineMatch || IsRealtime || timeStop != null || a.type == MatchActionType.ReleaseTimeStop) return;
 
             BoardSnapshot before = CaptureSnapshot(false);
             if (!BoardSimulator.CanSimulate(before, a.type) || BoardSimulator.HasUnsimulatedTurnEnd(before, CurrentSide)) return;

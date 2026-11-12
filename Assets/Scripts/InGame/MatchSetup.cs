@@ -11,6 +11,14 @@ public static class MatchSetup
 {
     public static MatchMode Mode = MatchMode.TwoPlayers;
 
+    // 戦闘型（編成画面で選ぶ。BattleRulesetPicker）：選んだ戦闘型の Id（未設定なら本将棋型）
+    public static string RulesetId { get; set; } = BattleRulesets.Honshogi.Id;
+
+    public static BattleRuleset Ruleset => BattleRulesets.ById(RulesetId) ?? BattleRulesets.Honshogi;
+
+    // 対局の乱数のシード（null なら対局ごとに決める。棋譜の再生では記録したシードを入れて、同じ対局にする）
+    public static uint? Seed { get; set; }
+
     // CPU と対戦：人が指す側（先手 = Player1・盤の手前）と CPU の強さ（CpuLevels）
     public static PlayerType HumanSide = PlayerType.Player1;
     public static int CpuLevel = 1;

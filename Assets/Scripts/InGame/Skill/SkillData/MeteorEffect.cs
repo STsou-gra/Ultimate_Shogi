@@ -77,7 +77,7 @@ public class MeteorEffect : SkillEffect
     tl.Wait(0.5f);
 
     // 範囲のマスを炎上させる（破壊マスは SetBurning 側で除外される）
-    tl.Schedule(() =>
+    tl.ScheduleState(() =>
     {
       foreach (Vector2Int s in area) system.SetBurning(s.x, s.y, BurnTurns);
     });

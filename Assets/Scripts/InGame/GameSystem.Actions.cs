@@ -52,7 +52,8 @@ public partial class GameSystem
         return PlanAction(action, out reason) != null;
     }
 
-    // 行動を実行する（オンライン対戦の移動・打つはサーバーへ送る）。実行できない行動なら何もせずに false
+    // 行動を実行する（オンライン対戦の移動・打つはサーバーへ送る）。実行できない行動なら何もせずに false。
+    // 合戦将棋型は、行動したプレイヤーを入れてキューに積み、次の tick の頭で実行する（GameSystem.Realtime.cs。Prototype の RealtimeMatch.submit）
     public bool Dispatch(MatchAction action)
     {
         // CPU の手番には、人の入力（盤のクリック・キー・ボタン）からの行動は実行しない。
@@ -60,6 +61,13 @@ public partial class GameSystem
         if (IsCpuTurn && !dispatchingCpu && !replayDispatching) return false; // 棋譜の再生は CPU の手番の行動も出す
         ActionPlan plan = PlanAction(action, out _);
         if (plan == null) return false;
+
+        if (IsRealtime)
+        {
+            if (IsRealtimePaused) return false; // 止めている間は入れない（Prototype の canSubmit）
+            EnqueueRealtime(plan.Action, plan.Owner);
+            return true;
+        }
 
         if (IsOnlineMatch && SendToServer(plan)) return true;
         ExecutePlan(plan);
@@ -90,10 +98,17 @@ public partial class GameSystem
             reason = "棋譜の再生中は操作できません";
             return null;
         }
-        PlayerType me = CurrentSide;
-        if (a.owner >= 0 && a.owner != (int)me)
+        // 行動するプレイヤー（本将棋型：手番の人 ／ 合戦将棋型：a.owner。省略したら操作している席。MatchPolicy.ActorOf）
+        PlayerType? actor = Policy.ActorOf(a, CurrentSide);
+        if (!actor.HasValue)
         {
             reason = "手番のプレイヤーの行動ではありません";
+            return null;
+        }
+        PlayerType me = actor.Value;
+        if (timeStop != null && timeStop.Owner != me)
+        {
+            reason = "相手の時間停止中は動けません"; // 本将棋型では、時間停止中の手番は必ず発動した人
             return null;
         }
         if (IsOnlineMatch && me != NetworkManager.Instance.MyPlayerType)
@@ -133,6 +148,7 @@ public partial class GameSystem
         if (p == null) return "動かす自分の駒がありません";
         if (p.isUndead) return "アンデッドは操作できません";
         if (IsFrozenInTimeStop(p)) return "消失・爆発の予定がある駒は動かせません";
+        if (Policy.IsCoolingDown(p)) return CooldownReason;
         if (!a.to.IsOnBoard || !CanPieceMoveTo(p, a.to.x, a.to.y)) return "そこには移動できません";
         if (!IsPromoteChoiceAllowed(p, a.to.x, a.to.y, a.promote)) return a.promote ? "成れません" : "成らないと行き所がなくなります";
         plan.Piece = p;
@@ -191,11 +207,15 @@ public partial class GameSystem
         return null;
     }
 
+    // 合戦将棋型：動いたばかりの駒の理由
+    string CooldownReason => $"動いたばかりの駒です（{Policy.Ruleset.PieceCooldownSec:0.0} 秒は次の行動ができない）";
+
     // 駒 p で必殺技を使えない理由（使えるなら null。効果の対象があるかは見ない）
     string SpecialBlockReason(GamePiece p)
     {
         SpecialMove move = GetSpecialMove(p); // アンデッドは null
         if (move == null) return "必殺技がありません";
+        if (Policy.IsCoolingDown(p)) return CooldownReason;
         if (!p.isSpecialReady) return "まだ必殺技を使えません";
         if (IsFrozenInTimeStop(p)) return "消失・爆発の予定がある駒は動かせません";
         if (IsOnlineMatch) return "オンライン対戦ではまだ使えません";
@@ -221,6 +241,7 @@ public partial class GameSystem
     {
         if (p.isUndead) return "アンデッドは操作できません";
         if (IsFrozenInTimeStop(p)) return "消失・爆発の予定がある駒は動かせません";
+        if (Policy.IsCoolingDown(p)) return CooldownReason;
         if (IsOnlineMatch) return "オンライン対戦ではまだ使えません";
         return null;
     }
@@ -568,9 +589,11 @@ public partial class GameSystem
         MatchAction record = a.Clone();
         record.Owner = owner; // 棋譜には行動したプレイヤーも残す
         record.hash = "";     // 処理が終わったら入れる（UpdateActionHash）
+        record.t = match.Clock != null ? match.Clock.Tick : -1; // 合戦将棋型は実行した時刻（tick）も残す
         actionHistory.Add(record);
         RecordKifuAction(record); // 棋譜にも足す（GameSystem.Kifu.cs。前の行動のハッシュもここで確定する）
-        Debug.Log($"[Action] 第{match.Turn.MoveNumber}手 {record}  {record.ToJson()}");
+        string when = match.Clock != null ? $"t={record.t}" : $"第{match.Turn.MoveNumber}手";
+        Debug.Log($"[Action] {when} {record}  {record.ToJson()}");
         hashPendingAction = record;
         ActionExecuting?.Invoke(record);
     }

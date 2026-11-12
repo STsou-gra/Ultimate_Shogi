@@ -32,7 +32,7 @@ public class WorldEndEffect : SkillEffect
       context.Fx.WorldEndDoom(tl.Time);
       tl.Wait(MagicFx.DoomTime);
     }
-    tl.Schedule(() => system.StartWorldEnd(owner));
+    tl.ScheduleState(() => system.StartWorldEnd(owner));
     tl.Wait(0.3f);
     Collapse(system, MatchConfig.WorldEndCells, tl, context.Fx);
   }
@@ -65,7 +65,7 @@ public class WorldEndEffect : SkillEffect
     tl.Wait(MagicFx.CollapseWarningTime);
     foreach (Vector2Int c in picked)
     {
-      tl.Schedule(() => system.BreakCell(c.x, c.y));
+      tl.ScheduleState(() => system.BreakCell(c.x, c.y));
       tl.Wait(BreakInterval);
     }
     if (fx != null) fx.Collapsed(tl.Time);

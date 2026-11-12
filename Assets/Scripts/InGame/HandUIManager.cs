@@ -25,6 +25,21 @@ public class HandUIManager : MonoBehaviour
     private string turnLabel = "";        // 「第Nターン（第M手）」
     private string activePlayerLabel = ""; // 「【先手（プレイヤー1）の手番】」
 
+    // 合戦将棋型（手番がない）：手番の代わりに「操作中の席」と出す
+    public bool SeatMode { get; set; }
+
+    // 案内文を出す前に通す関数（合戦将棋型：キーの名前を席のキーに読み替え、席の印を付ける。null を返したら出さない）。
+    // GameSystem が対局の準備で設定する
+    public static System.Func<string, string> StatusFilter;
+
+    // 出した案内文（フィルターを通した後）。HUD などが読む
+    public string StatusText => statusText != null ? statusText.text : "";
+
+    void OnDestroy()
+    {
+        if (instance == this) StatusFilter = null;
+    }
+
     void Awake()
     {
         if (instance == null)
@@ -70,7 +85,8 @@ public class HandUIManager : MonoBehaviour
     // 現在操作しているプレイヤーの持ち駒情報だけを更新して表示する
     public void UpdateActiveHandDisplay(PlayerType activePlayer, Dictionary<PieceType, int> activeHand)
     {
-        activePlayerLabel = activePlayer == PlayerType.Player1 ? "【先手（プレイヤー1）の手番】" : "【後手（プレイヤー2）の手番】";
+        if (SeatMode) activePlayerLabel = activePlayer == PlayerType.Player1 ? "【操作中：先手（プレイヤー1）】" : "【操作中：後手（プレイヤー2）】";
+        else activePlayerLabel = activePlayer == PlayerType.Player1 ? "【先手（プレイヤー1）の手番】" : "【後手（プレイヤー2）の手番】";
         RefreshTurnTexts();
 
         if (playerHandPieceText != null)
@@ -101,6 +117,11 @@ public class HandUIManager : MonoBehaviour
 
     public void SetStatusText(string text)
     {
+        if (StatusFilter != null)
+        {
+            text = StatusFilter(text);
+            if (text == null) return;
+        }
         if (statusText != null)
         {
             statusText.text = text;
