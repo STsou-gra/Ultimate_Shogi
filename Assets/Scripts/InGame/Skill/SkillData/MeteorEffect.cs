@@ -4,7 +4,7 @@ using UnityEngine;
 // 必殺魔法「隕石」（Prototype の src/defs/magic/meteor.js）。
 // 自陣か中立の、破壊されていないマスを中心に 3×3 へ隕石を落とす（3×3 は盤外にはみ出してもよい。はみ出した分は何も起こらない）。
 // 範囲の駒は敵味方問わずすべて消失する（取りではないので盾では防げない。火薬は誘爆せず、そのまま消える）。
-// その後、範囲の破壊されていないマスが 10 ターン炎上する。どちらかの王将が範囲にいる位置は選べない
+// その後、範囲の破壊されていないマスが 10 ターン炎上する（壁のマスは炎上せず、壁も壊れない。中心に壁のマスを選んでもよい）。どちらかの王将が範囲にいる位置は選べない
 [CreateAssetMenu(menuName = "UltimateShogi/Effects/Meteor")]
 public class MeteorEffect : SkillEffect
 {

@@ -3,7 +3,7 @@ using UnityEngine;
 
 // ファランクス（必殺魔法）の自動行動（Prototype の src/core/turn.js の runPhalanx・phalanxAct・phalanxStrike）。
 // 持ち主の手番の行動のあと・手番交代の前に、ファランクス状態の駒を盤の奥（相手の陣地側）にいる駒から順に動かす。
-//  1. 1 マス前進する。盤外・破壊マス・駒（味方・相手とも）で塞がっていたら前進しない。
+//  1. 1 マス前進する。盤外・破壊マス・壁・駒（味方・相手とも）で塞がっていたら前進しない。
 //     炎上・落とし穴のマスなら入って消失、火薬なら爆発（SpecialContext.Step）。敵陣に入る・出ると成る
 //  2. 生き残っていれば（前進したかどうかに関係なく）前方 1×3 マスの相手の駒を取る（盾は有効。相手の火薬は爆発）
 // 盾が割れてもファランクス状態は続く。取られて持ち駒になると解除される（駒の GameObject ごと消える）
@@ -70,7 +70,7 @@ public class PhalanxAdvance : TurnEndAction
         tl.Wait(StepPause);
 
         GamePiece q = SpecialContext.InBounds(tx, ty) ? tl.PieceAt(tx, ty) : null;
-        if (SpecialContext.InBounds(tx, ty) && !tl.IsBroken(tx, ty) && (q == null || SpecialContext.IsExplosive(q)))
+        if (SpecialContext.InBounds(tx, ty) && !tl.IsBlocked(tx, ty) && (q == null || SpecialContext.IsExplosive(q))) // 破壊マス・壁なら前進しない
         {
             Debug.Log($"{TurnEndAction.SideName(p.player)}：ファランクスの{name}が ({fromX}, {fromY}) → ({tx}, {ty}) へ前進{(q != null ? "（火薬に突入！）" : "")}");
             tl.Afterimage(p, PhalanxColor);

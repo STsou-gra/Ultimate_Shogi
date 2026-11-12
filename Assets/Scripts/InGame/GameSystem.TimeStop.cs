@@ -14,7 +14,7 @@ using UnityEngine;
 //      Explode（爆発）    → DeferExplode   … 火薬を外して残す（灰色にはしない）。火薬に入った駒はもう動かせない
 //      EnterCell（炎上・落とし穴）→ DeferEnterVanish … 駒はそのマスに残るが、もう動かせない
 //      成り（PromotePiece・必殺技の成り）→ DeferPromote … 1 つの駒につき 1 回。時間停止中は成る前の動きのまま
-//      BreakCell / SetBurning / SetTrap → DeferCell … マスの変化（破壊・炎上・落とし穴の設置）
+//      BreakCell / SetBurning / SetTrap / SetWall → DeferCell … マスの変化（破壊・炎上・落とし穴・壁の設置）
 //    そのため移動・打つ・魔法・必殺技・狙撃は、通常と同じ処理のまま時間停止に対応する
 //  ・時間停止中はエナジーが増えない（AddPoint）。手番が終わらないので、ファランクス・アンデッドの自動行動も止まり、
 //    解除したあとの手番の終わりに通常どおり行う
@@ -283,10 +283,12 @@ public partial class GameSystem
         }, $"{HandUIManager.GetJapaneseName(piece.type)}の成り");
     }
 
-    // マスの状態の変化の予定（落とし穴の設置・破壊・炎上）
+    // マスの状態の変化の予定（落とし穴・壁の設置・破壊・炎上）
     void DeferCell(TimeStopCellEffect effect, int x, int y, PlayerType owner, int turns)
     {
-        string label = effect == TimeStopCellEffect.Trap ? "落とし穴の設置" : effect == TimeStopCellEffect.Break ? "マスの破壊" : "炎上";
+        string label = effect == TimeStopCellEffect.Trap ? "落とし穴の設置"
+            : effect == TimeStopCellEffect.Wall ? "壁の設置"
+            : effect == TimeStopCellEffect.Break ? "マスの破壊" : "炎上";
         AddPending(new TimeStopPending
         {
             Kind = TimeStopKind.Cell,
@@ -425,6 +427,11 @@ public partial class GameSystem
                 if (e.CellEffect == TimeStopCellEffect.Trap)
                 {
                     if (SetTrap(e.At.x, e.At.y, e.CellOwner)) Debug.Log($"({e.At.x}, {e.At.y}) に落とし穴が現れた");
+                }
+                else if (e.CellEffect == TimeStopCellEffect.Wall)
+                {
+                    // そのマスに駒がいれば建たない（Prototype と同じ）
+                    if (SetWall(e.At.x, e.At.y, e.CellOwner)) Debug.Log($"({e.At.x}, {e.At.y}) に壁がそびえ立った");
                 }
                 else if (e.CellEffect == TimeStopCellEffect.Burn)
                 {

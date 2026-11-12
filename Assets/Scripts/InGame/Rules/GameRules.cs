@@ -9,7 +9,7 @@ public interface IGameRule
 
 /// <summary>
 /// 駒自体の動き、進路上に障害物がないか、移動先に自分の駒がないかなどの基本移動ルール。
-/// 破壊マスは移動先にも通過にもできない（移動先は各駒の CanMove、通り道は IsPathBlocked で判定）。
+/// 破壊マス・壁のマスは移動先にも通過にもできない（移動先は各駒の CanMove、通り道は IsPathBlocked で判定。桂馬は壁を飛び越せる）。
 /// 炎上・落とし穴のマスは移動先に選べる（入った駒は消失する）が、走り駒はそこで止まる。
 /// 火薬のマスには、敵味方に関係なく入れる（入ると爆発する）
 /// </summary>
@@ -17,10 +17,10 @@ public class BaseMoveRule : IGameRule
 {
     public bool IsLegalMove(GamePiece piece, int toX, int toY, GameBoard board)
     {
-        // 基本の動き（各駒の CanMove。破壊マスには行けない）
+        // 基本の動き（各駒の CanMove。破壊マス・壁には行けない）
         if (!piece.CanMove(toX, toY)) return false;
 
-        // 障害物チェック（桂馬以外）：途中の駒・破壊マス・炎上・落とし穴
+        // 障害物チェック（桂馬以外）：途中の駒・破壊マス・壁・炎上・落とし穴
         if (piece.type != PieceType.Knight)
         {
             if (GameHelper.IsPathBlocked(board.GetBoardData(), board.Cells, piece.X, piece.Y, toX, toY))
@@ -61,7 +61,7 @@ public class EmptyCellDropRule : IGameRule
 }
 
 /// <summary>
-/// 破壊マス・落とし穴のマスには持ち駒を打てないルール（Prototype の moves.js の getDropSquares）。
+/// 破壊マス・落とし穴・壁のマスには持ち駒を打てないルール（Prototype の moves.js の getDropSquares）。
 /// 炎上のマスには打てる（打った駒はすぐ消失する）
 /// </summary>
 public class CellStateDropRule : IGameRule
@@ -74,7 +74,7 @@ public class CellStateDropRule : IGameRule
     public bool IsLegalDrop(PieceType type, PlayerType player, int toX, int toY, GameBoard board)
     {
         BoardCell cell = board.Cells.At(toX, toY);
-        return cell != null && !cell.IsBroken && !cell.HasTrap;
+        return cell != null && !cell.IsBlocked && !cell.HasTrap;
     }
 }
 
@@ -191,7 +191,8 @@ public class UchifuzumeRule : IGameRule
 /// <summary>
 /// 王手・打ち歩詰めの判定。実際の駒は動かさず、盤面の配列をコピーして「動かした後」を調べる。
 /// 王将が2枚以上ある間は、そのプレイヤーに王手・詰みは発生しない（1枚のときのみ適用）。
-/// マスの状態も見る：走り駒の利きは破壊マス・炎上・落とし穴で止まり、炎上・落とし穴に入った駒・打った駒は消失する。
+/// マスの状態も見る：走り駒の利きは破壊マス・壁・炎上・落とし穴で止まり（桂馬の利きは壁を飛び越す）、炎上・落とし穴に入った駒・打った駒は消失する。
+/// 壁・破壊マスへ動く手・打つ手はない（CanMove・CellStateDropRule）。
 /// 火薬のマスに入る手は爆発（3×3 の駒が消える。王将は残る）まで読む。火薬・狙撃手は動けないので利きはない
 /// </summary>
 public static class CheckRules

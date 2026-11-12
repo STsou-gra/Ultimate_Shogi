@@ -68,14 +68,14 @@ public abstract class GamePiece : MonoBehaviour
         }
     }
 
-    // マスの状態（破壊・炎上・落とし穴）。GameBoard が駒を置くときに設定する
+    // マスの状態（破壊・炎上・落とし穴・壁）。GameBoard が駒を置くときに設定する
     public BoardCells Cells { get; set; }
 
-    // 駒の動きで (toX, toY) へ行けるか。破壊マスには行けない（駒の種類に関係なく、ここで判定する）。
-    // 途中のマス（走り駒の通り道）は BaseMoveRule / CheckRules が GameHelper.IsPathBlocked で調べる
+    // 駒の動きで (toX, toY) へ行けるか。破壊マス・壁のマスには行けない（駒の種類に関係なく、ここで判定する）。
+    // 途中のマス（走り駒の通り道）は BaseMoveRule / CheckRules が GameHelper.IsPathBlocked で調べる（桂馬は通り道を見ないので、壁を飛び越せる）
     public bool CanMove(int toX, int toY)
     {
-        if (Cells != null && Cells.IsBroken(toX, toY)) return false;
+        if (Cells != null && Cells.IsBlocked(toX, toY)) return false;
         return CanMoveByPattern(toX, toY);
     }
 
