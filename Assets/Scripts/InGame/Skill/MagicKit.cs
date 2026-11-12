@@ -110,6 +110,54 @@ public static class MagicKit
         return result;
     }
 
+    // 駒 p を段 toX に置くと行き所のない駒になるか（成っていない歩・香の最奥段、桂の奥 2 段。持ち駒を打つときと同じ。
+    // Prototype の warp.js の dropMinDistance。成った駒はどこでも動けるので false）。ワープの行き先の判定用
+    public static bool IsDeadEnd(GamePiece p, int toX)
+    {
+        if (p == null || p.isPromoted) return false;
+        int depth = p.player == PlayerType.Player1 ? toX : BoardCells.Size - 1 - toX; // 自分から見て何段奥か（0 = 自陣の一番手前）
+        int last = BoardCells.Size - 1;
+        switch (p.type)
+        {
+            case PieceType.Pawn:
+            case PieceType.Lance:
+                return depth >= last;
+            case PieceType.Knight:
+                return depth >= last - 1;
+            default:
+                return false;
+        }
+    }
+
+    // 駒 p が爆弾を投げるマス（Prototype の bomb.js の landingSquares）：2 マス先の前方 1×3（左前・前・右前）。
+    // 盤外は除く（破壊マスにも落ちて爆発する）。2 マス先が盤外なら空
+    public static List<Vector2Int> BombLandingSquares(GamePiece p)
+    {
+        List<Vector2Int> result = new List<Vector2Int>();
+        if (p == null) return result;
+        int x = p.X + 2 * SpecialContext.Forward(p.player);
+        for (int y = p.Y - 1; y <= p.Y + 1; y++)
+        {
+            if (BoardCells.InBounds(x, y)) result.Add(new Vector2Int(x, y));
+        }
+        return result;
+    }
+
+    // ボムの爆発の範囲（Prototype の bomb.js の blastSquares）：投げたマスそれぞれを中心とした 3×3 を合わせたもの
+    // （盤内のみ・重複なし。駒の前方 1〜3 マス × 横 5 マス。投げた駒自身は入らない）
+    public static List<Vector2Int> BombBlastSquares(GamePiece p)
+    {
+        List<Vector2Int> result = new List<Vector2Int>();
+        foreach (Vector2Int c in BombLandingSquares(p))
+        {
+            foreach (Vector2Int s in SquareArea(c.x, c.y, 1))
+            {
+                if (!result.Contains(s)) result.Add(s);
+            }
+        }
+        return result;
+    }
+
     // マスの一覧のうち、どちらかの王将がいるマス（Prototype の kingSquares。王将を巻き込めない範囲魔法の blockers 用）
     public static List<Vector2Int> KingSquares(GameBoard board, List<Vector2Int> cells)
     {

@@ -10,7 +10,8 @@ using UnityEngine;
 //  Drop            持ち駒 piece を to に打つ
 //  Special         from の駒の必殺技（対象を選ぶ技だけ targets[0]）
 //  Snipe           from の狙撃手で targets[0] の駒を撃つ
-//  Magic           魔法 skill（SkillDefinition.Id）。対象を選ぶ魔法だけ targets（選んだ順）。範囲を選ぶ魔法は向き orient も
+//  Magic           魔法 skill（SkillDefinition.Id）。対象を選ぶ魔法だけ targets（選んだ順）。範囲を選ぶ魔法は向き orient も。
+//                  2 段階で選ぶ魔法（ワープの「駒 → 行き先」。SkillEffect.UsesDestination）は行き先 to も（Prototype の Action の to）
 //  Forge           駒 piece を錬成する
 //  ReleaseTimeStop 停止世界の「解除」
 //
@@ -71,7 +72,7 @@ public class MatchAction
 
     // Move・Special・Snipe：行動する盤上の駒のマス
     public MatchSquare from = MatchSquare.None;
-    // Move：動かす先／Drop：打つマス
+    // Move：動かす先／Drop：打つマス／Magic：2 段階で選ぶ魔法の行き先（ワープ。ほかの魔法は None のまま）
     public MatchSquare to = MatchSquare.None;
     // Move：成るか（成れないときは false、行き所がなくなるときは true でなければ実行できない）
     public bool promote;
@@ -119,10 +120,11 @@ public class MatchAction
         return a;
     }
 
-    // 対象を選ばない魔法は targets を省く
-    public static MatchAction Magic(string skillId, IEnumerable<Vector2Int> targets = null, int orient = 0)
+    // 対象を選ばない魔法は targets を省く。行き先 to は 2 段階で選ぶ魔法（ワープ）だけ
+    public static MatchAction Magic(string skillId, IEnumerable<Vector2Int> targets = null, int orient = 0, Vector2Int? to = null)
     {
         MatchAction a = new MatchAction { type = MatchActionType.Magic, skill = skillId ?? "", orient = orient };
+        if (to.HasValue) a.to = to.Value;
         if (targets != null)
         {
             foreach (Vector2Int t in targets) a.targets.Add(t);
@@ -185,6 +187,7 @@ public class MatchAction
                     break;
                 case MatchActionType.Magic:
                     sb.Append('|').Append(skill).Append('|').Append(TargetsKey()).Append('|').Append(orient);
+                    if (to.IsOnBoard) sb.Append("|>").Append(Sq(to)); // 行き先（2 段階で選ぶ魔法だけ。ほかの魔法の to は CanDispatch が断る）
                     break;
                 case MatchActionType.Forge:
                     sb.Append('|').Append(piece);
@@ -219,7 +222,7 @@ public class MatchAction
             case MatchActionType.Drop: return $"{who}打つ {PieceNames.Full(piece)} {to}";
             case MatchActionType.Special: return $"{who}必殺技 {from}" + (TargetCount > 0 ? $" → {Target}" : "");
             case MatchActionType.Snipe: return $"{who}狙撃 {from} → {Target}";
-            case MatchActionType.Magic: return $"{who}魔法 {skill}" + (TargetCount > 0 ? $" → {TargetsText()}" : "") + (orient != 0 ? $"（向き {orient}）" : "");
+            case MatchActionType.Magic: return $"{who}魔法 {skill}" + (TargetCount > 0 ? $" → {TargetsText()}" : "") + (to.IsOnBoard ? $" ⇒ {to}" : "") + (orient != 0 ? $"（向き {orient}）" : "");
             case MatchActionType.Forge: return $"{who}錬成 {PieceNames.Full(piece)}";
             case MatchActionType.ReleaseTimeStop: return $"{who}停止世界の解除";
             default: return $"{who}{type}";

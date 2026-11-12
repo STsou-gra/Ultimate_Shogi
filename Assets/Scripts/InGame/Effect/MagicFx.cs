@@ -16,6 +16,7 @@ using DG.Tweening;
 //  天変地異・世界の終わり（超常魔法）… MagicFx.Transcendent.cs
 //  アンデッド・パラダイス（超常魔法）… MagicFx.Undead.cs
 //  消失のポップアップ（「炎上！」「落とし穴！」など。理由ごとの色）… MagicFx.Vanish.cs
+//  魔力の火花・ワープ・ボム … MagicFx.Normal.cs
 //
 // 盤面のデータはすぐ変わるので、見た目は SkillContext.Timeline の時刻（発動からの秒数）に合わせて再生する。
 // シーンに置かなくても GameSystem が自動で追加する
@@ -942,7 +943,7 @@ public partial class MagicFx : MonoBehaviour
 }
 
 // 魔法の演出で使う画像（実行時に作る。プロトタイプの PIXI.Graphics の図形を、同じピクセル値で描いたもの）
-public static class MagicSprites
+public static partial class MagicSprites
 {
     private const float PX = 1f / 66f;
 

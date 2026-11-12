@@ -244,7 +244,14 @@ public partial class GameSystem
                 if (!IsSkillTargetSelectable(effect, context, t)) return effect.UsesArea ? effect.BlockedText : "そのマスは選べません";
                 context.Targets.Add(t);
             }
+            // 2 段階で選ぶ魔法（ワープ）：選んだ対象からの行き先（対象選択の 2 段階目と同じ判定）
+            if (effect.UsesDestination)
+            {
+                if (!a.to.IsOnBoard) return "行き先がありません";
+                if (!effect.IsValidDestination(context, a.to)) return "その行き先は選べません";
+            }
         }
+        if (!effect.UsesDestination && a.to.IsOnBoard) return "行き先を選ばない魔法です";
         plan.Skill = skill;
         return null;
     }
@@ -376,6 +383,7 @@ public partial class GameSystem
             {
                 SkillContext context = new SkillContext(this, gameBoard, plan.Owner) { Orient = a.orient };
                 foreach (MatchSquare t in a.targets) context.Targets.Add(t);
+                if (plan.Skill.effect.UsesDestination) context.Destination = a.to;
                 ExecuteSkill(plan.Skill, context);
                 break;
             }

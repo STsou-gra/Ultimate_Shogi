@@ -100,16 +100,17 @@ public class NewPieceFx : MonoBehaviour
         }, false).SetLink(gameObject);
     }
 
-    // 爆発の見た目だけ（閃光・火球・衝撃波・火の粉・煙・シェイク）。隕石の着弾などから使う。size はピクセル（3マス = 198px）
-    public void Explosion(Vector3 pos, float size)
+    // 爆発の見た目だけ（閃光・火球・衝撃波・火の粉・煙・シェイク）。隕石の着弾などから使う。size はピクセル（3マス = 198px）。
+    // quiet なら閃光・シェイクを出さない（ボムのように爆発をいくつも重ねるとき、呼び出し側で 1 回にまとめる。Prototype の quiet）
+    public void Explosion(Vector3 pos, float size, bool quiet = false)
     {
-        PlayExplosion(pos, size);
+        PlayExplosion(pos, size, quiet);
     }
 
     // Prototype の fx.explosion（size はピクセル。範囲の一辺 = 3マス = 198px）
-    void PlayExplosion(Vector3 pos, float size)
+    void PlayExplosion(Vector3 pos, float size, bool quiet = false)
     {
-        Flash(Hex(0xfff3e0), 0.75f, 0.35f);
+        if (!quiet) Flash(Hex(0xfff3e0), 0.75f, 0.35f);
 
         // 火球と白い芯（光の粒の画像は 64px。Prototype の scale を Unity のスケールに直す）
         GlowBall(pos, Hex(0xff9100), 0.5f, size / 26f, 0.45f, 0.7f, 0.1f);
@@ -134,7 +135,7 @@ public class NewPieceFx : MonoBehaviour
         smoke.gravity = -40f * PX; smoke.grow = 1.5f; smoke.shrink = false; smoke.alpha = 0.6f; smoke.drag = 0.97f;
         fx.Burst(pos, smoke);
 
-        fx.Shake(20f, 0.7f);
+        if (!quiet) fx.Shake(20f, 0.7f);
     }
 
     // ------------------------------------------------------------
