@@ -179,6 +179,8 @@ public partial class GameSystem : MonoBehaviour
     public event System.Action<GamePiece> ShieldGiven;
     public event System.Action<ShieldBreak> ShieldBroken;
     public event System.Action<GamePiece> PhalanxGiven;
+    // 駒が翼状態になった（魔法「翼」。MagicFx が翼が広がる演出を出す）
+    public event System.Action<GamePiece> WingGiven;
 
     // ------------------------------------------------------------
     //  超常魔法（Prototype の turn.js の checkTranscendentUnlock・skills.js の magicStatus）
@@ -865,7 +867,8 @@ public partial class GameSystem : MonoBehaviour
     {
         GamePiece targetPiece = gameBoard.GetPieceAt(targetX, targetY);
         RecordTimeStopMove(piece, targetX, targetY); // 時間停止中は 1 マスごとの移動を記録する（盾で押し戻すときに使う）
-        if (targetPiece != null && targetPiece != piece && PieceRules.IsExplosive(targetPiece.type))
+        // 火薬のマスに入ったら爆発する（鳥は爆発させずに火薬を取る：下の取りの処理へ）
+        if (targetPiece != null && targetPiece != piece && PieceRules.Detonates(piece, targetPiece))
         {
             return EnterGunpowder(piece, targetX, targetY, promote);
         }
@@ -929,7 +932,7 @@ public partial class GameSystem : MonoBehaviour
     bool WillBeDestroyedEntering(GamePiece piece, int x, int y)
     {
         GamePiece target = gameBoard.GetPieceAt(x, y);
-        return target != null && target != piece && PieceRules.IsExplosive(target.type) && PieceRules.IsDestroyedByExplosion(piece.type);
+        return target != null && target != piece && PieceRules.Detonates(piece, target) && PieceRules.IsDestroyedByExplosion(piece.type);
     }
 
     // 駒が移動先に着くまでの秒数（爆発の見た目を合わせる。PieceMoveAnimator の既定の長さ）
@@ -1625,6 +1628,17 @@ public partial class GameSystem : MonoBehaviour
         return true;
     }
 
+    // 駒を翼状態にする（通常魔法「翼」。Prototype の effects.js の giveWing）。マスの効果を受けなくなる（PieceRules.HasWing）。
+    // 翼状態にしたら true（もう翼状態・鳥なら false）
+    public bool GiveWing(GamePiece piece)
+    {
+        if (!IsOnBoard(piece) || PieceRules.HasWing(piece)) return false;
+        piece.hasWing = true;
+        Debug.Log($"({piece.X}, {piece.Y})：{piece.player} の{HandUIManager.GetJapaneseName(piece.type)}が翼状態になった！（マスの効果を受けない）");
+        WingGiven?.Invoke(piece);
+        return true;
+    }
+
     // 盾が取りを防いで割れる（Prototype の effects.js の breakShield）
     void BreakShield(GamePiece piece, GamePiece attacker, PlayerType by)
     {
@@ -1702,7 +1716,7 @@ public partial class GameSystem : MonoBehaviour
     public BoardCells Cells => gameBoard != null ? gameBoard.Cells : null;
     public GameBoard Board => gameBoard;
 
-    // マスを破壊する（対局終了まで戻らない）。そこにいた駒は消失する。破壊したら true。
+    // マスを破壊する（対局終了まで戻らない）。そこにいた駒は消失する（魔法「翼」の駒は残る。鳥は消失する）。破壊したら true。
     // 王将が消えることもあるので、呼び出し側で ResolveKingLoss を呼ぶこと（スキルなら ExecuteSkill が呼ぶ）
     public bool BreakCell(int x, int y)
     {
@@ -1718,7 +1732,7 @@ public partial class GameSystem : MonoBehaviour
         }
         GamePiece piece = gameBoard.GetPieceAt(x, y);
         if (!cells.Break(x, y)) return false;
-        if (piece != null) VanishPiece(piece, BoardCells.ReasonBroken);
+        if (piece != null && !PieceRules.HasMagicWing(piece)) VanishPiece(piece, BoardCells.ReasonBroken);
         return true;
     }
 
@@ -1760,12 +1774,14 @@ public partial class GameSystem : MonoBehaviour
     //  落とし穴：敵味方に関係なく消失し、穴も消える
     //  炎上    ：消失する
     //  破壊    ：消失する（通常は入れない。念のため）
-    // そのマスに残れたら true（false = 消失した）。消失は VanishPiece を通すので、盾などの割り込みで残ることもある
+    // そのマスに残れたら true（false = 消失した）。消失は VanishPiece を通すので、盾などの割り込みで残ることもある。
+    // 翼状態の駒（鳥・魔法「翼」）はマスの効果を受けない（落とし穴も閉じずに残る。時間停止中も消失の予定にならない）
     public bool EnterCell(GamePiece piece, int x, int y)
     {
         BoardCells cells = Cells;
         BoardCell cell = cells != null ? cells.At(x, y) : null;
         if (piece == null || cell == null) return true;
+        if (PieceRules.HasWing(piece)) return true;
 
         // 時間停止中は消失の予定にする（駒はそのマスに残るが、もう動かせない）
         if (timeStop != null && cell.IsHazard)
@@ -2261,7 +2277,7 @@ public partial class GameSystem : MonoBehaviour
                 {
                     for (int y = 0; y < 9; y++)
                     {
-                        if (CanDropPieceTo(side, kvp.Key, x, y) && CheckRules.IsDropSafe(gameBoard, side, x, y)) return false;
+                        if (CanDropPieceTo(side, kvp.Key, x, y) && CheckRules.IsDropSafe(gameBoard, side, kvp.Key, x, y)) return false;
                     }
                 }
             }
@@ -2331,6 +2347,7 @@ public partial class GameSystem : MonoBehaviour
             if (piece.hasShield) sb.Append('s'); // 盾状態（Prototype の hash.js と同じく局面に含める）
             if (piece.hasPhalanx) sb.Append('p'); // ファランクス状態（〃）
             if (piece.isUndead) sb.Append('u');   // アンデッド（〃）
+            if (piece.hasWing) sb.Append('w');    // 翼状態（魔法「翼」。〃。鳥は駒の種類でわかる）
         }
         foreach (Player p in new[] { player1, player2 })
         {
@@ -2950,7 +2967,7 @@ public partial class GameSystem : MonoBehaviour
         foreach (var pos in movablePos)
         {
             GamePiece target = gameBoard.GetPieceAt(pos.x, pos.y);
-            if (target != null && selected != null && target != selected && (target.player != selected.player || PieceRules.IsExplosive(target.type)))
+            if (target != null && selected != null && target != selected && PieceRules.CanLandOn(selected, target))
             {
                 target.SetHighlight(true);
                 highlightedPieces.Add(target);

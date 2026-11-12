@@ -39,6 +39,9 @@ public partial class MagicFx : MonoBehaviour
     public static readonly Color SwordColor = Hex(0x90caf9);
     public static readonly Color PitfallColor = Hex(0x7e57c2);
     public static readonly Color PhalanxColor = Hex(0xffc400);
+    // 翼（Prototype の wing.js の color 0xccff90。翼の光・羽の色）
+    public static readonly Color WingColor = Hex(0xccff90);
+    public static readonly Color WingPaleColor = Hex(0xf1f8e9);
     public static readonly Color MeteorColor = Hex(0xff5722);
     public static readonly Color CannonColor = Hex(0x00e5ff);
 
@@ -64,6 +67,7 @@ public partial class MagicFx : MonoBehaviour
             gameSystem.ShieldGiven += OnShieldGiven;
             gameSystem.ShieldBroken += OnShieldBroken;
             gameSystem.PhalanxGiven += OnPhalanxGiven;
+            gameSystem.WingGiven += OnWingGiven;
             gameSystem.PieceDefeated += OnPieceDefeatedFx;
         }
     }
@@ -75,6 +79,7 @@ public partial class MagicFx : MonoBehaviour
             gameSystem.ShieldGiven -= OnShieldGiven;
             gameSystem.ShieldBroken -= OnShieldBroken;
             gameSystem.PhalanxGiven -= OnPhalanxGiven;
+            gameSystem.WingGiven -= OnWingGiven;
             gameSystem.PieceDefeated -= OnPieceDefeatedFx;
         }
     }
@@ -359,6 +364,34 @@ public partial class MagicFx : MonoBehaviour
         burst.speed = 200f * PX; burst.life = 0.6f; burst.size = 0.2f;
         fx.Burst(pos, burst);
         PopText("ファランクス！", pos + ScreenUp * (40f * PX), 32f, Color.white, PhalanxColor, Hex(0x2a1a00), 40f, 0.9f);
+    }
+
+    // 駒が翼状態になった（Prototype の events.js の wingGiven）：魔法陣・光の粒・羽が舞い上がる・「翼！」。
+    // 翼が小さく出て広がるのは GameTickEffects（翼が現れてからの時間で大きさを変える）
+    void OnWingGiven(GamePiece piece)
+    {
+        if (piece == null) return;
+        Vector3 pos = piece.transform.position;
+        MagicCircle(pos, WingColor, 1.1f);
+        PieceFx.BurstOptions burst = PieceFx.BurstOptions.Default;
+        burst.count = 26; burst.colors = new[] { Color.white, WingColor, WingPaleColor };
+        burst.speed = 190f * PX; burst.life = 0.7f; burst.size = 0.2f;
+        fx.Burst(pos, burst);
+        Vector3 right = cam != null ? cam.transform.right : Vector3.right;
+        Color[] feathers = { Color.white, WingPaleColor, WingColor };
+        for (int i = 0; i < 8; i++)
+        {
+            // 羽が舞い上がる（駒の周りから、画面の上へゆっくり）
+            PieceFx.ParticleOptions o = PieceFx.ParticleOptions.Default;
+            o.color = feathers[Random.Range(0, feathers.Length)];
+            o.velocity = (Vector2)(ScreenUp * Random.Range(50f, 110f) + right * Random.Range(-40f, 40f)) * PX;
+            o.life = Random.Range(0.6f, 1f);
+            o.size = Random.Range(0.12f, 0.2f);
+            o.drag = 0.97f;
+            Vector3 at = pos + right * (Random.Range(-26f, 26f) * PX) - ScreenUp * (Random.Range(-6f, 20f) * PX);
+            fx.Particle(at, o);
+        }
+        PopText("翼！", pos + ScreenUp * (36f * PX), 36f, Color.white, WingColor, Hex(0x33691e), 40f, 0.9f);
     }
 
     // 自動行動の始まり：駒の足元に衝撃波、槍のマーカーが弾む
@@ -915,6 +948,7 @@ public static class MagicSprites
 
     private static Sprite square, shard, circleColored, circleWhite, barrierGlow, barrierFace;
     private static Sprite glow, arrow, tail, rock, spearGlow, spearFace;
+    private static Sprite wingGlow, wingFace, birdWingGlow, birdWingFace;
 
     // 光の粒（中心が白く外側が透明な円。幅 64px。Prototype の TEX.glow）
     public static Sprite Glow => glow != null ? glow : (glow = Make(64, 32f * PX, (x, y) =>
@@ -1055,6 +1089,78 @@ public static class MagicSprites
             c = Over(c, pale, 0.6f * Line(Mathf.Abs(HexagonDistance(p, R * 0.78f)), 0.6f)); // 内側の輪郭
             return c;
         }, FilterMode.Bilinear);
+    }
+
+    // 翼状態の翼（Prototype の pieceView.js の wings の makeWing）：右の翼。根元が基準点で、3 枚の羽が斜め上へ広がる。
+    // 左の翼は localScale.x = -1 で反転して使う。光（白。SpriteRenderer の色で黄緑にする）と、羽の面・縁・筋（色つき）。大きさは 1 マス = 66px の単位
+    public static Sprite WingGlow => wingGlow != null ? wingGlow : (wingGlow = MakeWing(true));
+    public static Sprite WingFace => wingFace != null ? wingFace : (wingFace = MakeWing(false));
+    // 鳥の翼（Prototype の pieceView.js の birdWings・wingPolygon）：右の翼。根元が基準点。光（白。水色にする）と面（色つき）
+    public static Sprite BirdWingGlow => birdWingGlow != null ? birdWingGlow : (birdWingGlow = MakeBirdWing(true));
+    public static Sprite BirdWingFace => birdWingFace != null ? birdWingFace : (birdWingFace = MakeBirdWing(false));
+
+    static Sprite MakeWing(bool glow)
+    {
+        const float size = 66f;   // 駒の大きさ（px）
+        const float box = 56f, left = 10f, bottom = 12f; // 画像の範囲（px）：x は -10〜46、y は -12〜44
+        Color line = Hex(0x689f38), vein = Hex(0xaed581);
+        float[] degs = { 58f, 33f, 8f };          // 上向き（y が上）の角度
+        float[] lens = { 0.56f, 0.48f, 0.38f };
+        float[] wds = { 0.1f, 0.095f, 0.085f };
+        return Make(112, box * 0.5f * PX, (ux, uy) =>
+        {
+            Vector2 p = new Vector2((ux + 1f) * 0.5f * box - left, (uy + 1f) * 0.5f * box - bottom);
+            Color c = new Color(0f, 0f, 0f, 0f);
+            float glowDist = float.MaxValue;
+            for (int i = 0; i < 3; i++)
+            {
+                float a = degs[i] * Mathf.Deg2Rad;
+                Vector2 u = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
+                Vector2 n = new Vector2(-u.y, u.x);
+                float L = size * lens[i], W = size * wds[i];
+                Vector2 mid = u * (L * 0.5f);
+                Vector2[] feather = { Vector2.zero, mid + n * W, u * L, mid - n * W };
+                float d = PolygonDistance(p, feather);
+                if (glow) { glowDist = Mathf.Min(glowDist, d); continue; }
+                c = Over(c, new Color(1f, 1f, 1f, 1f), 0.95f * Mathf.Clamp01(0.5f - d));       // 羽の面
+                c = Over(c, line, 0.9f * Line(Mathf.Abs(d), 0.75f));                          // 縁
+                c = Over(c, vein, 0.9f * Line(SegmentDistance(p, u * (L * 0.12f), u * (L * 0.85f)), 0.5f)); // 羽の筋
+            }
+            if (!glow) return c;
+            float g = glowDist <= 0f ? 1f : Mathf.Exp(-(glowDist * glowDist) / (2f * 3.5f * 3.5f));
+            return new Color(1f, 1f, 1f, 0.8f * g);
+        }, FilterMode.Bilinear, new Vector2(left / box, bottom / box));
+    }
+
+    static Sprite MakeBirdWing(bool glow)
+    {
+        const float w = 66f * 0.8f, h = 66f * 0.9f; // Prototype の駒の幅・高さ（px）
+        const float box = 54f, left = 10f, bottom = 24f; // 画像の範囲（px）：x は -10〜44、y は -24〜30
+        Color line = Hex(0x5d7a8c), quill = Hex(0x90a4ae);
+        // Prototype の wingPolygon（y が下向き）を y が上向きに直した形
+        float[,] pts = { { 0f, 0.12f }, { 0.16f, -0.22f }, { 0.42f, -0.42f }, { 0.62f, -0.4f }, { 0.5f, -0.24f }, { 0.6f, -0.18f },
+                         { 0.46f, -0.04f }, { 0.52f, 0.04f }, { 0.34f, 0.12f }, { 0.36f, 0.22f }, { 0.14f, 0.24f } };
+        float k = glow ? 1.15f : 1f;
+        Vector2[] poly = new Vector2[pts.GetLength(0)];
+        for (int i = 0; i < poly.Length; i++) poly[i] = new Vector2(pts[i, 0] * w * k, -pts[i, 1] * h * k);
+        return Make(108, box * 0.5f * PX, (ux, uy) =>
+        {
+            Vector2 p = new Vector2((ux + 1f) * 0.5f * box - left, (uy + 1f) * 0.5f * box - bottom);
+            float d = PolygonDistance(p, poly);
+            if (glow)
+            {
+                float g = d <= 0f ? 1f : Mathf.Exp(-(d * d) / (2f * 3.5f * 3.5f));
+                return new Color(1f, 1f, 1f, 0.8f * g);
+            }
+            Color c = new Color(1f, 1f, 1f, 0.97f * Mathf.Clamp01(0.5f - d));   // 白い羽
+            foreach (float q in new[] { 0.45f, 0.7f })                           // 羽の筋
+            {
+                Vector2 end = new Vector2(w * 0.5f * q + w * 0.12f, h * 0.28f * q - h * 0.1f);
+                if (d < 0f) c = Over(c, quill, 0.8f * Line(SegmentDistance(p, Vector2.zero, end), 0.5f));
+            }
+            c = Over(c, line, Line(Mathf.Abs(d), 0.75f));                         // 縁
+            return c;
+        }, FilterMode.Bilinear, new Vector2(left / box, bottom / box));
     }
 
     static Sprite MakeSpear(bool glow)

@@ -17,6 +17,7 @@ public static class PieceValues
             case PieceType.King: return 10;
             case PieceType.Gunpowder: return 0; // 取られても誰もエナジーを得ない（爆発するので通常は取られない）
             case PieceType.Sniper: return 3;
+            case PieceType.Bird: return 1;      // Prototype の TORI の value
             default: return 0;
         }
     }

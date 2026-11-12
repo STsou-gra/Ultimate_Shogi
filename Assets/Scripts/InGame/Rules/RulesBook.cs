@@ -159,7 +159,8 @@ public static class RulesBook
          .Text("破壊：穴が開いたマス。移動も通過もできず、持ち駒も打てない。壊れた瞬間にそこにいた駒は消失する。対局終了まで戻らない。")
          .Text("炎上：入った駒は消失する（打った駒も）。すでにいる駒は無事。右上の数字＝残りターン。時間がたつと元に戻る。")
          .Text("落とし穴：暗い渦（縁の色＝仕掛けた側）。敵味方問わず、入った駒は消失し、穴も消える。持ち駒は打てない。")
-         .Text("走り駒（香車・角行・飛車）は炎上・落とし穴のマスで止まり、破壊マスの手前で止まる。");
+         .Text("走り駒（香車・角行・飛車）は炎上・落とし穴のマスで止まり、破壊マスの手前で止まる。")
+         .Text("翼状態の駒（鳥・魔法「翼」）はマスの効果を受けない（「魔法の補足」の「翼状態」を参照）。");
         return p;
     }
 
@@ -285,6 +286,24 @@ public static class RulesBook
              .Text("盾が割れてもファランクス状態は続く。取られて持ち駒になると解除される。");
         }
 
+        // 翼状態（魔法「翼」・錬成駒「鳥」）。どちらかがこの対局で使えるときだけ載せる
+        SkillDefinition wing = FindEffect<WingEffect>(src);
+        bool bird = HasRecipe(src, PieceType.Bird);
+        if (wing != null || bird)
+        {
+            string who = wing != null && bird ? $"{wing.skillName}（通常魔法）・鳥（錬成駒）" : wing != null ? $"{wing.skillName}（通常魔法）" : "鳥（錬成駒）";
+            p.Heading($"翼状態（{who}）");
+            if (wing != null) p.Text($"{wing.skillName}：翼状態ではない自分の駒（火薬・鳥以外。王将も可）を1つ選んで翼状態にする（両脇に白い翼）。");
+            if (bird) p.Text("鳥：常に翼状態（左右に白い翼）。前の1×3マス（左前・前・右前）にしか動けず、成らない。");
+            p.Text("翼状態の駒はマスの効果を受けない：")
+             .Text("破壊マスにも入れる（押し出し・ファランクスの前進も）。炎上・落とし穴のマスに入っても消失しない（落とし穴は閉じずに残る）。", 2)
+             .Text("走り駒・突進（突撃・貫通槍）は、破壊・炎上・落とし穴のマスと火薬の上を通り抜ける。通った火薬は爆発しない（火薬のマスに止まれば爆発）。", 2)
+             .Text("破壊マスの上の翼の駒は、翼のない駒では取れない（狙撃・魔法・光線・槍は届く）。", 2)
+             .Text("爆発・隕石・破壊砲など、駒に直接当たる効果は受ける（消失する）。");
+            if (wing != null) p.Text($"{wing.skillName}の駒は、いるマスが壊れても（世界の終わりなど）消失しない。取られて持ち駒になると翼状態は解除される。");
+            if (bird) p.Text("鳥は火薬のマスに入っても爆発させず、火薬を取る（味方の火薬のマスには入れない）。破壊マス・落とし穴にも打てる。いるマスが壊れると消失する。取られたら相手の持ち駒になる。");
+        }
+
         if (HasRank(src, SkillRank.Transcendent))
         {
             p.Heading("超常魔法の解放条件")
@@ -373,6 +392,16 @@ public static class RulesBook
         foreach (SkillDefinition s in src.Magics)
         {
             if (s != null && s.rank == rank) return true;
+        }
+        return false;
+    }
+
+    static bool HasRecipe(RulesSources src, PieceType type)
+    {
+        if (src.ForgeRecipes == null) return false;
+        foreach (ForgeRecipe r in src.ForgeRecipes)
+        {
+            if (r != null && r.pieceType == type) return true;
         }
         return false;
     }

@@ -40,14 +40,20 @@ public static class GameHelper
 
     public static bool IsPathBlocked(GamePiece[] boardData, int fromX, int fromY, int toX, int toY)
     {
-        return IsPathBlocked(boardData, null, fromX, fromY, toX, toY);
+        return IsPathBlocked(boardData, null, null, fromX, fromY, toX, toY);
+    }
+
+    public static bool IsPathBlocked(GamePiece[] boardData, BoardCells cells, int fromX, int fromY, int toX, int toY)
+    {
+        return IsPathBlocked(boardData, cells, null, fromX, fromY, toX, toY);
     }
 
     // 走り駒（香・角・飛・竜・馬）の通り道の判定（Prototype の moves.js の getMoves の slides）。
     // 移動先の手前までのマスに、駒・破壊マス・炎上・落とし穴があれば通れない
     // （破壊マスの手前で止まる／炎上・落とし穴のマスには入れるが、そこで止まるので先へは行けない）。
-    // cells が null ならマスの状態は見ない
-    public static bool IsPathBlocked(GamePiece[] boardData, BoardCells cells, int fromX, int fromY, int toX, int toY)
+    // mover が翼状態の駒（PieceRules.HasWing）なら、破壊・炎上・落とし穴のマスと火薬の上を通り抜ける（通っただけでは爆発しない。壁は通れない）。
+    // cells が null ならマスの状態は見ない。mover が null なら翼状態ではない駒として扱う
+    public static bool IsPathBlocked(GamePiece[] boardData, BoardCells cells, GamePiece mover, int fromX, int fromY, int toX, int toY)
     {
         int dx = toX - fromX;
         int dy = toY - fromY;
@@ -58,6 +64,7 @@ public static class GameHelper
         // 進む方向を特定（1, 0, -1 のいずれかになる）
         int stepX = System.Math.Sign(dx);
         int stepY = System.Math.Sign(dy);
+        bool wing = PieceRules.HasWing(mover);
 
         int checkX = fromX + stepX;
         int checkY = fromY + stepY;
@@ -68,13 +75,14 @@ public static class GameHelper
             safetyCount++;
             if (checkX < 0 || checkX > 8 || checkY < 0 || checkY > 8) break;
             int index = CalcPanelNum(checkX, checkY);
-            if (index != -1 && boardData[index] != null)
+            GamePiece q = index != -1 ? boardData[index] : null;
+            if (q != null && !(wing && PieceRules.IsExplosive(q.type)))
             {
-                return true; // 途中に駒があった！
+                return true; // 途中に駒があった！（翼の駒は火薬の上を通り抜ける）
             }
-            if (cells != null && (cells.IsBroken(checkX, checkY) || cells.IsHazard(checkX, checkY)))
+            if (cells != null && (PieceRules.IsBlockedFor(cells, mover, checkX, checkY) || PieceRules.IsHazardFor(cells, mover, checkX, checkY)))
             {
-                return true; // 途中に破壊マス・炎上・落とし穴があった
+                return true; // 途中に破壊マス・炎上・落とし穴があった（翼の駒は通り抜ける）
             }
 
             checkX += stepX;

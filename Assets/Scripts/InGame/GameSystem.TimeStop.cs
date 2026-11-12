@@ -164,7 +164,7 @@ public partial class GameSystem
             Piece = piece,
             From = new Vector2Int(piece.X, piece.Y),
             To = new Vector2Int(toX, toY),
-            Captured = target != null && target != piece && target.player != piece.player && !PieceRules.IsExplosive(target.type),
+            Captured = target != null && target != piece && target.player != piece.player && !PieceRules.Detonates(piece, target),
         });
     }
 
@@ -432,10 +432,10 @@ public partial class GameSystem
                 }
                 else if (BreakCell(e.At.x, e.At.y))
                 {
-                    // 予定の駒も穴に落ちる
+                    // 予定の駒も穴に落ちる（魔法「翼」の駒は落ちない）
                     foreach (GamePiece q in HeldPieces(ts, e, null))
                     {
-                        if (IsOnBoard(q) && q.X == e.At.x && q.Y == e.At.y)
+                        if (IsOnBoard(q) && !PieceRules.HasMagicWing(q) && q.X == e.At.x && q.Y == e.At.y)
                         {
                             PieceHeldChanged?.Invoke(q, false, false);
                             VanishPiece(q, BoardCells.ReasonBroken);

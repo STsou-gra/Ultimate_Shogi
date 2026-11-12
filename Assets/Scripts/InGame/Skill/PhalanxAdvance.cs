@@ -70,7 +70,8 @@ public class PhalanxAdvance : TurnEndAction
         tl.Wait(StepPause);
 
         GamePiece q = SpecialContext.InBounds(tx, ty) ? tl.PieceAt(tx, ty) : null;
-        if (SpecialContext.InBounds(tx, ty) && !tl.IsBroken(tx, ty) && (q == null || SpecialContext.IsExplosive(q)))
+        // 盤外・破壊マス（翼の駒は除く）・駒で塞がっていれば前進しない（鳥は火薬のマスでも止まる＝爆発させない）
+        if (SpecialContext.InBounds(tx, ty) && !tl.IsBlockedFor(p, tx, ty) && (q == null || PieceRules.Detonates(p, q)))
         {
             Debug.Log($"{TurnEndAction.SideName(p.player)}：ファランクスの{name}が ({fromX}, {fromY}) → ({tx}, {ty}) へ前進{(q != null ? "（火薬に突入！）" : "")}");
             tl.Afterimage(p, PhalanxColor);

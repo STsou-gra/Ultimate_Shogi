@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 587807e885a34223916094a16ba027e7, type: 3}
+  m_Name: Wing_Definition
+  m_EditorClassIdentifier: Assembly-CSharp::SkillDefinition
+  skillName: "\u7FFC"
+  icon: {fileID: 0}
+  cost: 3
+  description: "\u81EA\u5206\u306E\u99D2\uFF08\u706B\u85AC\u30FB\u9CE5\u4EE5\u5916\u3002\u738B\u5C06\u3082\u53EF\uFF09\u30921\u3064\u7FFC\u72B6\u614B\u306B\u3059\u308B\u3002\u7FFC\u306E\u99D2\u306F\u30DE\u30B9\u306E\u52B9\u679C\u3092\u53D7\u3051\u305A\u3001\u7834\u58CA\u30FB\u708E\u4E0A\u30FB\u843D\u3068\u3057\u7A74\u306E\u30DE\u30B9\u3082\u901A\u308C\u3066\u6D88\u5931\u3057\u306A\u3044\u3002\u901A\u3063\u305F\u706B\u85AC\u306F\u7206\u767A\u3057\u306A\u3044\uFF08\u6B62\u307E\u308B\u3068\u7206\u767A\uFF09\u3002"
+  effect: {fileID: 11400000, guid: 9a2f6c1e4d7b4c8a8e5f3b1d7c9a2e41, type: 2}
+  rank: 0
+  endsTurn: 1
+  color: {r: 0.8, g: 1, b: 0.5647059, a: 1}
