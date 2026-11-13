@@ -14,19 +14,31 @@ using System.Collections.Generic;
 //    成り、移動回数（必殺技のチャージ）、倒された初期配置の駒の記録、王将が全部いなくなったら終局、
 //    手番の交代（2回行動なら続く。後手の手番の終わりに期限の来た炎上を鎮火、手番の始まりにエナジー +1）
 //
-// シミュレーションしないこと：必殺技・魔法・停止世界の解除の効果、時間停止中の行動、手番交代の前の自動行動
-// （ファランクスの前進・アンデッドの進軍・世界の終わりの崩壊。HasUnsimulatedTurnEnd で分かる）、詰み・千日手の判定、超常魔法の解放
-public static class BoardSimulator
+//
+// スナップショットが skillsKnown（GameSystem.CaptureSnapshot が必殺技・魔法の種類を入れたもの）なら、さらに（BoardSimulator.Skills.cs）：
+//    必殺技・魔法の合法手と効果（6 つの必殺技・14 の魔法）、手番交代の前の自動行動（ファランクス・アンデッド・世界の終わり）、
+//    超常魔法の解放、手番の始まりの詰み。乱数（天変地異・世界の終わり・アンデッド）はスナップショットの rngSeed・rngState の GameRng
+//
+// シミュレーションしないこと：千日手（局面の記録がないので）。
+// 時間停止中の行動は、Apply では当てはめない。CPU の先読み（ApplyForSearch）だけ、効果を予定にせずすぐ起こす近似で当てはめる
+public static partial class BoardSimulator
 {
-    // 当てはめられる行動の種類か
+    // 当てはめられる行動の種類か（必殺技・魔法・解除は skillsKnown のスナップショットだけ）
     public static bool CanSimulate(MatchActionType type)
     {
         return type == MatchActionType.Move || type == MatchActionType.Drop || type == MatchActionType.Snipe || type == MatchActionType.Forge;
     }
 
-    // side の手番の終わりに、シミュレーションしない自動行動（ファランクス・アンデッド・世界の終わり）が起きるかもしれないか
+    public static bool CanSimulate(BoardSnapshot s, MatchActionType type)
+    {
+        return CanSimulate(type) || (s.skillsKnown && type != MatchActionType.ReleaseTimeStop);
+    }
+
+    // side の手番の終わりに、シミュレーションしない自動行動が起きるかもしれないか
+    // （skillsKnown のスナップショットはファランクス・アンデッド・世界の終わりもシミュレーションするので false）
     public static bool HasUnsimulatedTurnEnd(BoardSnapshot s, PlayerType side)
     {
+        if (s.skillsKnown) return false;
         foreach (SnapshotPiece p in s.pieces)
         {
             if (p.Owner == side && (p.phalanx || p.undead)) return true;
@@ -72,7 +84,8 @@ public static class BoardSimulator
             {
                 foreach (MatchSquare t in SnipeTargets(s, p)) res.Add(Snipe(from, t));
             }
-            if (s.skillActionsKnown)
+            if (s.skillsKnown) AddSpecialActions(s, res, p);
+            else if (s.skillActionsKnown)
             {
                 foreach (MatchAction a in s.skillActions)
                 {
@@ -95,7 +108,8 @@ public static class BoardSimulator
         }
 
         // 魔法
-        if (s.skillActionsKnown)
+        if (s.skillsKnown) AddMagicActions(s, res, player);
+        else if (s.skillActionsKnown)
         {
             foreach (MatchAction a in s.skillActions)
             {
@@ -167,8 +181,13 @@ public static class BoardSimulator
                 break;
             }
             case MatchActionType.Special:
+                if (s.skillsKnown) reason = SpecialReason(s, a, me);
+                else if (!s.skillActionsKnown) reason = "この局面の必殺技・魔法の合法手は分かりません（スナップショットを作った局面だけ）";
+                else if (!ContainsKey(s.skillActions, a.Key)) reason = "今は使えません";
+                break;
             case MatchActionType.Magic:
-                if (!s.skillActionsKnown) reason = "この局面の必殺技・魔法の合法手は分かりません（スナップショットを作った局面だけ）";
+                if (s.skillsKnown) reason = MagicReason(s, a, me);
+                else if (!s.skillActionsKnown) reason = "この局面の必殺技・魔法の合法手は分かりません（スナップショットを作った局面だけ）";
                 else if (!ContainsKey(s.skillActions, a.Key)) reason = "今は使えません";
                 break;
             case MatchActionType.Forge:
@@ -208,21 +227,28 @@ public static class BoardSimulator
     public static bool CanMoveTo(BoardSnapshot s, SnapshotPiece p, int x, int y)
     {
         if (!BoardCells.InBounds(x, y)) return false;
-        // 駒の動き（GamePiece.CanMove：破壊マスには行けない）
-        if (s.IsBroken(x, y)) return false;
+        // 駒の動き（GamePiece.CanMove：破壊マス・壁には行けない。翼状態の駒は破壊マスには行ける）
+        if (s.IsBlockedFor(p, x, y)) return false;
         if (!PieceMoves.CanMoveByPattern(p.type, p.Owner, p.promoted, x - p.x, y - p.y)) return false;
-        // 通り道（桂馬以外）：途中の駒・破壊マス・炎上・落とし穴
-        if (p.type != PieceType.Knight && IsPathBlocked(s.Grid, s, p.x, p.y, x, y)) return false;
-        // 移動先：空き・相手の駒・火薬（自分の火薬にも入れる）
+        // 通り道（桂馬以外）：途中の駒・破壊マス・壁・炎上・落とし穴（翼の駒は壁以外と火薬を通り抜ける）
+        if (p.type != PieceType.Knight && IsPathBlocked(s.Grid, s, p, p.x, p.y, x, y)) return false;
+        // 移動先：空き・相手の駒・火薬（自分の火薬にも入れる。鳥は味方の火薬には入れない。PieceRules.CanLandOn）
         SnapshotPiece target = s.At(x, y);
         if (target == p) return false;
-        return target == null || target.owner != p.owner || PieceRules.IsExplosive(target.type);
+        return target == null || target.owner != p.owner || BoardSnapshot.Detonates(p, target);
     }
 
     // 走り駒の通り道（GameHelper.IsPathBlocked と同じ）：移動先の手前までに駒・破壊マス・炎上・落とし穴があれば通れない。
     // 駒は grid（SnapshotRules では動かしたあとの配列）、マスの状態は s から見る
     public static bool IsPathBlocked(SnapshotPiece[] grid, BoardSnapshot s, int fromX, int fromY, int toX, int toY)
     {
+        return IsPathBlocked(grid, s, null, fromX, fromY, toX, toY);
+    }
+
+    // mover が翼状態なら、破壊・炎上・落とし穴のマスと火薬の上を通り抜ける（壁は通れない。GameHelper.IsPathBlocked の mover と同じ）
+    public static bool IsPathBlocked(SnapshotPiece[] grid, BoardSnapshot s, SnapshotPiece mover, int fromX, int fromY, int toX, int toY)
+    {
+        bool wing = mover != null && mover.HasWing;
         int dx = toX - fromX;
         int dy = toY - fromY;
         if (System.Math.Abs(dx) <= 1 && System.Math.Abs(dy) <= 1) return false;
@@ -237,8 +263,9 @@ public static class BoardSimulator
             safetyCount++;
             if (checkX < 0 || checkX > 8 || checkY < 0 || checkY > 8) break;
             int index = GameHelper.CalcPanelNum(checkX, checkY);
-            if (index != -1 && grid[index] != null) return true;
-            if (s.IsBroken(checkX, checkY) || s.IsHazard(checkX, checkY)) return true;
+            SnapshotPiece q = index != -1 ? grid[index] : null;
+            if (q != null && !(wing && PieceRules.IsExplosive(q.type))) return true;
+            if (s.IsBlockedFor(mover, checkX, checkY) || s.IsHazardFor(mover, checkX, checkY)) return true;
             checkX += stepX;
             checkY += stepY;
         }
@@ -253,11 +280,12 @@ public static class BoardSimulator
         if (s.heldSquares.Contains(new MatchSquare(x, y))) return false;
         // EmptyCellDropRule
         if (s.At(x, y) != null) return false;
-        // CellStateDropRule：破壊マス・落とし穴には打てない（炎上には打てる）
+        // CellStateDropRule：破壊マス・落とし穴・壁には打てない（炎上には打てる。鳥は破壊マス・落とし穴にも打てる）
         SnapshotCell cell = s.Cell(x, y);
-        if (cell.IsBroken || cell.HasTrap) return false;
-        // NoLegalMoveDropRule：行き所のない駒
-        if (type == PieceType.Pawn || type == PieceType.Lance)
+        if (s.IsBlockedForType(type, x, y)) return false;
+        if (cell.HasTrap && !PieceRules.IsWingType(type)) return false;
+        // NoLegalMoveDropRule：行き所のない駒（鳥は歩と同じ）
+        if (type == PieceType.Pawn || type == PieceType.Lance || type == PieceType.Bird)
         {
             if (owner == PlayerType.Player1 && x == 8) return false;
             if (owner == PlayerType.Player2 && x == 0) return false;
@@ -308,7 +336,7 @@ public static class BoardSimulator
     public static bool WillBeDestroyedEntering(BoardSnapshot s, SnapshotPiece p, int x, int y)
     {
         SnapshotPiece target = s.At(x, y);
-        return target != null && target != p && PieceRules.IsExplosive(target.type) && PieceRules.IsDestroyedByExplosion(p.type);
+        return target != null && target != p && BoardSnapshot.Detonates(p, target) && PieceRules.IsDestroyedByExplosion(p.type);
     }
 
     // 成る（promote）／成らないを選べるか（GameSystem.IsPromoteChoiceAllowed と同じ）
@@ -372,13 +400,25 @@ public static class BoardSimulator
 
     public static bool Apply(BoardSnapshot s, MatchAction a, out string reason)
     {
+        return Apply(s, a, false, out reason);
+    }
+
+    // CPU の先読み用：Apply と同じだが、時間停止中の行動も当てはめる（効果を予定にせず、その場で起こす近似。
+    // 本当の対局では、取り・爆発・成りなどは解除したときにまとめて起こり、盾で押し戻されることもある）
+    public static bool ApplyForSearch(BoardSnapshot s, MatchAction a)
+    {
+        return Apply(s, a, true, out _);
+    }
+
+    static bool Apply(BoardSnapshot s, MatchAction a, bool approximate, out string reason)
+    {
         if (!CanApply(s, a, out reason)) return false;
-        if (!CanSimulate(a.type))
+        if (!CanSimulate(s, a.type) && !(approximate && a.type == MatchActionType.ReleaseTimeStop))
         {
             reason = "必殺技・魔法・停止世界の解除の効果はシミュレーションしません";
             return false;
         }
-        if (s.timeStopped)
+        if (s.timeStopped && !approximate)
         {
             reason = "時間停止中の行動はシミュレーションしません";
             return false;
@@ -389,27 +429,41 @@ public static class BoardSimulator
         {
             case MatchActionType.Move:
                 ApplyMove(s, s.At(a.from.x, a.from.y), a.to.x, a.to.y, a.promote);
-                FinishAction(s);
+                AfterAction(s, true);
                 break;
             case MatchActionType.Drop:
                 ApplyDrop(s, me, a.piece, a.to.x, a.to.y);
-                FinishAction(s);
+                AfterAction(s, true);
                 break;
             case MatchActionType.Snipe:
                 ApplySnipe(s, s.At(a.from.x, a.from.y), a.Target.x, a.Target.y);
-                FinishAction(s);
+                AfterAction(s, true);
                 break;
+            case MatchActionType.Special:
+                ApplySpecial(s, s.At(a.from.x, a.from.y), a.TargetCount > 0 ? a.Target : MatchSquare.None);
+                AfterAction(s, true);
+                break;
+            case MatchActionType.Magic:
+            {
+                SnapshotSkill skill = FindSkill(s, me, a.skill);
+                ApplyMagic(s, me, skill, a);
+                AfterAction(s, skill.endsTurn);
+                break;
+            }
             case MatchActionType.Forge:
             {
                 SnapshotRecipe r = FindRecipe(s, a.piece);
                 s.Player(me).energy -= r.cost;
                 AddToHand(s, me, r.piece, true);
-                if (MatchConfig.ForgeEndsTurn) FinishAction(s);
+                if (MatchConfig.ForgeEndsTurn) AfterAction(s, true);
                 break;
             }
+            case MatchActionType.ReleaseTimeStop:
+                EndTimeStop(s, true);
+                break;
         }
 
-        // 盤面・エナジーが変わったので、必殺技・魔法の合法手はもう分からない
+        // 盤面・エナジーが変わったので、記録していた必殺技・魔法の合法手はもう使えない（skillsKnown なら作り直せる）
         s.skillActionsKnown = false;
         s.skillActions.Clear();
         return true;
@@ -419,7 +473,8 @@ public static class BoardSimulator
     static void ApplyMove(BoardSnapshot s, SnapshotPiece p, int x, int y, bool promote)
     {
         SnapshotPiece target = s.At(x, y);
-        if (target != null && target != p && PieceRules.IsExplosive(target.type))
+        // 火薬のマスに入ったら爆発する（鳥は爆発させずに火薬を取る：下の取りの処理へ）
+        if (target != null && target != p && BoardSnapshot.Detonates(p, target))
         {
             EnterGunpowder(s, p, x, y, promote);
             return;
@@ -528,6 +583,7 @@ public static class BoardSimulator
     {
         SnapshotCell cell = s.Cell(x, y);
         if (cell == null) return true;
+        if (p.HasWing) return true; // 翼状態の駒はマスの効果を受けない（落とし穴も残る）
         if (cell.HasTrap) cell.trap = -1; // 落とし穴：敵味方に関係なく落ちて、穴は消える
         else if (!cell.IsBurning && !cell.IsBroken) return true;
         Vanish(s, p);
@@ -553,16 +609,62 @@ public static class BoardSimulator
         p.energy = after;
     }
 
-    // 手番を使う行動のあと（GameSystem の ResolveKingLoss → EndActionTurn → NextState → PassTurn → OnTurnStarted）
-    static void FinishAction(BoardSnapshot s)
+    // 行動のあと（GameSystem の ResolveKingLoss → EndActionTurn → NextState。手番を使わない魔法は ExecuteSkill の続き）
+    static void AfterAction(BoardSnapshot s, bool endsTurn)
     {
         if (ResolveKingLoss(s)) return;
+        // 時間停止中（TimeStopAfterAction）：発動した行動は数えない。回数を使い切ったら時間を動かす
+        if (s.timeStopped)
+        {
+            if (s.timeStopJustStarted)
+            {
+                s.timeStopJustStarted = false;
+                s.timeStopReleasable = true;
+                return;
+            }
+            s.timeStopRemaining--;
+            if (s.timeStopRemaining <= 0) EndTimeStop(s, endsTurn);
+            return;
+        }
+        if (!endsTurn)
+        {
+            if (s.skillsKnown) CheckTranscendentUnlock(s); // 手番を続ける行動のあとも解放を判定する
+            return;
+        }
+        NextState(s);
+    }
+
+    // 時間停止を終える（GameSystem.ResolveTimeStop。予定はシミュレーションでは近似ですでに起こしてある）
+    static void EndTimeStop(BoardSnapshot s, bool endsTurn)
+    {
+        s.timeStopped = false;
+        s.timeStopOwner = -1;
+        s.timeStopReleasable = false;
+        s.timeStopJustStarted = false;
+        s.timeStopRemaining = 0;
+        s.heldSquares.Clear();
+        foreach (SnapshotPiece p in s.pieces)
+        {
+            p.frozen = false;
+            p.pendingPromote = false;
+        }
+        if (ResolveKingLoss(s)) return;
+        if (endsTurn) NextState(s);
+        else if (s.skillsKnown) CheckTranscendentUnlock(s);
+    }
+
+    // 手番を使う行動のあと（GameSystem.NextState → RunTurnEndActions → PassTurn → OnTurnStarted）
+    static void NextState(BoardSnapshot s)
+    {
         if (s.extraTurn)
         {
             s.extraTurn = false; // 2回行動：同じプレイヤーの手番が続く
+            if (s.skillsKnown) CheckTranscendentUnlock(s);
             return;
         }
-        // 手番交代の前の自動行動（ファランクス・アンデッド・世界の終わり）はシミュレーションしない
+        // 手番交代の前の自動行動（ファランクス → アンデッド → 世界の終わりの崩壊）。skillsKnown のときだけ
+        if (s.skillsKnown && RunTurnEndActions(s)) return;
+
         // 手番の終わり（TurnState.EndTurn）：後手の手番の終わりなら、期限の来た炎上を鎮火する
         if (s.Current == s.SecondPlayer) ExtinguishExpired(s, s.turnNumber);
         s.current = (int)BoardZones.Opponent(s.Current);
@@ -570,7 +672,16 @@ public static class BoardSimulator
         // 手番の始まり（TurnState.BeginTurn・OnTurnStarted）：先手の番ならターン数を進め、エナジー +1
         if (s.Current == s.FirstPlayer) s.turnNumber++;
         AddEnergy(s, s.Current, MatchConfig.PointsPerTurn);
-        // 詰み・千日手の判定はしない
+        if (!s.skillsKnown) return; // 今までのシミュレーション（詰み・解放は見ない）
+
+        // 詰み（王将が 1 枚のときのみ。GameSystem.IsCheckmated）。千日手は局面の記録がないので見ない
+        if (SnapshotRules.IsInCheck(s, s.Current) && IsCheckmated(s, s.Current))
+        {
+            s.gameOver = true;
+            s.winner = (int)BoardZones.Opponent(s.Current);
+            return;
+        }
+        CheckTranscendentUnlock(s);
     }
 
     // 王将が全部いなくなったプレイヤーがいれば終局（両方なら引き分け）。終わったら true

@@ -1,7 +1,7 @@
 using UnityEngine;
 
 // 必殺技：飛「龍王旋風」（Prototype の src/defs/specials/hi.js）
-// 縦横 4 方向に衝撃波を放ち、各方向で最初に当たった相手の駒を取る（火薬なら爆発。味方の駒・破壊マスで止まる）
+// 縦横 4 方向に衝撃波を放ち、各方向で最初に当たった相手の駒を取る（火薬なら爆発。味方の駒・破壊マス・壁で止まる）
 [CreateAssetMenu(menuName = "UltimateShogi/Special Moves/Rook Beam (龍王旋風)")]
 public class RookBeamSpecial : SpecialMove
 {

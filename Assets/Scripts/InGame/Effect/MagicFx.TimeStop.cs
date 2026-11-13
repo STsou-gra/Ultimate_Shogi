@@ -201,7 +201,11 @@ public partial class MagicFx
                 Shards(at, 7, GlassColors, 0f, 170f * PX);
             }
             fx.Shake(16f, 0.5f);
-            PopText("時は動き出す", center + ScreenUp * (90f * PX), 64f, Color.white, TimeStopFxColor, Hex(0x1a1200), 30f, 1.1f);
+            // 合戦将棋型は文字を出さない（カットインと同じ扱い。ガラスが割れる演出だけ。Prototype と同じ）
+            if (gameSystem == null || gameSystem.Policy.ShowsCutIns)
+            {
+                PopText("時は動き出す", center + ScreenUp * (90f * PX), 64f, Color.white, TimeStopFxColor, Hex(0x1a1200), 30f, 1.1f);
+            }
         });
         seq.OnKill(() =>
         {

@@ -39,6 +39,9 @@ public class ForgePanelView : MonoBehaviour
         public ForgeRecipe recipe;
         public Button button;
         public RectTransform rect;
+        public TextMeshProUGUI label;
+        public int index;
+        public string shownKey;
     }
 
     private readonly List<ForgeButton> forgeButtons = new List<ForgeButton>();
@@ -70,9 +73,17 @@ public class ForgePanelView : MonoBehaviour
     {
         if (gameSystem == null || panel == null) return;
 
-        foreach (ForgeButton fb in forgeButtons)
+        for (int i = 0; i < forgeButtons.Count; i++)
         {
+            ForgeButton fb = forgeButtons[i];
             fb.button.interactable = gameSystem.CanForge(fb.recipe);
+            // 錬成のキーの表示（合戦将棋型は操作中の席のキー：先手 Z・X ／ 後手 N・M）
+            string key = gameSystem.FocusForgeKeyLabel(fb.index);
+            if (fb.label != null && key != fb.shownKey)
+            {
+                fb.shownKey = key;
+                fb.label.text = $"{fb.recipe.label}を錬成" + (string.IsNullOrEmpty(key) ? "" : $"  [{key}]");
+            }
         }
 
         bool aiming = gameSystem.IsSelectingSnipeTarget;
@@ -80,7 +91,8 @@ public class ForgePanelView : MonoBehaviour
         if (snipeButton.gameObject.activeSelf != show) snipeButton.gameObject.SetActive(show);
         if (show)
         {
-            snipeLabel.text = aiming ? "狙撃をやめる  [Space]" : "狙撃  [G]";
+            SeatKeys keys = gameSystem.KeysOf(gameSystem.FocusSide); // 合戦将棋型は操作中の席のキー
+            snipeLabel.text = aiming ? $"狙撃をやめる  [{SeatKeys.Label(keys.Cancel)}]" : $"狙撃  [{SeatKeys.Label(keys.Snipe)}]";
             snipeImage.color = aiming ? CancelButtonColor : SnipeButtonColor;
         }
 
@@ -93,8 +105,9 @@ public class ForgePanelView : MonoBehaviour
             string moveName = move != null ? move.moveName : "";
             bool usable = choosing || gameSystem.CanUseSelectedSpecial;
             specialButton.interactable = usable;
-            specialLabel.text = choosing ? "必殺技をやめる  [Space]"
-                : usable ? $"必殺技「{moveName}」  [E]" : $"「{moveName}」 対象なし";
+            SeatKeys keys = gameSystem.KeysOf(gameSystem.FocusSide);
+            specialLabel.text = choosing ? $"必殺技をやめる  [{SeatKeys.Label(keys.Cancel)}]"
+                : usable ? $"必殺技「{moveName}」  [{SeatKeys.Label(keys.Special)}]" : $"「{moveName}」 対象なし";
             specialImage.color = choosing ? CancelButtonColor : SpecialButtonColor(move);
         }
     }
@@ -206,7 +219,10 @@ public class ForgePanelView : MonoBehaviour
         {
             ForgeRecipe recipe = recipes[i];
             if (recipe == null) continue;
-            forgeButtons.Add(CreateForgeButton(recipe, GameSystem.ForgeKeyLabel(i)));
+            ForgeButton fb = CreateForgeButton(recipe, GameSystem.ForgeKeyLabel(i));
+            fb.index = i;
+            fb.shownKey = GameSystem.ForgeKeyLabel(i);
+            forgeButtons.Add(fb);
         }
         if (forgeButtons.Count == 0)
         {
@@ -272,7 +288,7 @@ public class ForgePanelView : MonoBehaviour
         cost.rectTransform.anchoredPosition = new Vector2(-12f, 0f);
 
         button.onClick.AddListener(() => gameSystem.Forge(recipe));
-        return new ForgeButton { recipe = recipe, button = button, rect = rt };
+        return new ForgeButton { recipe = recipe, button = button, rect = rt, label = label };
     }
 
     Button CreateButton(string name, Transform parent, Color color, out Image image)

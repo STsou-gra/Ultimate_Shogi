@@ -12,6 +12,8 @@ using TMPro;
 // ・ファランクス状態の駒に金色の槍（前方 1×3 へ構えた穂先。現れるときは小さく出て広がり、sin(t*4) で光りながら前へ小さく突き出す）
 // ・アンデッドの駒に紫の瘴気（後ろでゆらめく。sin(t*2.2)）と緑の鬼火（2 つが周りを回り、明滅しながら漂う）、立ち上る緑の火の粉
 //   （駒の本体を紫がかった半透明にするのは GamePiece.MakeUndead）
+// ・翼状態（魔法「翼」）の駒に、両脇から斜め上へ広がる白い羽 3 枚ずつ（小さく出て広がり、sin(t*3.2) でゆっくり羽ばたきながら黄緑の光がゆらめく）
+// ・鳥の駒に、左右の白い翼（水色の光。sin(t*5) で羽ばたく）。どちらも駒の後ろに出す（Prototype の pieceView.js の wings・birdWings と Game.tick）
 // ・盤の外周の発光 sin(t*1.5)、移動先ハイライトの明滅 sin(t*6)
 // ・世界の終わり（超常魔法）の進行中は、盤の外周の発光が赤く速く sin(t*4) 脈打ち、背景の火の粉が赤くなる
 // 粒の発生は Random.value < dt * N の確率方式（フレームレートに依存しない）
@@ -50,6 +52,8 @@ public class GameTickEffects : MonoBehaviour
     private static readonly Color[] DoomEmberColors = { Hex(0xff1744), Hex(0xd50000), Hex(0xff6d00), Hex(0x8d6e63) };
     private static readonly Color BarrierColor = Hex(0x4fc3f7);
     private static readonly Color SpearColor = Hex(0xffc400);
+    private static readonly Color WingGlowColor = Hex(0xccff90);     // 翼状態の羽の光（Prototype の wing.js の色）
+    private static readonly Color BirdWingGlowColor = Hex(0xb3e5fc); // 鳥の翼の光
     // 陣営オーラ（Prototype の config.js の SIDE_GLOW_COLORS）。盾のバリア（水色）と紛れないよう、パネルの色より濃い青にしている
     public static readonly Color[] SideGlowColors = { Hex(0x2f7bff), Hex(0xff2a4a) };
     // アンデッド（Prototype の config.js の UNDEAD_COLORS）
@@ -79,6 +83,12 @@ public class GameTickEffects : MonoBehaviour
         public SpriteRenderer veil;        // 〃 足元の暗い紫のもや
         public Transform wisps;            // 〃 鬼火（2 つ）
         public SpriteRenderer[] wispSprites;
+        public Transform wings;            // 翼状態の翼（魔法「翼」。駒の後ろ）
+        public Transform[] wingSides;      // 〃 右・左
+        public SpriteRenderer[] wingGlows;
+        public float wingAge;              // 翼が現れてからの秒数（現れる演出用）
+        public Transform birdWings;        // 鳥の翼（駒の後ろ）
+        public Transform[] birdWingSides;  // 〃 右・左
     }
 
     private GameSystem gameSystem;
@@ -192,7 +202,8 @@ public class GameTickEffects : MonoBehaviour
         {
             if (piece == null) continue;
             bool shielded = piece.hasShield || Time.time < piece.barrierHoldUntil;
-            bool needsFx = piece.isSpecialReady || piece.hasFuse || piece.hasScope || shielded || piece.hasPhalanx || piece.isUndead;
+            bool bird = PieceRules.IsWingType(piece.type);
+            bool needsFx = piece.isSpecialReady || piece.hasFuse || piece.hasScope || shielded || piece.hasPhalanx || piece.isUndead || piece.hasWing || bird;
             PieceFx fx;
             if (!pieceFx.TryGetValue(piece, out fx))
             {
@@ -324,6 +335,60 @@ public class GameTickEffects : MonoBehaviour
             // アンデッド（Prototype の pieceView.js の miasma・veil・wisps と Game.tick）：
             // 紫の瘴気がゆらめき、緑の鬼火が周りを漂いながら立ち上る
             if (piece.isUndead) UpdateUndead(piece, fx, dt);
+
+            // 翼状態（魔法「翼」。Prototype の Game.tick：ゆっくり羽ばたきながら、羽の光がゆらめく）
+            if (piece.hasWing)
+            {
+                if (fx.wings == null) CreateWings(piece, fx);
+                if (fx.wings != null)
+                {
+                    if (!fx.wings.gameObject.activeSelf)
+                    {
+                        fx.wings.gameObject.SetActive(true);
+                        fx.wingAge = 0f;
+                    }
+                    fx.wingAge += dt;
+                    // 小さく出て広がる（0.5 秒・back.out(2.5)）、0.3 秒でフェードイン
+                    float k = Mathf.Clamp01(fx.wingAge / 0.5f);
+                    float back = 1f + 3.5f * Mathf.Pow(k - 1f, 3f) + 2.5f * Mathf.Pow(k - 1f, 2f);
+                    float grow = Mathf.LerpUnclamped(0.2f, 1f, back);
+                    float appear = Mathf.Clamp01(fx.wingAge / 0.3f);
+                    float s = Mathf.Sin(time * 3.2f + piece.GetInstanceID() * 0.37f);
+                    for (int i = 0; i < 2; i++)
+                    {
+                        float side = i == 0 ? 1f : -1f; // 右・左
+                        Transform w = fx.wingSides[i];
+                        w.localScale = new Vector3(side * grow, grow, 1f);
+                        w.localRotation = Quaternion.Euler(0f, 0f, side * 0.14f * s * Mathf.Rad2Deg); // 羽の先が上下する
+                        fx.wingGlows[i].color = WithAlpha(WingGlowColor, appear * (0.45f + 0.35f * s));
+                        foreach (SpriteRenderer sr in w.GetComponentsInChildren<SpriteRenderer>())
+                        {
+                            if (sr != fx.wingGlows[i]) sr.color = WithAlpha(Color.white, appear);
+                        }
+                    }
+                }
+            }
+            else if (fx.wings != null && fx.wings.gameObject.activeSelf)
+            {
+                fx.wings.gameObject.SetActive(false);
+            }
+
+            // 鳥の翼（Prototype の Game.tick の birdWings：根元を支点に羽ばたく）
+            if (bird)
+            {
+                if (fx.birdWings == null) CreateBirdWings(piece, fx);
+                if (fx.birdWings != null)
+                {
+                    float f = Mathf.Sin(time * 5f + piece.GetInstanceID() * 0.37f);
+                    for (int i = 0; i < 2; i++)
+                    {
+                        float side = i == 0 ? 1f : -1f;
+                        Transform w = fx.birdWingSides[i];
+                        w.localRotation = Quaternion.Euler(0f, 0f, side * 0.12f * f * Mathf.Rad2Deg);
+                        w.localScale = new Vector3(side * BirdWingBase, BirdWingBase * (1f - 0.08f * f), 1f);
+                    }
+                }
+            }
         }
 
         // 盤から消えた駒の記録を捨てる
@@ -359,7 +424,11 @@ public class GameTickEffects : MonoBehaviour
                 fx.sideAge = frozen ? 1f : 0f;
                 if (frozen) fx.side.color = WithAlpha(SideGlowColors[piece.player == PlayerType.Player1 ? 0 : 1], 0.85f);
             }
-            if (frozen) continue;
+            if (frozen)
+            {
+                ShowFrozenWings(piece, fx);
+                continue;
+            }
             // ゆっくり息づく（0.85 + 0.15 * sin(t*2 + id)）。付いた直後は 0.3 秒でふわっと現れる
             fx.sideAge += dt;
             float phase = (piece.GetInstanceID() % 1000) * 0.37f;
@@ -582,8 +651,8 @@ public class GameTickEffects : MonoBehaviour
             }
         }
 
-        GameCursor cursor = FindAnyObjectByType<GameCursor>();
-        if (cursor != null)
+        // カーソル（合戦将棋型は先手・後手の 2 つ）
+        foreach (GameCursor cursor in FindObjectsByType<GameCursor>(FindObjectsSortMode.None))
         {
             foreach (SpriteRenderer sr in cursor.GetComponentsInChildren<SpriteRenderer>(true)) AddHighlight(sr);
         }
@@ -641,6 +710,93 @@ public class GameTickEffects : MonoBehaviour
         fx.auraRing = CreateChildSprite(fx.aura, "Ring", ringSprite, order, new Vector2(0.95f, 1.03f));
     }
 
+    // 時間停止中に置かれた鳥・翼状態になった駒にも、止まったままの翼を出す（羽ばたきは時間が動き出してから）
+    void ShowFrozenWings(GamePiece piece, PieceFx fx)
+    {
+        if (DG.Tweening.DOTween.IsTweening(piece.transform)) return;
+        if (PieceRules.IsWingType(piece.type) && fx.birdWings == null) CreateBirdWings(piece, fx);
+        if (piece.hasWing && (fx.wings == null || !fx.wings.gameObject.activeSelf))
+        {
+            if (fx.wings == null) CreateWings(piece, fx);
+            if (fx.wings == null) return;
+            fx.wings.gameObject.SetActive(true);
+            fx.wingAge = 1f;
+            for (int i = 0; i < 2; i++)
+            {
+                float side = i == 0 ? 1f : -1f;
+                fx.wingSides[i].localScale = new Vector3(side, 1f, 1f);
+                fx.wingGlows[i].color = WithAlpha(WingGlowColor, 0.6f);
+            }
+        }
+    }
+
+    // 鳥の翼の大きさ（Prototype の birdWings の base。持ち駒の枠・隣のマスにはみ出しすぎない）
+    private const float BirdWingBase = 0.62f;
+
+    // 翼（翼状態・鳥）を置く入れ物：駒の本体の中心に置き、Prototype の駒の幅（1 マスの 0.8 倍）が本体の幅に合うように大きさを合わせる
+    // （翼の画像は 1 マス = 66px の単位で描いてあるので、駒の本体に対する大きさが Prototype と同じになる）
+    Transform CreateWingRoot(GamePiece piece, string name)
+    {
+        SpriteRenderer body = null;
+        foreach (SpriteRenderer sr in piece.GetComponentsInChildren<SpriteRenderer>(true))
+        {
+            if (sr.sprite == null || IsPieceOverlay(sr.transform) || sr.transform == piece.transform) continue;
+            body = sr;
+            break;
+        }
+        Transform root = new GameObject(name).transform;
+        root.SetParent(piece.transform, false);
+        if (body != null)
+        {
+            Vector3 ls = body.transform.localScale;
+            float width = body.sprite.bounds.size.x * Mathf.Abs(ls.x);
+            Vector2 center = (Vector2)body.transform.localPosition + Vector2.Scale(body.sprite.bounds.center, new Vector2(ls.x, ls.y));
+            root.localPosition = new Vector3(center.x, center.y, 0f);
+            root.localScale = Vector3.one * (width / 0.8f);
+        }
+        return root;
+    }
+
+    // 翼状態の翼：駒の後ろ（陣営オーラより手前）。根元は駒の両脇（Prototype の w × 0.28・h × 0.06 上）
+    void CreateWings(GamePiece piece, PieceFx fx)
+    {
+        int order = MinSortingOrder(piece) - 1;
+        fx.wings = CreateWingRoot(piece, WingsName);
+        fx.wingSides = new Transform[2];
+        fx.wingGlows = new SpriteRenderer[2];
+        for (int i = 0; i < 2; i++)
+        {
+            float side = i == 0 ? 1f : -1f;
+            Transform w = new GameObject(i == 0 ? "Right" : "Left").transform;
+            w.SetParent(fx.wings, false);
+            w.localPosition = new Vector3(side * 0.8f * 0.28f, 0.9f * 0.06f, 0f);
+            fx.wingGlows[i] = CreateChildSprite(w, "Glow", MagicSprites.WingGlow, order, Vector2.one);
+            CreateChildSprite(w, "Face", MagicSprites.WingFace, order, Vector2.one);
+            fx.wingSides[i] = w;
+        }
+        fx.wings.gameObject.SetActive(false);
+    }
+
+    // 鳥の翼：駒の後ろ。根元は駒の両脇（Prototype の w × 0.3・h × 0.05 上）
+    void CreateBirdWings(GamePiece piece, PieceFx fx)
+    {
+        int order = MinSortingOrder(piece) - 1;
+        fx.birdWings = CreateWingRoot(piece, BirdWingsName);
+        fx.birdWingSides = new Transform[2];
+        for (int i = 0; i < 2; i++)
+        {
+            float side = i == 0 ? 1f : -1f;
+            Transform w = new GameObject(i == 0 ? "Right" : "Left").transform;
+            w.SetParent(fx.birdWings, false);
+            w.localPosition = new Vector3(side * 0.8f * 0.3f, 0.9f * 0.05f, 0f);
+            w.localScale = new Vector3(side * BirdWingBase, BirdWingBase, 1f);
+            SpriteRenderer glow = CreateChildSprite(w, "Glow", MagicSprites.BirdWingGlow, order, Vector2.one);
+            glow.color = WithAlpha(BirdWingGlowColor, 0.8f);
+            CreateChildSprite(w, "Face", MagicSprites.BirdWingFace, order, Vector2.one);
+            fx.birdWingSides[i] = w;
+        }
+    }
+
     // 盾のバリア：駒の上に重ねる（面はうっすらしているので駒は透けて見える）
     void CreateBarrier(GamePiece piece, PieceFx fx)
     {
@@ -691,11 +847,14 @@ public class GameTickEffects : MonoBehaviour
     private const string BarrierName = "ShieldBarrier";
     private const string SpearName = "PhalanxSpear";
     private const string UndeadName = "UndeadAura";
+    private const string WingsName = "PieceWings";
+    private const string BirdWingsName = "BirdWings";
 
-    // 駒に重ねる表示（陣営オーラ・必殺技オーラ・バリア・槍・アンデッドの瘴気と鬼火）。駒の描画順を調べるときは数えない
+    // 駒に重ねる表示（陣営オーラ・必殺技オーラ・バリア・槍・アンデッドの瘴気と鬼火・翼）。駒の描画順を調べるときは数えない
     static bool IsOverlay(Transform t)
     {
-        return t.name == SideName || t.name == AuraName || t.name == BarrierName || t.name == SpearName || t.name == UndeadName;
+        return t.name == SideName || t.name == AuraName || t.name == BarrierName || t.name == SpearName || t.name == UndeadName
+            || t.name == WingsName || t.name == BirdWingsName;
     }
 
     // t が駒に重ねた表示（またはその中）か。駒の本体のスプライトだけを触りたいとき（MagicFx の這い上がる演出など）に使う

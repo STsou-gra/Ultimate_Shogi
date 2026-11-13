@@ -100,7 +100,9 @@ public static class MatchHash
                     continue;
                 }
                 sb.Append("[\"").Append(p.type).Append("\",").Append(p.owner).Append(',').Append(Flag(p.promoted)).Append(',')
-                  .Append(p.moveCount).Append(',').Append(Flag(p.shield)).Append(',').Append(Flag(p.phalanx)).Append(',').Append(Flag(p.undead)).Append(']');
+                  .Append(p.moveCount).Append(',').Append(Flag(p.shield)).Append(',').Append(Flag(p.phalanx)).Append(',').Append(Flag(p.undead));
+                if (p.wing) sb.Append(',').Append(Flag(true)); // 翼は その状態のときだけ足す（Prototype と同じ。今までのハッシュを変えない）
+                sb.Append(']');
             }
             sb.Append(']');
         }
@@ -118,6 +120,12 @@ public static class MatchHash
                 CellSnapshot? c = cells[GameHelper.CalcPanelNum(x, y)];
                 CellState state = c.HasValue ? c.Value.state : CellState.Normal;
                 int burnUntil = c.HasValue && state == CellState.Burning ? c.Value.burnUntil : -1;
+                if (state == CellState.Wall)
+                {
+                    // 壁は [状態, 建てた側]（Prototype の hash.js と同じ）
+                    sb.Append("[\"").Append(state).Append("\",").Append(Player(c.Value.wall)).Append(']');
+                    continue;
+                }
                 int trap = c.HasValue && state != CellState.Broken ? c.Value.trap : -1;
                 sb.Append("[\"").Append(state).Append("\",").Append(Int(burnUntil)).Append(',').Append(Player(trap)).Append(']');
             }

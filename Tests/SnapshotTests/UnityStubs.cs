@@ -53,12 +53,9 @@ namespace UnityEngine
     }
 }
 
-public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn, Gunpowder, Sniper }
+public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn, Gunpowder, Sniper, Bird }
 public enum PlayerType { Player1, Player2 }
-// MatchSnapshot.cs が使う列挙（本体は Match/MatchState.cs・Match/TimeStopState.cs。Unity の型に依存するので複製している。値を変えたらこちらも合わせる）
-public enum DefeatKind { Capture, Vanish }
-public enum TimeStopKind { Capture, Explode, Vanish, Promote, Cell }
-public enum TimeStopCellEffect { Trap, Break, Burn }
+// MatchSnapshot.cs が使う列挙（本体は Match/TimeStopState.cs。Unity の型に依存するので複製している。値を変えたらこちらも合わせる。DefeatKind は MatchState.cs をそのまま使う）
 
 // GameObject の駒の代わり：動きの形は main の各駒のクラス（oracle）で判定する
 public class GamePiece
@@ -67,12 +64,13 @@ public class GamePiece
     public PlayerType player;
     public int X { get; set; }
     public int Y { get; set; }
-    public bool isPromoted, isUndead, hasShield, hasPhalanx, IsInitial;
+    public bool isPromoted, isUndead, hasShield, hasPhalanx, hasWing, IsInitial;
+    public int cooldownUntilTick; // 合戦将棋型の連打の間隔（MatchPolicy が読む）
     public int moveCount;
     public BoardCells Cells { get; set; }
     public bool CanMove(int toX, int toY)
     {
-        if (Cells != null && Cells.IsBroken(toX, toY)) return false;
+        if (PieceRules.IsBlockedFor(Cells, this, toX, toY)) return false; // 本体の GamePiece.CanMove と同じ（破壊マス・壁。翼の駒は破壊マスに入れる）
         OracleBase o = Oracles.Make(type);
         o.X = X; o.Y = Y; o.player = player; o.isPromoted = isPromoted;
         return o.CanMoveByPattern(toX, toY);
@@ -94,6 +92,7 @@ public static class Oracles
             case PieceType.Rook: return new OracleRook();
             case PieceType.King: return new OracleKing();
             case PieceType.Gunpowder: return new OracleGunpowder();
+            case PieceType.Bird: return new OracleBird();
             default: return new OracleSniper();
         }
     }

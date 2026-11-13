@@ -6,7 +6,7 @@ using UnityEngine;
 // 持ち主のアンデッドを相手の王将に近い駒から順に、全員 1 手ずつ自動で動かす。
 //  手の選び方: 相手の王将を取れる手 → 相手の王将とのチェビシェフ距離が一番縮まる手
 //              →（同じ距離なら）相手の駒（火薬を除く）を取る手 →（それでも同じなら）対局の乱数（GameRng）で選ぶ
-//  動けるマスは通常の駒の動き（BaseMoveRule）から、炎上・落とし穴のマスを除いたもの。動ける手がなければ動かない
+//  動けるマスは通常の駒の動き（BaseMoveRule。破壊マス・壁には入れず、走り駒はその手前で止まる）から、炎上・落とし穴のマスを除いたもの。動ける手がなければ動かない
 //  成り（敵陣に入る・出ると自動で成る）・取り・火薬の爆発は通常の移動と同じ
 // 相手の王将が 2 枚以上あるとき（王将複製）は、駒ごとにいちばん近い王将へ向かう（Prototype は王将が 1 枚の前提）
 public class UndeadMarch : TurnEndAction
@@ -60,7 +60,7 @@ public class UndeadMarch : TurnEndAction
         return list;
     }
 
-    // アンデッド p が動けるマス（Prototype の undeadMoves：通常の動きのうち、炎上・落とし穴のマスには入らない）
+    // アンデッド p が動けるマス（Prototype の undeadMoves：通常の動きのうち、炎上・落とし穴のマスには入らない。翼状態の駒は消失しないので入る）
     public static List<Vector2Int> Moves(GameBoard board, GamePiece p)
     {
         List<Vector2Int> result = new List<Vector2Int>();
@@ -68,7 +68,7 @@ public class UndeadMarch : TurnEndAction
         {
             for (int y = 0; y < BoardCells.Size; y++)
             {
-                if (board.Cells.IsHazard(x, y)) continue;
+                if (PieceRules.IsHazardFor(board.Cells, p, x, y)) continue;
                 if (MoveRule.IsLegalMove(p, x, y, board)) result.Add(new Vector2Int(x, y));
             }
         }
@@ -130,7 +130,7 @@ public class UndeadMarch : TurnEndAction
         List<Vector2Int> takes = closest.FindAll(m =>
         {
             GamePiece q = board.GetPieceAt(m.x, m.y);
-            return q != null && q.player != p.player && !PieceRules.IsExplosive(q.type);
+            return q != null && q.player != p.player && !PieceRules.Detonates(p, q);
         });
         List<Vector2Int> pool = takes.Count > 0 ? takes : closest;
         GameRng rng = system != null && system.Match != null ? system.Match.Rng : null;
@@ -145,7 +145,7 @@ public class UndeadMarch : TurnEndAction
         int fromX = p.X, fromY = p.Y;
         GamePiece target = tl.PieceAt(tx, ty);
         string name = HandUIManager.GetJapaneseName(p.type);
-        string tail = target == null ? "" : SpecialContext.IsExplosive(target) ? "（火薬に突入！）"
+        string tail = target == null ? "" : PieceRules.Detonates(p, target) ? "（火薬に突入！）"
             : $"（{SideName(target.player)}の{HandUIManager.GetJapaneseName(target.type)}を取る）";
         Debug.Log($"{SideName(p.player)}のアンデッド：{name} ({fromX}, {fromY}) → ({tx}, {ty}){tail}");
 

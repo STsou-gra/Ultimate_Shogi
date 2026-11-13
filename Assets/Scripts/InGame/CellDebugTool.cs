@@ -5,10 +5,11 @@ using UnityEngine.InputSystem;
 //   1 … 破壊（破壊マスならデバッグ用に通常へ戻す）
 //   2 … 炎上 burnTurns ターン（炎上中なら消す）
 //   3 … 落とし穴（手番のプレイヤーが仕掛ける。穴があれば消す）
+//   4 … 壁（手番のプレイヤーが建てる。壁があれば消す）
 //   0 … 通常に戻す
-// 破壊・炎上・落とし穴は GameSystem の BreakCell / SetBurning / SetTrap を通すので、対局中と同じ処理になる
+// 破壊・炎上・落とし穴・壁は GameSystem の BreakCell / SetBurning / SetTrap / SetWall を通すので、対局中と同じ処理になる
 // （破壊したマスにいた駒は消失する。王将が消えたら勝敗も決まる）。
-// エディタと Development Build でだけ動く。駒・持ち駒・スキルの対象を選んでいる間とオンライン対戦中は使えない。
+// エディタと Development Build でだけ動く。駒・持ち駒・スキルの対象を選んでいる間とオンライン対戦中・合戦将棋型では使えない。
 // シーンに置かなくても GameSystem が自動で追加する
 public class CellDebugTool : MonoBehaviour
 {
@@ -29,13 +30,17 @@ public class CellDebugTool : MonoBehaviour
     {
         Keyboard keyboard = Keyboard.current;
         if (keyboard == null || gameSystem == null || gameCursor == null) return;
+        // 合戦将棋型では数字キーを魔法に使う（先手 1〜5・後手 6〜0）ので、デバッグキーは使わない
+        if (gameSystem.IsRealtime) return;
 
         bool breakKey = keyboard.digit1Key.wasPressedThisFrame;
         bool burnKey = keyboard.digit2Key.wasPressedThisFrame;
         bool trapKey = keyboard.digit3Key.wasPressedThisFrame;
+        bool wallKey = keyboard.digit4Key.wasPressedThisFrame;
         bool clearKey = keyboard.digit0Key.wasPressedThisFrame;
-        if (!breakKey && !burnKey && !trapKey && !clearKey) return;
-        if (RulesOverlayView.IsBlockingInput) return;
+        if (!breakKey && !burnKey && !trapKey && !wallKey && !clearKey) return;
+        if (RulesOverlayView.IsBlockingInput || KifuMenuView.IsBlockingInput) return;
+        if (gameSystem.IsReplaying) return; // 棋譜の再生中は盤面を変えない
 
         if (!CanUse()) return;
 
@@ -72,7 +77,22 @@ public class CellDebugTool : MonoBehaviour
             }
             else
             {
-                message = gameSystem.SetBurning(x, y, burnTurns) ? $"{burnTurns} ターン炎上させた" : "炎上できない（破壊マス）";
+                message = gameSystem.SetBurning(x, y, burnTurns) ? $"{burnTurns} ターン炎上させた" : "炎上できない（破壊マス・壁）";
+            }
+        }
+        else if (wallKey)
+        {
+            if (cell.IsWall)
+            {
+                cells.ClearForDebug(x, y);
+                message = "壁を消した";
+            }
+            else
+            {
+                PlayerType owner = gameSystem.IsPlayer1Turn() ? PlayerType.Player1 : PlayerType.Player2;
+                message = gameSystem.SetWall(x, y, owner)
+                    ? $"{(owner == PlayerType.Player1 ? "先手" : "後手")}の壁を建てた"
+                    : "壁を建てられない（駒がいる・破壊・炎上・落とし穴のマス）";
             }
         }
         else
@@ -92,6 +112,7 @@ public class CellDebugTool : MonoBehaviour
         }
 
         Debug.Log($"[CellDebug] ({x}, {y}) {message}");
+        gameSystem.MarkKifuDebugEdited();     // この対局の棋譜は、再生しても同じ盤面にならない
         gameSystem.RefreshAfterBoardChange(); // 破壊で王将が消えたときの勝敗・王手の表示
         if (gameSystem.IsInTurn) gameSystem.ShowIdleStatus($"【デバッグ】({x}, {y}) {message}");
     }

@@ -107,7 +107,7 @@ public class RulesOverlayView : MonoBehaviour
 
         if (!isOpen)
         {
-            if (keyboard[toggleKey].wasPressedThisFrame) Open();
+            if (keyboard[toggleKey].wasPressedThisFrame && !KifuMenuView.IsOpenAny) Open(); // 棋譜メニューを開いている間は開かない
             return;
         }
 
@@ -197,6 +197,12 @@ public class RulesOverlayView : MonoBehaviour
             src.Specials = gameSystem.SpecialMoves;
             src.Player1Deck = DeckSkills(gameSystem.GetSkillDeck(PlayerType.Player1));
             src.Player2Deck = DeckSkills(gameSystem.GetSkillDeck(PlayerType.Player2));
+            if (gameSystem.Cpu != null)
+            {
+                src.CpuSide = gameSystem.Cpu.Side;
+                src.CpuLevel = gameSystem.Cpu.Level;
+            }
+            src.Ruleset = gameSystem.Match != null ? gameSystem.Match.Ruleset : null;
         }
         else
         {

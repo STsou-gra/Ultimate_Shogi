@@ -2,17 +2,19 @@ using System.Collections.Generic;
 using UnityEngine;
 
 // マスの状態（Prototype の src/core/state.js の cells / board.js の cellAt・isBroken・isHazard /
-// effects.js の breakCell・setBurning・setTrap のうち、データを書き換える部分）
+// effects.js の breakCell・setBurning・setTrap・setWall のうち、データを書き換える部分）
 //
 // GameBoard の駒の配列（GamePiece[81]）とは別に、マスごとの状態を持つプレーンなクラス。
 // 添字は駒の配列と同じ GameHelper.CalcPanelNum(x, y)（x = 段、y = 筋）。
 // ここではマスのデータだけを書き換える。そこにいる駒を消すなどの処理は GameSystem の
-// BreakCell / SetBurning / SetTrap / EnterCell を通すこと（盤上の駒の消失は GameSystem.VanishPiece が受け持つ）
+// BreakCell / SetBurning / SetTrap / SetWall / EnterCell を通すこと（盤上の駒の消失は GameSystem.VanishPiece が受け持つ）
 public enum CellState
 {
     Normal,  // 通常
     Broken,  // 破壊：移動先にも通過にもできない・持ち駒も打てない。対局終了まで戻らない
     Burning, // 炎上：入った駒は消失する。BurnUntil のターンの終わりに通常に戻る
+    Wall,    // 壁（通常魔法「壁」。Prototype の state 'wall'）：敵味方問わず移動先にも通過にもできない・持ち駒も打てない。
+             // 対局終了まで残る（取り・爆発・隕石・炎上では壊れない）。マスが破壊されると壁ごと崩れる。天変地異ではマスと一緒に動く
 }
 
 // マスの状態が変わったときの種類（見た目の更新・演出に使う）
@@ -23,6 +25,7 @@ public enum CellChange
     Extinguished,  // 炎上が終わって通常に戻った
     TrapSet,       // 落とし穴が仕掛けられた
     TrapSprung,    // 駒が落とし穴に落ちて、穴が消えた
+    WallSet,       // 壁が建った
     Cleared,       // デバッグ用に通常へ戻した
 }
 
@@ -38,9 +41,16 @@ public class BoardCell
     // 穴は両プレイヤーに見え、敵味方に関係なく入った駒が落ちる
     public PlayerType? Trap { get; internal set; }
 
+    // 壁を建てたプレイヤー（Prototype の cell.wall.owner）。壁のマス（State == Wall）だけ値がある
+    public PlayerType? WallOwner { get; internal set; }
+
     public bool IsBroken => State == CellState.Broken;
     public bool IsBurning => State == CellState.Burning;
     public bool HasTrap => Trap.HasValue;
+    public bool IsWall => State == CellState.Wall;
+
+    // 駒が入れない・通れないマス（破壊マス・壁。Prototype の isBlocked）。走り駒は手前で止まり、持ち駒も打てない
+    public bool IsBlocked => IsBroken || IsWall;
 
     // 入った駒が消失するマス（炎上・落とし穴）。移動先には選べるが、走り駒はここで止まる
     public bool IsHazard => IsBurning || HasTrap;
@@ -50,6 +60,7 @@ public class BoardCell
         State = CellState.Normal;
         BurnUntil = null;
         Trap = null;
+        WallOwner = null;
     }
 }
 
@@ -96,6 +107,19 @@ public class BoardCells
         return cell != null && cell.IsBroken;
     }
 
+    public bool IsWall(int x, int y)
+    {
+        BoardCell cell = At(x, y);
+        return cell != null && cell.IsWall;
+    }
+
+    // 駒が入れない・通れないマスか（破壊マス・壁）。盤の外は false（盤の外かどうかは呼び出し側で調べる）
+    public bool IsBlocked(int x, int y)
+    {
+        BoardCell cell = At(x, y);
+        return cell != null && cell.IsBlocked;
+    }
+
     public bool IsHazard(int x, int y)
     {
         BoardCell cell = At(x, y);
@@ -110,7 +134,7 @@ public class BoardCells
         return cell.BurnUntil.Value - turnNumber + 1;
     }
 
-    // マスを破壊する（対局終了まで戻らない）。炎上・落とし穴は消える。破壊したら true
+    // マスを破壊する（対局終了まで戻らない）。炎上・落とし穴は消え、壁は崩れる。破壊したら true
     public bool Break(int x, int y)
     {
         BoardCell cell = At(x, y);
@@ -118,17 +142,26 @@ public class BoardCells
         cell.State = CellState.Broken;
         cell.BurnUntil = null;
         cell.Trap = null;
+        cell.WallOwner = null;
         Changed?.Invoke(x, y, CellChange.Broken);
         return true;
     }
 
     // マスを turns ターンのあいだ炎上させる（turnNumber を 1 ターン目として数え、BurnUntil のターンの終わりに鎮火）。
-    // すでに炎上中なら、終わるターンの遅い方を残す。破壊マスは炎上しない。炎上させたら true
+    // すでに炎上中なら、終わるターンの遅い方を残す。破壊マス・壁のマスは炎上しない。炎上させたら true
     public bool SetBurning(int x, int y, int turns, int turnNumber)
     {
+        if (turns <= 0) return false;
+        return SetBurningUntil(x, y, turnNumber + turns - 1);
+    }
+
+    // マスを炎上させる（BurnUntil = until。期限が ExtinguishExpired の now 以下になったら鎮火する）。
+    // 期限は戦闘型で単位が違う（本将棋型：ターン数 ／ 合戦将棋型：対局の時間の tick。MatchPolicy.BurnUntilFor が計算する）。
+    // すでに炎上中なら、終わるのが遅い方を残す。破壊マス・壁のマスは炎上しない。炎上させたら true
+    public bool SetBurningUntil(int x, int y, int until)
+    {
         BoardCell cell = At(x, y);
-        if (cell == null || cell.IsBroken || turns <= 0) return false;
-        int until = turnNumber + turns - 1;
+        if (cell == null || cell.IsBlocked) return false; // 破壊マス・壁は炎上しない
         cell.BurnUntil = cell.IsBurning && cell.BurnUntil.HasValue ? Mathf.Max(cell.BurnUntil.Value, until) : until;
         cell.State = CellState.Burning;
         Changed?.Invoke(x, y, CellChange.Burning);
@@ -146,6 +179,19 @@ public class BoardCells
         return true;
     }
 
+    // 壁を建てる（owner は建てたプレイヤー）。通常のマス（破壊・炎上・壁でない）で、落とし穴がないときだけ。建てたら true。
+    // 駒がいるマスには建てられない（駒の有無は GameSystem.SetWall が調べる）
+    public bool SetWall(int x, int y, PlayerType owner)
+    {
+        BoardCell cell = At(x, y);
+        if (cell == null || cell.State != CellState.Normal || cell.HasTrap) return false;
+        cell.State = CellState.Wall;
+        cell.BurnUntil = null;
+        cell.WallOwner = owner;
+        Changed?.Invoke(x, y, CellChange.WallSet);
+        return true;
+    }
+
     // 駒が落とし穴に落ちた：穴を消す。穴があったら true
     public bool SpringTrap(int x, int y)
     {
@@ -156,7 +202,8 @@ public class BoardCells
         return true;
     }
 
-    // 1ターンの終わり：BurnUntil が turnNumber 以下の炎上を鎮火する。鎮火したマスを返す
+    // 期限切れの炎上を鎮火する：BurnUntil が turnNumber（MatchPolicy.Now）以下の炎上。鎮火したマスを返す。
+    // 本将棋型は 1 ターンの終わり、合戦将棋型は毎 tick に呼ぶ
     public List<Vector2Int> ExtinguishExpired(int turnNumber)
     {
         List<Vector2Int> ended = new List<Vector2Int>();
@@ -175,9 +222,9 @@ public class BoardCells
         return ended;
     }
 
-    // マスの状態（炎上と終わるターン・落とし穴）を丸ごと入れ替える（超常魔法「天変地異」。Prototype の effects.js の shuffleCells）。
+    // マスの状態（炎上と終わるターン・落とし穴・壁）を丸ごと入れ替える（超常魔法「天変地異」。Prototype の effects.js の shuffleCells）。
     // from[i] のマスの状態が to[i] へ移る（from と to は同じマスの集まりを並べ替えたもの）。
-    // マスごと動くので、炎上・落とし穴は発動しない（そこにいる駒は GameBoard.RearrangePieces で一緒に動かす）
+    // マスごと動くので、炎上・落とし穴は発動しない（壁もマスと一緒に動く）（そこにいる駒は GameBoard.RearrangePieces で一緒に動かす）
     public void Rearrange(IReadOnlyList<Vector2Int> from, IReadOnlyList<Vector2Int> to)
     {
         if (from == null || to == null || from.Count != to.Count) return;
@@ -206,7 +253,7 @@ public class BoardCells
     //  局面の書き出し・読み込み（MatchSnapshot.cells。GameSystem.ExportState / ImportState）
     // ------------------------------------------------------------
 
-    // 通常でないマス（破壊・炎上・落とし穴）を、添字の順に書き出す
+    // 通常でないマス（破壊・炎上・落とし穴・壁）を、添字の順に書き出す
     public List<CellSnapshot> Capture()
     {
         List<CellSnapshot> list = new List<CellSnapshot>();
@@ -223,6 +270,7 @@ public class BoardCells
                 state = cell.State,
                 burnUntil = cell.BurnUntil ?? -1,
                 trap = cell.Trap.HasValue ? (int)cell.Trap.Value : -1,
+                wall = cell.WallOwner.HasValue ? (int)cell.WallOwner.Value : -1,
             });
         }
         return list;
@@ -243,12 +291,14 @@ public class BoardCells
                 cell.BurnUntil = c.state == CellState.Burning && c.burnUntil >= 0 ? c.burnUntil : (int?)null;
                 bool hasTrap = c.state != CellState.Broken && (c.trap == (int)PlayerType.Player1 || c.trap == (int)PlayerType.Player2);
                 cell.Trap = hasTrap ? (PlayerType)c.trap : (PlayerType?)null;
+                bool hasWall = c.state == CellState.Wall && (c.wall == (int)PlayerType.Player1 || c.wall == (int)PlayerType.Player2);
+                cell.WallOwner = hasWall ? (PlayerType)c.wall : (PlayerType?)null;
             }
         }
         Reloaded?.Invoke();
     }
 
-    // 千日手の「同じ局面」の判定用に、マスの状態を文字列にする（Prototype の hash.js と同じく、状態・終わるターン・穴の持ち主）
+    // 千日手の「同じ局面」の判定用に、マスの状態を文字列にする（Prototype の hash.js と同じく、状態・終わるターン・穴の持ち主・壁の持ち主）
     public void AppendKey(System.Text.StringBuilder sb)
     {
         sb.Append('#');
@@ -258,6 +308,7 @@ public class BoardCells
             {
                 case CellState.Broken: sb.Append('x'); break;
                 case CellState.Burning: sb.Append('f').Append(cell.BurnUntil ?? 0); break;
+                case CellState.Wall: sb.Append(cell.WallOwner == PlayerType.Player2 ? 'W' : 'w'); break;
                 default: sb.Append('.'); break;
             }
             if (cell.HasTrap) sb.Append(cell.Trap.Value == PlayerType.Player1 ? 'p' : 'q');

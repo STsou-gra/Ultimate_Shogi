@@ -66,8 +66,13 @@ public class SpecialContext
     public static bool InBounds(int x, int y) => BoardCells.InBounds(x, y);
     public GamePiece PieceAt(int x, int y) => Board.GetPieceAt(x, y);
     public bool IsBroken(int x, int y) => Cells != null && Cells.IsBroken(x, y);
+    public bool IsWall(int x, int y) => Cells != null && Cells.IsWall(x, y);       // 壁（通常魔法「壁」）
+    public bool IsBlocked(int x, int y) => Cells != null && Cells.IsBlocked(x, y); // 入れない・通れない（破壊マス・壁）
     public bool IsHazard(int x, int y) => Cells != null && Cells.IsHazard(x, y); // 炎上・落とし穴（入ると消失）
     public static bool IsExplosive(GamePiece q) => q != null && PieceRules.IsExplosive(q.type);
+    // 駒ごとのマスの効果（翼状態の駒は破壊マスにも入れて、炎上・落とし穴で消失しない。PieceRules の翼状態の判定）
+    public bool IsBlockedFor(GamePiece p, int x, int y) => PieceRules.IsBlockedFor(Cells, p, x, y); // 入れない・通れない（破壊マス・壁）
+    public bool IsHazardFor(GamePiece p, int x, int y) => PieceRules.IsHazardFor(Cells, p, x, y);   // 入ると消失（炎上・落とし穴）
 
     // 駒がまだ盤上にいるか
     public bool IsAlive(GamePiece p)
@@ -75,10 +80,11 @@ public class SpecialContext
         return p != null && Board.GetPieceAt(p.X, p.Y) == p;
     }
 
-    // 駒 p が (x, y) に入れるか：破壊マス以外の 空き / 相手の駒 / 火薬（Prototype の board.js の canLandOn）
+    // 駒 p が (x, y) に入れるか：破壊マス・壁のマス以外の 空き / 相手の駒 / 火薬（Prototype の board.js の canLandOn）。
+    // 翼状態の駒は破壊マスにも入れる。鳥は味方の火薬には入れない
     public bool CanLandOn(GamePiece p, int x, int y)
     {
-        if (!InBounds(x, y) || IsBroken(x, y)) return false;
+        if (!InBounds(x, y) || IsBlockedFor(p, x, y)) return false;
         return PieceRules.CanLandOn(p, PieceAt(x, y));
     }
 
@@ -123,6 +129,16 @@ public class SpecialContext
         else action();
     }
 
+    // 今の時刻 Time に、盤面を変える action（マスの破壊・炎上・落とし穴の設置・時間停止の開始など）を行う。
+    // 本将棋型は演出の時刻に合わせて行う（手番の交代は演出が終わるまで待つ）。
+    // 合戦将棋型は演出を待たずに進むので、結果がフレームの時間に左右されないように、すぐ行う（Prototype と同じく盤面はすぐ変わる）
+    public void ScheduleState(System.Action action)
+    {
+        if (action == null) return;
+        if (GameSystem != null && GameSystem.AppliesStateImmediately) action();
+        else Schedule(action);
+    }
+
     // 残像（Prototype の ghost）
     public void Afterimage(GamePiece p, Color color)
     {
@@ -141,8 +157,8 @@ public class SpecialContext
 
     // 駒 p を (tx, ty) へ動かす（Prototype の play.js の stepPiece）。duration 秒かけて動く見た目にする。
     //  ・移動先の相手の駒は取る（CapturePiece）
-    //  ・移動先が火薬なら重なった瞬間に爆発する（王将以外の p も吹き飛ぶ）
-    //  ・炎上・落とし穴のマスなら消失する（EnterCell）
+    //  ・移動先が火薬なら重なった瞬間に爆発する（王将以外の p も吹き飛ぶ。鳥は爆発させずに火薬を取る：PieceRules.Detonates）
+    //  ・炎上・落とし穴のマスなら消失する（EnterCell。翼状態の駒は消失しない）
     // 戻り値: 移動先に入れたら true / 消失したら false / 取りが防がれて元のマスに残ったら null
     public bool? Step(GamePiece p, int tx, int ty, PieceMoveStyle style, float duration)
     {
@@ -155,7 +171,7 @@ public class SpecialContext
 
         if (target != null && target != p)
         {
-            if (IsExplosive(target))
+            if (PieceRules.Detonates(p, target))
             {
                 // 火薬のマスに重なった → 即爆発（爆発の演出が p を火薬のマスまで運ぶ）
                 if (Fx != null) Fx.MovePiece(p, tx, ty, style, duration, Time);
@@ -213,8 +229,8 @@ public class SpecialContext
 
     // 駒 q を (dx, dy) へ 1 マス押し出す（Prototype の play.js の pushPiece。金剛衝）。
     //  盤外 … 取り（持ち駒になる。火薬は持ち駒にならない）
-    //  空き・火薬 … そのマスへ動く（炎上・落とし穴なら消失、火薬なら爆発）
-    //  駒・破壊マス … ぶつかって止まる
+    //  空き・火薬 … そのマスへ動く（炎上・落とし穴なら消失、火薬なら爆発）。翼状態の駒は破壊マスへも押し出される
+    //  駒・破壊マス・壁 … ぶつかって止まる（鳥は火薬のマスでも止まる＝爆発させない）
     public void Push(GamePiece q, int dx, int dy)
     {
         if (!IsAlive(q)) return;
@@ -230,7 +246,7 @@ public class SpecialContext
         }
 
         GamePiece d = PieceAt(tx, ty);
-        if (!IsBroken(tx, ty) && (d == null || IsExplosive(d)))
+        if (!IsBlockedFor(q, tx, ty) && (d == null || PieceRules.Detonates(q, d)))
         {
             Afterimage(q, SpecialMove.Hex(0xffd54a));
             Step(q, tx, ty, PieceMoveStyle.Dash, 0.14f);
@@ -238,6 +254,16 @@ public class SpecialContext
         }
 
         if (Fx != null) Fx.Bump(q, dir, Time); // 押し出し先が塞がっている
+    }
+
+    // 駒 p を (tx, ty) へ瞬間移動させる（Prototype の play.js の warpPiece。魔法「ワープ」）。盤面のデータだけ動かす（見た目は呼び出し側）。
+    // 移動ではないので、取り・成り・移動回数（必殺技のチャージ）は起こらず、時間停止の移動の記録にも残さない。
+    // 移動先は空きマスであること（入ったマスの効果 EnterCell は通常どおり）。そのマスに残れたら true
+    public bool Teleport(GamePiece p, int tx, int ty)
+    {
+        if (!IsAlive(p) || !InBounds(tx, ty) || Board.HasPieceAt(tx, ty)) return false;
+        MoveData(p, tx, ty);
+        return EnterCell(p, tx, ty);
     }
 
     // 盤面のデータだけ動かす（見た目は呼び出し側）

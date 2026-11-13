@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-static class Program
+static partial class Program
 {
     static int fails, checks;
     static readonly PlayerType P1 = PlayerType.Player1, P2 = PlayerType.Player2;
@@ -28,6 +28,8 @@ static class Program
         TestApply();
         TestJson(new System.Random(2));
         TestPlayouts(400, new System.Random(3));
+        TestSkills();
+        TestCpu();
         Console.WriteLine($"checks={checks} fails={fails}");
         return fails == 0 ? 0 : 1;
     }
@@ -60,7 +62,7 @@ static class Program
     // ------------------------------------------------------------
     class Pos { public GameBoard Board; public BoardSnapshot Snap; public TurnState Turn; public Dictionary<SnapshotPiece, GamePiece> Map = new Dictionary<SnapshotPiece, GamePiece>(); }
 
-    static readonly PieceType[] Kinds = { PieceType.Pawn, PieceType.Pawn, PieceType.Pawn, PieceType.Lance, PieceType.Knight, PieceType.SilverGeneral, PieceType.GoldGeneral, PieceType.Bishop, PieceType.Rook, PieceType.Gunpowder, PieceType.Sniper };
+    static readonly PieceType[] Kinds = { PieceType.Pawn, PieceType.Pawn, PieceType.Pawn, PieceType.Lance, PieceType.Knight, PieceType.SilverGeneral, PieceType.GoldGeneral, PieceType.Bishop, PieceType.Rook, PieceType.Gunpowder, PieceType.Sniper, PieceType.Bird };
 
     static Pos RandomPos(System.Random r)
     {
@@ -73,6 +75,7 @@ static class Program
             if (v < 0.07) c.state = CellState.Broken;
             else if (v < 0.13) { c.state = CellState.Burning; c.burnUntil = 1 + r.Next(25); }
             else if (v < 0.18) c.trap = r.Next(2);
+            else if (v < 0.22) { c.state = CellState.Wall; c.wall = r.Next(2); }
         }
         // 王将（たいていは 1 枚ずつ。ときどき 0 枚・2 枚）
         foreach (PlayerType o in new[] { P1, P2 })
@@ -92,8 +95,12 @@ static class Program
         {
             int x = r.Next(9), y = r.Next(9);
             SnapshotCell c = s.Cell(x, y);
-            if (s.At(x, y) != null || c.IsBroken || c.HasTrap) continue; // 駒は破壊マス・落とし穴にはいない
-            SnapshotPiece p = new SnapshotPiece { type = t, owner = (int)o, x = x, y = y };
+            // 魔法「翼」（王将も可。火薬・鳥は除く）
+            bool wing = t != PieceType.Gunpowder && !PieceRules.IsWingType(t) && r.NextDouble() < 0.15;
+            bool flies = wing || PieceRules.IsWingType(t);
+            if (s.At(x, y) != null || c.IsWall) continue;                 // 壁のマスには駒はいない
+            if (!flies && (c.IsBroken || c.HasTrap)) continue;           // 翼のない駒は破壊マス・落とし穴にはいない
+            SnapshotPiece p = new SnapshotPiece { type = t, owner = (int)o, x = x, y = y, wing = wing };
             p.promoted = PieceRules.CanPromote(t) && r.NextDouble() < 0.3;
             p.undead = t != PieceType.King && r.NextDouble() < 0.05;
             p.shield = r.NextDouble() < 0.1;
@@ -114,22 +121,29 @@ static class Program
             SnapshotCell c = s.Cell(x, y);
             if (c.IsBroken) pos.Board.Cells.Break(x, y);
             else if (c.IsBurning) pos.Board.Cells.SetBurning(x, y, Math.Max(1, c.burnUntil - s.turnNumber + 1), s.turnNumber);
+            else if (c.IsWall) pos.Board.Cells.SetWall(x, y, (PlayerType)c.wall);
             if (c.HasTrap) pos.Board.Cells.SetTrap(x, y, (PlayerType)c.trap);
         }
         foreach (SnapshotPiece p in s.pieces)
         {
-            GamePiece g = new GamePiece { type = p.type, player = p.Owner, X = p.x, Y = p.y, isPromoted = p.promoted, isUndead = p.undead, hasShield = p.shield };
+            GamePiece g = new GamePiece { type = p.type, player = p.Owner, X = p.x, Y = p.y, isPromoted = p.promoted, isUndead = p.undead, hasShield = p.shield, hasWing = p.wing };
             pos.Board.Put(g);
             pos.Map[p] = g;
         }
         return pos;
     }
 
-    static List<IGameRule> Rules(TurnState turn) => new List<IGameRule>
+    // 本将棋型の対局（ターン数は turn に合わせる）のルール（GameSystem.Start と同じ並び）
+    static List<IGameRule> Rules(TurnState turn)
     {
-        new BaseMoveRule(), new EmptyCellDropRule(), new CellStateDropRule(), new NoLegalMoveDropRule(),
-        new NifuDropRule(), new EnemyZoneDropLockRule(turn), new UchifuzumeRule(),
-    };
+        MatchState match = new MatchState(P1, 1);
+        while (match.Turn.TurnNumber < turn.TurnNumber) match.Turn.BeginTurn();
+        return new List<IGameRule>
+        {
+            new BaseMoveRule(), new EmptyCellDropRule(), new CellStateDropRule(), new NoLegalMoveDropRule(),
+            new NifuDropRule(), new EnemyZoneDropLockRule(match.Policy), new UchifuzumeRule(match.Policy),
+        };
+    }
 
     static int uchifuzumeHits, checkHits;
 

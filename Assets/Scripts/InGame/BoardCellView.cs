@@ -3,13 +3,15 @@ using UnityEngine;
 using DG.Tweening;
 using TMPro;
 
-// マスの状態（破壊・炎上・落とし穴）の見た目（Prototype の Game.js の renderCells・drawHole・drawBurning・burnLabel・
-// createTrapView、Game.tick の炎の粒・渦の回転、view/events.js の cellBroken・cellBurning・fireOut・trapClosed・
+// マスの状態（破壊・炎上・落とし穴・壁）の見た目（Prototype の Game.js の renderCells・drawHole・drawBurning・burnLabel・
+// createTrapView・createWallView、Game.tick の炎の粒・渦の回転、view/events.js の cellBroken・cellBurning・fireOut・trapClosed・
 // destroyed（落とし穴に吸い込まれる）、view/fx.js の fallingTile・implode）
 //
 //  破壊   … 盤のマスが縮みながら抜け落ち、暗い穴（割れた縁）が残る
 //  炎上   … 焦げ跡＋揺らめく炎＋立ち上る火の粉。マスの右上に残りターン数
 //  落とし穴 … 仕掛けたプレイヤーの色で縁取った暗い穴と、回る渦
+//  壁     … マスいっぱいに石を積んだ壁（3 段・継ぎ目をずらす）＋建てたプレイヤーの色の縁取り。建つときはせり上がり、
+//            マスが破壊されると石くれを散らして、抜け落ちるマスと一緒に落ちる
 //  炎上・落とし穴・破壊で消えた駒は、そのマスで燃え尽きる／穴に吸い込まれる／マスと一緒に落ちる
 //  天変地異でマスの状態が入れ替わったら、マスごとの表示も新しいマスへ付け替える（飛ばす演出は MagicFx.Cataclysm）
 //
@@ -70,6 +72,15 @@ public class BoardCellView : MonoBehaviour
     private static readonly Color[] ImplodeColors = { Hex(0x7e57c2), Hex(0x311b92), Hex(0xb388ff) };
     private static readonly Color TrapRingColor = Hex(0x7e57c2);
 
+    // 壁（Prototype の createWallView の色）
+    private static readonly Color WallShadowColor = WithAlpha(Color.black, 0.35f);
+    private static readonly Color WallBodyColor = Hex(0x5d4a3f);
+    private static readonly Color[] WallStoneColors = { Hex(0xa1887f), Hex(0x8d6e63), Hex(0xbcaaa4) };
+    private static readonly Color WallJointColor = WithAlpha(Hex(0x3e2723), 0.9f);
+    private static readonly Color WallHighlightColor = WithAlpha(Color.white, 0.18f);
+    private static readonly Color[] WallRubbleColors = { Hex(0x8d6e63), Hex(0x5d4037), Hex(0xbcaaa4), Hex(0x3e2723) };
+    private static readonly Color[] WallDustColors = { Hex(0xd7ccc8), Hex(0xbcaaa4), Hex(0x8d6e63) };
+
     // 炎の形（中心からの横のずれ・幅・高さ px）。Prototype の drawBurning と同じ3本
     private static readonly Vector3[] FlameShapes = { new Vector3(-17f, 9f, 26f), new Vector3(0f, 12f, 38f), new Vector3(17f, 9f, 28f) };
 
@@ -96,6 +107,10 @@ public class BoardCellView : MonoBehaviour
         public SpriteRenderer trapRing;
         public Transform swirl;
         public bool trapClosing; // 駒が落ちて穴が閉じるまでの間（吸い込みが終わるまで表示を残す）
+
+        public GameObject wall;
+        public Transform wallBody;      // 石積み（せり上がる演出で縦に伸ばす）
+        public SpriteRenderer wallFrame; // 建てた側の色の縁取り
     }
 
     private readonly CellVisual[] visuals = new CellVisual[BoardCells.Size * BoardCells.Size];
@@ -112,6 +127,8 @@ public class BoardCellView : MonoBehaviour
     private static Sprite pitGlowSprite;
     private static Sprite flameSprite;
     private static Sprite swirlSprite;
+    private static Sprite wallSprite;
+    private static Sprite wallFrameSprite;
 
     void Start()
     {
@@ -175,7 +192,7 @@ public class BoardCellView : MonoBehaviour
         Vector2 up = ScreenUp;
         Vector2 right = new Vector2(up.y, -up.x);
         float fireAlpha = 0.75f + 0.15f * Mathf.Sin(t * 11f) + 0.1f * Mathf.Sin(t * 17f);
-        int turnNumber = gameSystem != null && gameSystem.Match != null ? gameSystem.Match.Turn.TurnNumber : 0;
+        MatchPolicy policy = gameSystem != null && gameSystem.Match != null ? gameSystem.Match.Policy : null;
 
         foreach (CellVisual v in visuals)
         {
@@ -196,7 +213,8 @@ public class BoardCellView : MonoBehaviour
                     v.flames[i].localScale = s;
                 }
 
-                int remaining = cells.BurnRemaining(v.x, v.y, turnNumber);
+                // 残り（本将棋型：残りターン ／ 合戦将棋型：残り秒。MatchPolicy.BurnRemaining）
+                int remaining = policy != null ? policy.BurnRemaining(cells.At(v.x, v.y)) : cells.BurnRemaining(v.x, v.y, 0);
                 if (remaining != v.shownRemaining && v.label != null)
                 {
                     v.shownRemaining = remaining;
@@ -235,8 +253,20 @@ public class BoardCellView : MonoBehaviour
         switch (change)
         {
             case CellChange.Broken:
+            {
+                // 壁のマスなら、壁ごと崩れ落ちる（石くれを散らし、抜け落ちるマスに壁を載せる）
+                CellVisual before = visuals[Index(x, y)];
+                bool hadWall = before != null && before.wall != null && before.wall.activeSelf;
+                Color wallOwner = hadWall ? before.wallFrame.color : Color.clear;
                 Refresh(x, y);
-                PlayFallingTile(x, y);
+                PlayFallingTile(x, y, hadWall, wallOwner);
+                if (hadWall && fx != null)
+                {
+                    PieceFx.BurstOptions rubble = PieceFx.BurstOptions.Default;
+                    rubble.count = 18; rubble.colors = WallRubbleColors; rubble.speed = 190f * PX; rubble.life = 0.7f;
+                    rubble.size = 0.26f; rubble.gravity = 420f * PX;
+                    fx.Burst(center, rubble);
+                }
                 if (fx != null)
                 {
                     PieceFx.BurstOptions burst = PieceFx.BurstOptions.Default;
@@ -247,6 +277,7 @@ public class BoardCellView : MonoBehaviour
                     fx.Shake(5f, 0.2f);
                 }
                 break;
+            }
 
             case CellChange.Burning:
                 Refresh(x, y);
@@ -279,6 +310,31 @@ public class BoardCellView : MonoBehaviour
                 {
                     v.trap.transform.localScale = Vector3.zero;
                     v.trap.transform.DOScale(1f, 0.35f).SetEase(Ease.OutBack).SetLink(v.trap);
+                }
+                break;
+            }
+
+            case CellChange.WallSet:
+            {
+                // 壁が下からせり上がる（少し行き過ぎて戻る）。足もとに土煙
+                Refresh(x, y);
+                CellVisual v = visuals[Index(x, y)];
+                if (v != null && v.wallBody != null)
+                {
+                    Transform body = v.wall.transform;
+                    body.localScale = new Vector3(1f, 0f, 1f);
+                    body.localPosition = new Vector3(0f, -0.5f, 0f);
+                    DOTween.Sequence()
+                        .Join(body.DOScaleY(1f, 0.4f).SetEase(Ease.OutBack))
+                        .Join(body.DOLocalMoveY(0f, 0.4f).SetEase(Ease.OutBack))
+                        .SetLink(v.wall);
+                }
+                if (fx != null)
+                {
+                    PieceFx.BurstOptions dust = PieceFx.BurstOptions.Default;
+                    dust.count = 12; dust.colors = WallDustColors; dust.speed = 90f * PX; dust.life = 0.6f;
+                    dust.size = 0.3f; dust.gravity = -40f * PX; dust.alpha = 0.6f;
+                    fx.Burst(center - (Vector3)(ScreenUp * (24f * PX)), dust);
                 }
                 break;
             }
@@ -358,13 +414,14 @@ public class BoardCellView : MonoBehaviour
         }
     }
 
-    // (x, y) のマスの炎上・落とし穴の表示（マスの中心。なければ null）。天変地異の演出で、駒と一緒に飛ばす
+    // (x, y) のマスの炎上・落とし穴・壁の表示（マスの中心。なければ null）。天変地異の演出で、駒と一緒に飛ばす
     public Transform VisualRoot(int x, int y)
     {
         if (!BoardCells.InBounds(x, y)) return null;
         CellVisual v = visuals[Index(x, y)];
         if (v == null) return null;
-        bool shown = (v.burning != null && v.burning.activeSelf) || (v.trap != null && v.trap.activeSelf);
+        bool shown = (v.burning != null && v.burning.activeSelf) || (v.trap != null && v.trap.activeSelf)
+                     || (v.wall != null && v.wall.activeSelf);
         return shown ? v.root : null;
     }
 
@@ -380,13 +437,13 @@ public class BoardCellView : MonoBehaviour
         }
     }
 
-    // マスのデータに合わせて、そのマスの表示（穴・炎・落とし穴）を出し入れする
+    // マスのデータに合わせて、そのマスの表示（穴・炎・落とし穴・壁）を出し入れする
     void Refresh(int x, int y)
     {
         BoardCell cell = cells.At(x, y);
         if (cell == null) return;
         CellVisual v = visuals[Index(x, y)];
-        bool needed = cell.IsBroken || cell.IsBurning || cell.HasTrap;
+        bool needed = cell.IsBroken || cell.IsBurning || cell.HasTrap || cell.IsWall;
         if (v == null && !needed) return;
         if (v == null) v = GetVisual(x, y);
 
@@ -416,6 +473,24 @@ public class BoardCellView : MonoBehaviour
             if (!showTrap) v.trap.transform.localScale = Vector3.one;
             v.trap.SetActive(showTrap);
         }
+
+        // 壁（縁取りの色＝建てたプレイヤー）
+        if (cell.IsWall && v.wall == null) CreateWall(v);
+        if (v.wall != null)
+        {
+            if (cell.IsWall)
+            {
+                Color owner = cell.WallOwner == PlayerType.Player2 ? player2Color : player1Color;
+                v.wallFrame.color = WithAlpha(owner, 0.95f);
+            }
+            else
+            {
+                DOTween.Kill(v.wall.transform, true);
+                v.wall.transform.localScale = Vector3.one;
+                v.wall.transform.localPosition = Vector3.zero;
+            }
+            v.wall.SetActive(cell.IsWall);
+        }
     }
 
     CellVisual GetVisual(int x, int y)
@@ -442,8 +517,8 @@ public class BoardCellView : MonoBehaviour
         return sr.gameObject;
     }
 
-    // 盤のマスが縮みながら暗くなって抜け落ちる（Prototype の fx.fallingTile）
-    void PlayFallingTile(int x, int y)
+    // 盤のマスが縮みながら暗くなって抜け落ちる（Prototype の fx.fallingTile）。withWall なら壁を載せたまま落ちる
+    void PlayFallingTile(int x, int y, bool withWall = false, Color wallOwner = default)
     {
         CellVisual v = GetVisual(x, y);
         GameObject tile = new GameObject("FallingTile");
@@ -451,6 +526,12 @@ public class BoardCellView : MonoBehaviour
         tile.transform.localPosition = new Vector3(0f, 0f, -0.01f);
         int order = baseOrder + fallingTileOrderOffset;
         SpriteRenderer face = AddSprite("Face", tile.transform, GetSquareSprite(), TileColor, Vector2.zero, Vector2.one, 0f, order);
+        List<SpriteRenderer> wallParts = new List<SpriteRenderer>();
+        if (withWall)
+        {
+            wallParts.Add(AddSprite("Wall", tile.transform, GetWallSprite(), Color.white, Vector2.zero, Vector2.one, -0.0004f, order));
+            wallParts.Add(AddSprite("WallFrame", tile.transform, GetWallFrameSprite(), wallOwner, Vector2.zero, Vector2.one, -0.0007f, order));
+        }
         SpriteRenderer shade = AddSprite("Shade", tile.transform, GetSquareSprite(), WithAlpha(Color.black, 0f), Vector2.zero, Vector2.one, -0.001f, order);
 
         const float dur = 0.6f;
@@ -464,6 +545,7 @@ public class BoardCellView : MonoBehaviour
             .Insert(dur - 0.2f, shade.DOFade(0f, 0.2f))
             .OnComplete(() => Destroy(tile))
             .SetLink(tile);
+        foreach (SpriteRenderer part in wallParts) part.DOFade(0f, 0.2f).SetDelay(dur - 0.2f).SetLink(tile);
     }
 
     // ------------------------------------------------------------
@@ -539,6 +621,18 @@ public class BoardCellView : MonoBehaviour
         AddSprite("Pit", obj.transform, GetDiscSprite(), PitColor, Vector2.zero, Vector2.one * (0.34f * 2f), -0.002f, baseOrder);
         v.trapRing = AddSprite("Ring", obj.transform, GetPitRingSprite(), Color.white, Vector2.zero, Vector2.one, -0.003f, baseOrder);
         v.swirl = AddSprite("Swirl", obj.transform, GetSwirlSprite(), SwirlColor, Vector2.zero, Vector2.one, -0.004f, baseOrder).transform;
+    }
+
+    // ------------------------------------------------------------
+    //  壁：マスいっぱいに石を積んだ壁＋建てたプレイヤーの色の縁取り（Prototype の createWallView）
+    // ------------------------------------------------------------
+    void CreateWall(CellVisual v)
+    {
+        GameObject obj = new GameObject("Wall");
+        obj.transform.SetParent(v.root, false);
+        v.wall = obj;
+        v.wallBody = AddSprite("Stones", obj.transform, GetWallSprite(), Color.white, Vector2.zero, Vector2.one, -0.001f, baseOrder).transform;
+        v.wallFrame = AddSprite("Frame", obj.transform, GetWallFrameSprite(), Color.white, Vector2.zero, Vector2.one, -0.002f, baseOrder);
     }
 
     // ------------------------------------------------------------
@@ -868,6 +962,115 @@ public class BoardCellView : MonoBehaviour
         tex.Apply();
         swirlSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
         return swirlSprite;
+    }
+
+    // 壁の石積み（Prototype の createWallView：影 → 外枠の地 → 3 段の石。段ごとに継ぎ目をずらす）。
+    // 影がマスの右下へはみ出すので、画像は 1 マスより少し大きい（中心がマスの中心）。縁取りは GetWallFrameSprite
+    const int WallTexSize = 76; // px（1 マス = 66px）
+
+    static Sprite GetWallSprite()
+    {
+        if (wallSprite != null) return wallSprite;
+        const float h = 66f / 2f - 2f; // 石積みの半分の大きさ（px）
+        int size = WallTexSize;
+        Texture2D tex = NewTexture(size, size);
+        float half = size * 0.5f;
+
+        // 石（Prototype の座標：中心原点・y は下向き）
+        const int rows = 3;
+        float rh = (h * 2f - 8f) / rows, x0 = -h + 4f, w = h * 2f - 8f;
+        List<Rect> stones = new List<Rect>();
+        List<Color> shades = new List<Color>();
+        for (int r = 0; r < rows; r++)
+        {
+            float y = -h + 4f + r * rh;
+            int n = r % 2 == 1 ? 3 : 2;
+            float bw = w / (r % 2 == 1 ? 2.5f : 2f);
+            float x = x0 - (r % 2 == 1 ? bw / 2f : 0f);
+            for (int i = 0; i <= n; i++, x += bw)
+            {
+                float a = Mathf.Max(x, x0), b = Mathf.Min(x + bw, x0 + w);
+                if (b - a < 2f) continue;
+                stones.Add(new Rect(a + 1f, y + 1f, b - a - 2f, rh - 2f));
+                shades.Add(WallStoneColors[(r * 2 + i) % 3]);
+            }
+        }
+
+        for (int ty = 0; ty < size; ty++)
+        {
+            for (int tx = 0; tx < size; tx++)
+            {
+                Vector2 p = new Vector2(tx + 0.5f - half, half - (ty + 0.5f)); // y は下向き
+                Color c = new Color(0f, 0f, 0f, 0f);
+                c = Over(c, WallShadowColor, Coverage(RoundedRectDistance(p, new Rect(-h + 3f, -h + 5f, h * 2f, h * 2f), 0f)));
+                c = Over(c, WallBodyColor, Coverage(RoundedRectDistance(p, new Rect(-h, -h, h * 2f, h * 2f), 0f)));
+                for (int i = 0; i < stones.Count; i++)
+                {
+                    Rect s = stones[i];
+                    float d = RoundedRectDistance(p, s, 3f);
+                    c = Over(c, shades[i], Coverage(d));
+                    c = Over(c, WallJointColor, Coverage(Mathf.Abs(d) - 0.75f)); // 継ぎ目の線（太さ 1.5px）
+                    Rect hl = new Rect(s.x + 2f, s.y + 1.5f, s.width - 4f, 2.5f);  // 石の上面のハイライト
+                    if (hl.width > 0f) c = Over(c, WallHighlightColor, Coverage(RoundedRectDistance(p, hl, 0f)));
+                }
+                tex.SetPixel(tx, ty, c);
+            }
+        }
+        tex.Apply();
+        wallSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 66f);
+        wallSprite.name = "Wall";
+        return wallSprite;
+    }
+
+    // 壁の縁取り（太さ 3px の四角い枠。白で描き、建てた側の色を掛ける）
+    static Sprite GetWallFrameSprite()
+    {
+        if (wallFrameSprite != null) return wallFrameSprite;
+        const float h = 66f / 2f - 2f;
+        int size = WallTexSize;
+        Texture2D tex = NewTexture(size, size);
+        float half = size * 0.5f;
+        for (int ty = 0; ty < size; ty++)
+        {
+            for (int tx = 0; tx < size; tx++)
+            {
+                Vector2 p = new Vector2(tx + 0.5f - half, half - (ty + 0.5f));
+                float d = RoundedRectDistance(p, new Rect(-h, -h, h * 2f, h * 2f), 0f);
+                tex.SetPixel(tx, ty, new Color(1f, 1f, 1f, Coverage(Mathf.Abs(d) - 1.5f)));
+            }
+        }
+        tex.Apply();
+        wallFrameSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 66f);
+        wallFrameSprite.name = "WallFrame";
+        return wallFrameSprite;
+    }
+
+    // 角の丸い四角までの符号付き距離（内側が負）
+    static float RoundedRectDistance(Vector2 p, Rect r, float radius)
+    {
+        Vector2 c = r.center;
+        Vector2 b = new Vector2(r.width * 0.5f, r.height * 0.5f);
+        radius = Mathf.Min(radius, Mathf.Min(b.x, b.y));
+        Vector2 q = new Vector2(Mathf.Abs(p.x - c.x), Mathf.Abs(p.y - c.y)) - b + Vector2.one * radius;
+        Vector2 outside = new Vector2(Mathf.Max(q.x, 0f), Mathf.Max(q.y, 0f));
+        return outside.magnitude + Mathf.Min(Mathf.Max(q.x, q.y), 0f) - radius;
+    }
+
+    // 符号付き距離から、その画素がどれだけ覆われるか（ふちをなめらかにする）
+    static float Coverage(float distance)
+    {
+        return Mathf.Clamp01(0.5f - distance);
+    }
+
+    // dst の上に src を重ねる（src の不透明度 × coverage）
+    static Color Over(Color dst, Color src, float coverage)
+    {
+        float a = src.a * coverage;
+        if (a <= 0f) return dst;
+        float outA = a + dst.a * (1f - a);
+        if (outA <= 0f) return new Color(0f, 0f, 0f, 0f);
+        Color rgb = (src * a + dst * dst.a * (1f - a)) / outA;
+        return new Color(rgb.r, rgb.g, rgb.b, outA);
     }
 
     // 破壊マスの穴（Prototype の drawHole：割れた縁 → 穴の内壁 → 奥の闇）。形はマスごとに決まった乱れ方をする

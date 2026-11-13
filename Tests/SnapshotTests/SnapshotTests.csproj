@@ -23,11 +23,21 @@
     <Compile Include="../../Assets/Scripts/InGame/Match/PieceValues.cs" Link="Game/PieceValues.cs" />
     <Compile Include="../../Assets/Scripts/InGame/Match/PieceNames.cs" Link="Game/PieceNames.cs" />
     <Compile Include="../../Assets/Scripts/InGame/Match/TurnState.cs" Link="Game/TurnState.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/MatchState.cs" Link="Game/MatchState.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/EnergyState.cs" Link="Game/EnergyState.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/MatchPolicy.cs" Link="Game/MatchPolicy.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/TimeStopState.cs" Link="Game/TimeStopState.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/BattleRuleset.cs" Link="Game/BattleRuleset.cs" />
     <Compile Include="../../Assets/Scripts/InGame/Match/MatchAction.cs" Link="Game/MatchAction.cs" />
     <Compile Include="../../Assets/Scripts/InGame/Match/PieceMoves.cs" Link="Game/PieceMoves.cs" />
     <Compile Include="../../Assets/Scripts/InGame/Match/BoardSnapshot.cs" Link="Game/BoardSnapshot.cs" />
     <Compile Include="../../Assets/Scripts/InGame/Match/BoardSimulator.cs" Link="Game/BoardSimulator.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/BoardSimulator.Skills.cs" Link="Game/BoardSimulator.Skills.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/SnapshotSkills.cs" Link="Game/SnapshotSkills.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/GameRng.cs" Link="Game/GameRng.cs" />
     <Compile Include="../../Assets/Scripts/InGame/Match/SnapshotRules.cs" Link="Game/SnapshotRules.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Cpu/CpuEvaluate.cs" Link="Game/CpuEvaluate.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Cpu/CpuSearch.cs" Link="Game/CpuSearch.cs" />
     <Compile Include="../../Assets/Scripts/InGame/GameHelper.cs" Link="Game/GameHelper.cs" />
     <Compile Include="../../Assets/Scripts/InGame/Rules/GameRules.cs" Link="Game/GameRules.cs" />
   </ItemGroup>

@@ -22,11 +22,15 @@ public class SnapshotPiece
     public bool shield;            // 盾状態
     public bool phalanx;           // ファランクス状態
     public bool undead;            // アンデッド
+    public bool wing;              // 翼状態（通常魔法「翼」。鳥は駒の種類で決まるので false のまま。HasWing を使う）
     public bool initial;           // 初期配置の駒（倒されると fallenInitial に記録する）
     public bool frozen;            // 時間停止中：消失・爆発の予定があり、もう動かせない
     public bool pendingPromote;    // 時間停止中：成りの予定がある（もう成れない）
 
     public PlayerType Owner => (PlayerType)owner;
+
+    // 翼状態か（鳥、または魔法「翼」。PieceRules.HasWing と同じ）
+    public bool HasWing => wing || PieceRules.IsWingType(type);
 
     public SnapshotPiece Clone()
     {
@@ -43,6 +47,7 @@ public class SnapshotPiece
         if (shield) sb.Append(" 盾");
         if (phalanx) sb.Append(" ファランクス");
         if (undead) sb.Append(" アンデッド");
+        if (wing) sb.Append(" 翼");
         if (!initial) sb.Append(" (初期配置でない)");
         return sb.ToString();
     }
@@ -54,8 +59,11 @@ public class SnapshotCell
     public CellState state = CellState.Normal;
     public int burnUntil = -1;     // 炎上が終わるターン（炎上中でなければ -1）
     public int trap = -1;          // 落とし穴の持ち主（(int)PlayerType。なければ -1）
+    public int wall = -1;          // 壁を建てた側（(int)PlayerType。壁でなければ -1）
 
     public bool IsBroken => state == CellState.Broken;
+    public bool IsWall => state == CellState.Wall;
+    public bool IsBlocked => IsBroken || IsWall;   // 入れない・通れない（BoardCell.IsBlocked）
     public bool IsBurning => state == CellState.Burning;
     public bool HasTrap => trap >= 0;
     public bool IsHazard => IsBurning || HasTrap;
@@ -67,6 +75,7 @@ public class SnapshotCell
 
     public string Describe()
     {
+        if (IsWall) return $"壁（{(wall == 0 ? "先手" : "後手")}）";
         string s = state == CellState.Broken ? "破壊" : state == CellState.Burning ? $"炎上（第{burnUntil}ターンまで）" : "通常";
         return HasTrap ? $"{s}・落とし穴（{(trap == 0 ? "先手" : "後手")}）" : s;
     }
@@ -81,12 +90,14 @@ public class SnapshotPlayer
     public bool transcendentUnlocked;                             // 超常魔法を解放した（シミュレーションでは変えない）
     public bool transcendentUsed;                                 // 超常魔法を使った（〃）
     public int worldEndSince = -1;                                // 世界の終わりを発動したターン（未発動なら -1）
+    public List<SnapshotSkill> skills = new List<SnapshotSkill>();   // 編成した魔法（編成の枠の順。空の枠は入れない）
 
     public SnapshotPlayer Clone()
     {
         SnapshotPlayer p = (SnapshotPlayer)MemberwiseClone();
         p.hand = (int[])hand.Clone();
         p.fallenInitial = new List<PieceType>(fallenInitial);
+        p.skills = new List<SnapshotSkill>(skills);   // 魔法の定義は書き換えないので同じものを使う
         return p;
     }
 }
@@ -126,10 +137,23 @@ public class BoardSnapshot
     public List<SnapshotRecipe> recipes = new List<SnapshotRecipe>();    // 錬成のレシピ（並びは錬成ボタンの順）
     public bool online;                                                  // オンライン対戦中（錬成・狙撃・必殺技は使えない）
 
+    // 必殺技・魔法をシミュレーションで判定・実行するための情報（SnapshotSkills.cs・BoardSimulator.Skills.cs）。
+    // skillsKnown なら、必殺技・魔法の合法手は BoardSimulator が作る（行動を当てはめたあとも分かる）。
+    // false なら今までどおり skillActions（スナップショットを作った局面の合法手）だけ
+    public bool skillsKnown;
+    public SpecialKind[] specialKinds = new SpecialKind[PieceTypeCount];  // 駒の種類ごとの必殺技（添字は (int)PieceType）
+
+    // 対局の乱数（GameRng。天変地異・世界の終わり・アンデッド）のシードと状態。CPU の先読みは、ここを CPU 自身の乱数で置き換えて
+    // 「対局の結果に関わる乱数」を先読みしない（Prototype の search.js の simulate）
+    public uint rngSeed;
+    public uint rngState;
+
     // 時間停止（停止世界）
     public bool timeStopped;
     public int timeStopOwner = -1;
     public bool timeStopReleasable;                                      // 今「解除」できる状態か（発動した行動のあと・使い切る前）
+    public int timeStopRemaining;                                        // 時間停止の残り回数
+    public bool timeStopJustStarted;                                     // 停止世界を発動した行動の処理中（この行動は回数に数えない）
     public List<MatchSquare> heldSquares = new List<MatchSquare>();      // 予定の駒が残っているマス（持ち駒を打てない）
 
     // 勝敗
@@ -203,6 +227,40 @@ public class BoardSnapshot
     {
         SnapshotCell c = Cell(x, y);
         return c != null && c.IsHazard;
+    }
+
+    public bool IsWall(int x, int y)
+    {
+        SnapshotCell c = Cell(x, y);
+        return c != null && c.IsWall;
+    }
+
+    // 翼状態（PieceRules の IsBlockedFor・IsBlockedForType・IsHazardFor・IsHazardForType・Detonates と同じ判定）。
+    // 翼状態の駒は破壊マスにも入れ、炎上・落とし穴で消失しない。壁は翼状態でも入れない・通れない
+    public bool IsBlockedFor(SnapshotPiece p, int x, int y)
+    {
+        return IsWall(x, y) || (IsBroken(x, y) && !(p != null && p.HasWing));
+    }
+
+    public bool IsBlockedForType(PieceType type, int x, int y)
+    {
+        return IsWall(x, y) || (IsBroken(x, y) && !PieceRules.IsWingType(type));
+    }
+
+    public bool IsHazardFor(SnapshotPiece p, int x, int y)
+    {
+        return IsHazard(x, y) && !(p != null && p.HasWing);
+    }
+
+    public bool IsHazardForType(PieceType type, int x, int y)
+    {
+        return IsHazard(x, y) && !PieceRules.IsWingType(type);
+    }
+
+    // mover が火薬 target のマスに入ると爆発するか（鳥は爆発させずに取る）
+    public static bool Detonates(SnapshotPiece mover, SnapshotPiece target)
+    {
+        return target != null && PieceRules.IsExplosive(target.type) && !(mover != null && PieceRules.IsWingType(mover.type));
     }
 
     // p が盤上にいるか
@@ -294,6 +352,7 @@ public class BoardSnapshot
         s.players = new SnapshotPlayer[players.Length];
         for (int i = 0; i < players.Length; i++) s.players[i] = players[i].Clone();
         s.specialMoves = (int[])specialMoves.Clone();
+        s.specialKinds = (SpecialKind[])specialKinds.Clone();
         s.recipes = new List<SnapshotRecipe>(recipes);           // レシピは書き換えないので同じものを使う
         s.heldSquares = new List<MatchSquare>(heldSquares);
         s.skillActions = new List<MatchAction>(skillActions.Count);
@@ -353,7 +412,7 @@ public class BoardSnapshot
                 string a = PieceKey(At(x, y), all), b = PieceKey(other.At(x, y), all);
                 if (a != b) d.Add($"({x}, {y}) の駒: {Describe(At(x, y))} ／ {Describe(other.At(x, y))}");
                 SnapshotCell ca = Cell(x, y), cb = other.Cell(x, y);
-                if (ca.state != cb.state || ca.trap != cb.trap || (ca.IsBurning && ca.burnUntil != cb.burnUntil))
+                if (ca.state != cb.state || ca.trap != cb.trap || (ca.IsWall && ca.wall != cb.wall) || (ca.IsBurning && ca.burnUntil != cb.burnUntil))
                 {
                     d.Add($"({x}, {y}) のマス: {ca.Describe()} ／ {cb.Describe()}");
                 }
@@ -400,7 +459,7 @@ public class BoardSnapshot
     static string PieceKey(SnapshotPiece p, bool all)
     {
         if (p == null) return "";
-        string key = $"{p.type}|{p.owner}|{p.promoted}|{p.moveCount}|{p.shield}|{p.phalanx}|{p.undead}|{p.initial}";
+        string key = $"{p.type}|{p.owner}|{p.promoted}|{p.moveCount}|{p.shield}|{p.phalanx}|{p.undead}|{p.wing}|{p.initial}";
         return all ? $"{key}|{p.frozen}|{p.pendingPromote}" : key;
     }
 

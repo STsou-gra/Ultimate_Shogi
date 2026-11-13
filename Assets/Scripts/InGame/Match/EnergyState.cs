@@ -10,6 +10,9 @@ public class EnergyState
     // エナジーが変わった（プレイヤー・変わった後の値・増減）
     public event System.Action<PlayerType, int, int> Changed;
 
+    // Changed の通知中、その変化が「目立たせない」もの（合戦将棋型の毎秒のエナジー。「+1 エナジー」のポップアップを出さない）か
+    public bool IsQuietChange { get; private set; }
+
     public EnergyState(int max = MatchConfig.EnergyMax)
     {
         Max = max;
@@ -25,14 +28,23 @@ public class EnergyState
         return Get(player) >= amount;
     }
 
-    // エナジーを加える（0 以下なら何もしない）。上限があれば超えた分は捨てる。実際に増えた量を返す
-    public int Gain(PlayerType player, int amount)
+    // エナジーを加える（0 以下なら何もしない）。上限があれば超えた分は捨てる。実際に増えた量を返す。
+    // quiet なら Changed の通知中 IsQuietChange が true（表示は変えるが、ポップアップは出さない）
+    public int Gain(PlayerType player, int amount, bool quiet = false)
     {
         if (amount <= 0) return 0;
         int before = Get(player);
         int after = before + amount;
         if (Max > 0 && after > Max) after = System.Math.Max(before, Max);
-        return Set(player, after);
+        IsQuietChange = quiet;
+        try
+        {
+            return Set(player, after);
+        }
+        finally
+        {
+            IsQuietChange = false;
+        }
     }
 
     // エナジーを使う（足りなければ使わずに false）

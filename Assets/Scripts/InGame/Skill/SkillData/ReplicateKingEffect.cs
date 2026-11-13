@@ -13,9 +13,9 @@ public class ReplicateKingEffect : SkillEffect
         int targetX = (self == PlayerType.Player1) ? 0 : 8;
         int targetY = 4;
 
-        // 空いていて、破壊・炎上・落とし穴でないマスにだけ出す（入ると消失するマスには出さない）
+        // 空いていて、破壊・壁・炎上・落とし穴でないマスにだけ出す（入れないマス・入ると消失するマスには出さない）
         BoardCell cell = board.Cells.At(targetX, targetY);
-        if (board.GetPieceAt(targetX, targetY) == null && cell != null && !cell.IsBroken && !cell.IsHazard)
+        if (board.GetPieceAt(targetX, targetY) == null && cell != null && !cell.IsBlocked && !cell.IsHazard)
         {
             board.SpawnPiece(PieceType.King, self, targetX, targetY);
             Debug.Log($"{self} はスキルによって2枚目の王将を召喚した！");

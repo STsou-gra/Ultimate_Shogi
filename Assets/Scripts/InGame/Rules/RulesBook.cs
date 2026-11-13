@@ -51,8 +51,10 @@ public class RulesPage
         return this;
     }
 
+    // text が null なら何も足さない（候補にある魔法だけ説明を足すとき用）
     public RulesPage Text(string text, int indent = 1, string badge = null)
     {
+        if (text == null) return this;
         Lines.Add(new RulesLine { Kind = RulesLineKind.Text, Indent = indent, Text = text, Badge = badge });
         return this;
     }
@@ -81,6 +83,10 @@ public class RulesSources
     public IReadOnlyCollection<SkillDefinition> Player1Deck; // この対局の編成（一覧に「先手」の印を付ける。なければ null）
     public IReadOnlyCollection<SkillDefinition> Player2Deck;
     public System.Func<int, string> ForgeKeyLabel;          // 錬成のキー（GameSystem.ForgeKeyLabel。なければ null）
+    public PlayerType? CpuSide;                             // この対局で CPU が指す側（2人で対戦なら null）
+    public int CpuLevel;                                    // その CPU の強さ
+    public BattleRuleset Ruleset;                           // この対局の戦闘型（なければ null。「戦闘型」ページの印に使う）
+    public IReadOnlyList<BattleRuleset> Rulesets;           // 戦闘型の一覧（なければ BattleRulesets.All）
 }
 
 public static class RulesBook
@@ -91,7 +97,8 @@ public static class RulesBook
         List<RulesPage> pages = new List<RulesPage>
         {
             BasicPage(),
-            EnergyPage(),
+            RulesetPage(src),
+            EnergyPage(src),
             ForgeAndSpecialPage(src),
             MagicPage(src),
         };
@@ -120,14 +127,54 @@ public static class RulesBook
         p.Heading("ターンと陣地")
          .Text("先手・後手が1回ずつ指して1ターン（画面に「第Nターン（第M手）」）。手番が替わるたびに盤が回り、手番の側が手前になる。")
          .Text("盤の手前3段＝自陣 ／ 中央3段＝中立 ／ 奥3段＝敵陣（色分けと境界線で表示）。")
-         .Text($"第 {MatchConfig.EnemyZoneDropLockTurns} ターンまでは、敵陣に持ち駒を打てない。");
+         .Text($"第 {MatchConfig.EnemyZoneDropLockTurns} ターンまでは、敵陣に持ち駒を打てない。")
+         .Text("（手番のない「合戦将棋型」の違いは「戦闘型」のページ）");
+        return p;
+    }
+
+    // ------------------------------------------------------------
+    //  戦闘型（本将棋型・合戦将棋型。BattleRulesets の定義から作る）
+    // ------------------------------------------------------------
+    static RulesPage RulesetPage(RulesSources src)
+    {
+        RulesPage p = new RulesPage("戦闘型");
+        IReadOnlyList<BattleRuleset> all = src.Rulesets ?? BattleRulesets.All;
+        p.Heading("戦闘型")
+         .Text("「時間がどう進むか」の違い。編成画面の右上で選ぶ（オンライン対戦は本将棋型だけ）。");
+        foreach (BattleRuleset r in all)
+        {
+            if (r == null) continue;
+            string badge = src.Ruleset == r ? "この対局" : null;
+            p.Text($"{r.Name}：{Clean(r.Description)}", 1, badge);
+        }
+
+        foreach (BattleRuleset r in all)
+        {
+            if (r == null || !r.Realtime) continue;
+            RulesetDurations d = r.Durations ?? new RulesetDurations();
+            p.Heading(r.Name);
+            p.Text("手番がない。両者ともいつでも何度でも自分の駒を動かせる（移動・打つ・必殺技・狙撃・魔法・錬成）。")
+             .Text("1 台のキーボードを左右に分けて、先手・後手が同時に操作する（キーは「操作」のページ）。自分の駒・持ち駒・魔法のキーを使えば、その人の行動になる。")
+             .Text($"エナジーは 1 秒ごとに +{r.EnergyPerSec}（取り・取られのエナジーは本将棋型と同じ）。動いた駒は {r.PieceCooldownSec:0.0} 秒だけ次の行動ができない。")
+             .Text("必殺技・魔法の全画面のカットインは出ない（スキルごとの演出は出る）。演出の再生で対局の進行は止まらない。")
+             .Text("勝ち負け：相手の王将をすべて取った（倒した）ら勝ち。詰み・千日手・王手の表示はなく、打ち歩詰めも禁止しない。")
+             .Text("ターン数で決まる規則は秒に読み替える：")
+             .Text($"敵陣への打ち込み禁止 … 開始から {d.DropLockSec:0} 秒", 2)
+             .Text($"炎上 … 1 ターン = {d.BurnSecPerTurn:0} 秒（隕石は {10 * d.BurnSecPerTurn:0} 秒。マスの数字は残り秒）", 2)
+             .Text($"世界の終わり … {d.WorldEndIntervalSec:0} 秒ごとに {MatchConfig.WorldEndCells} マス", 2)
+             .Text($"ファランクス・アンデッドの自動行動 … {d.AutoActSec:0} 秒ごと（先手 → 後手の順）", 2)
+             .Text($"停止世界 … {MatchConfig.TimeStopMoves} 回行動か {d.TimeStopSec:0} 秒の早いほう（その間、相手は操作できず、対局の時間も止まる）", 2)
+             .Text($"超常魔法の解放 … 行動のあとと {d.UnlockCheckSec:0} 秒ごとに判定", 2)
+             .Text("「2回行動」は使えない（手番がない）。")
+             .Text("画面の上に経過時間。「一時停止」（Esc）で止められる。ルール説明を開いている間・ウィンドウが非アクティブの間も止まる。");
+        }
         return p;
     }
 
     // ------------------------------------------------------------
     //  エナジー・取りと消失・マスの状態
     // ------------------------------------------------------------
-    static RulesPage EnergyPage()
+    static RulesPage EnergyPage(RulesSources src)
     {
         RulesPage p = new RulesPage("エナジー・マス");
 
@@ -150,7 +197,7 @@ public static class RulesBook
 
         p.Heading("取りと消失")
          .Text("取り（通常の移動・必殺技・狙撃・剣・ファランクスなど）：上のエナジー配分あり。取った駒は持ち駒になる。")
-         .Text("消失（火薬の爆発・爆発・隕石・破壊砲・炎上・落とし穴・マス破壊など）：エナジーなし。持ち駒にもならない。")
+         .Text("消失（火薬の爆発・爆発・ボム・隕石・破壊砲・炎上・落とし穴・マス破壊など）：エナジーなし。持ち駒にもならない。")
          .Text("王将は爆発（火薬・魔法の「爆発」）では倒せない（範囲にいても残る）。")
          .Text("盾：盾状態の駒（水色の六角形のバリア）は、相手の取りを1回だけ防ぐ（盾は割れる）。消失は防げない。")
          .Text("通常の移動で盾の駒を取ろうとした駒は、元のマスへ跳ね返る（手番は使う）。必殺技の突進は盾の駒の手前で止まる。", 2);
@@ -158,8 +205,19 @@ public static class RulesBook
         p.Heading("マスの状態")
          .Text("破壊：穴が開いたマス。移動も通過もできず、持ち駒も打てない。壊れた瞬間にそこにいた駒は消失する。対局終了まで戻らない。")
          .Text("炎上：入った駒は消失する（打った駒も）。すでにいる駒は無事。右上の数字＝残りターン。時間がたつと元に戻る。")
-         .Text("落とし穴：暗い渦（縁の色＝仕掛けた側）。敵味方問わず、入った駒は消失し、穴も消える。持ち駒は打てない。")
-         .Text("走り駒（香車・角行・飛車）は炎上・落とし穴のマスで止まり、破壊マスの手前で止まる。");
+         .Text("落とし穴：暗い渦（縁の色＝仕掛けた側）。敵味方問わず、入った駒は消失し、穴も消える。持ち駒は打てない。");
+        bool hasWall = FindEffect<WallEffect>(src) != null;
+        if (hasWall)
+        {
+            p.Text("壁：石積みの壁（縁の色＝建てた側）。敵味方問わず、移動・通過・打ち込みができない（走り駒・突進技は手前で止まり、光線もさえぎる）。")
+             .Text("桂の跳躍は飛び越せ、狙撃はさえぎらない。対局終了まで残る（取り・爆発・隕石・炎上では壊れない。マスが破壊されると壁ごと崩れる）。", 2);
+        }
+        p.Text(hasWall
+            ? "走り駒（香車・角行・飛車）は炎上・落とし穴のマスで止まり、破壊マス・壁の手前で止まる。"
+            : "走り駒（香車・角行・飛車）は炎上・落とし穴のマスで止まり、破壊マスの手前で止まる。")
+         .Text(hasWall
+            ? "翼状態の駒（鳥・魔法「翼」）はマスの効果を受けない（壁は通れない。「魔法の補足」の「翼状態」を参照）。"
+            : "翼状態の駒（鳥・魔法「翼」）はマスの効果を受けない（「魔法の補足」の「翼状態」を参照）。");
         return p;
     }
 
@@ -216,7 +274,7 @@ public static class RulesBook
             }
         }
         if (specials == 0) p.Text("（必殺技はまだありません）", 2);
-        p.Text("共通：味方の駒・破壊マスの手前で止まる。炎上・落とし穴に入ると消失し、火薬に当たると爆発する。敵陣に入る・出ると自動で成る。取った駒は持ち駒になり、王将も取れる（取ったら勝ち）。");
+        p.Text("共通：味方の駒・破壊マス・壁の手前で止まる。炎上・落とし穴に入ると消失し、火薬に当たると爆発する。敵陣に入る・出ると自動で成る。取った駒は持ち駒になり、王将も取れる（取ったら勝ち）。");
         return p;
     }
 
@@ -238,6 +296,7 @@ public static class RulesBook
          .Text("自分の手番に、画面の魔法ボタン（名前とコスト）を押す。発動するとエナジーを払う。")
          .Text("対象を選ぶ魔法は、光っているマスにカーソルを合わせて F。Space で取り消せる（取り消したらエナジーは減らない）。")
          .Text("範囲を選ぶ魔法は、カーソル位置の範囲が塗られる。赤い範囲は選べない。向きのある魔法は R キーで向きを変える。")
+         .Text(HasDestinationMagic(src) ? "2段階で選ぶ魔法（ワープなど）は、対象の駒で F → 光っている行き先で F。行き先を選んでいるときに同じ駒で F を押すと駒を選び直せる（ほかの光る駒で F でも選び直せる）。" : null)
          .Text("「手番を使う」魔法は、駒を動かす・打つ代わりになる。「手番を使わない」魔法は、使ったあとも続けて指せる。")
          .Text("エナジーが足りない・効果の対象がないときは押せない。");
         if (HasRank(src, SkillRank.Transcendent))
@@ -273,16 +332,65 @@ public static class RulesBook
     {
         RulesPage p = new RulesPage("魔法の補足");
 
+        SkillDefinition wall = FindEffect<WallEffect>(src);
+        if (wall != null)
+        {
+            p.Heading($"{wall.skillName}（通常魔法）")
+             .Text("自陣か中立の空きマス（駒がなく、破壊・炎上・落とし穴・壁でないマス）に壁を建てる。縁の色＝建てた側。")
+             .Text("壁のマスは敵味方問わず、移動・通過・持ち駒の打ち込みができない：")
+             .Text("走り駒・突進技（突撃・貫通槍）は壁の手前で止まり、光線（光芒四射・龍王旋風）は壁に当たって止まる。押し出された駒（金剛衝）は壁にぶつかって止まる。", 2)
+             .Text("ファランクスの前進・アンデッドの自動行動も壁を通れない。桂の跳躍（通常の移動・天馬跳躍）は飛び越せる。狙撃はさえぎらない。", 2)
+             .Text("壁は対局終了まで残る（取り・爆発・隕石・炎上では壊れない）。マスが破壊される（破壊砲・世界の終わり）と壁ごと崩れる。天変地異ではマスと一緒に動く。");
+        }
+
         SkillDefinition phalanx = FindEffect<PhalanxEffect>(src);
         if (phalanx != null)
         {
             p.Heading($"{phalanx.skillName}（必殺魔法）")
              .Text("盾状態の自分の駒（王将以外）を1つ選んでファランクス状態にする。盾はそのまま残り、駒は前方へ金色の槍を構える。")
              .Text("ファランクスの駒は、持ち主の手番の行動が終わったあと、手番が替わる前に自動で動く：")
-             .Text("① 1マス前進する。前が盤外・破壊マス・駒で塞がっていれば前進しない。炎上・落とし穴なら消失し、火薬なら爆発する。敵陣に入る・出ると成る。", 2)
+             .Text("① 1マス前進する。前が盤外・破壊マス・壁・駒で塞がっていれば前進しない。炎上・落とし穴なら消失し、火薬なら爆発する。敵陣に入る・出ると成る。", 2)
              .Text("② 生き残っていれば（前進できなくても）、前方1×3マス（左前・前・右前）の相手の駒を取る（盾で防がれる。相手の火薬は爆発する）。", 2)
              .Text("複数いるときは、盤の奥（相手の陣地側）にいる駒から順に動く。2回行動で手番が続くときは動かない。")
              .Text("盾が割れてもファランクス状態は続く。取られて持ち駒になると解除される。");
+        }
+
+        // 翼状態（魔法「翼」・錬成駒「鳥」）。どちらかがこの対局で使えるときだけ載せる
+        SkillDefinition wing = FindEffect<WingEffect>(src);
+        bool bird = HasRecipe(src, PieceType.Bird);
+        if (wing != null || bird)
+        {
+            string who = wing != null && bird ? $"{wing.skillName}（通常魔法）・鳥（錬成駒）" : wing != null ? $"{wing.skillName}（通常魔法）" : "鳥（錬成駒）";
+            p.Heading($"翼状態（{who}）");
+            if (wing != null) p.Text($"{wing.skillName}：翼状態ではない自分の駒（火薬・鳥以外。王将も可）を1つ選んで翼状態にする（両脇に白い翼）。");
+            if (bird) p.Text("鳥：常に翼状態（左右に白い翼）。前の1×3マス（左前・前・右前）にしか動けず、成らない。");
+            p.Text("翼状態の駒はマスの効果を受けない：")
+             .Text("破壊マスにも入れる（押し出し・ファランクスの前進も）。炎上・落とし穴のマスに入っても消失しない（落とし穴は閉じずに残る）。", 2)
+             .Text("走り駒・突進（突撃・貫通槍）は、破壊・炎上・落とし穴のマスと火薬の上を通り抜ける。通った火薬は爆発しない（火薬のマスに止まれば爆発）。", 2)
+             .Text("破壊マスの上の翼の駒は、翼のない駒では取れない（狙撃・魔法・光線・槍は届く）。", 2)
+             .Text("爆発・隕石・破壊砲など、駒に直接当たる効果は受ける（消失する）。");
+            if (wing != null) p.Text($"{wing.skillName}の駒は、いるマスが壊れても（世界の終わりなど）消失しない。取られて持ち駒になると翼状態は解除される。");
+            if (bird) p.Text("鳥は火薬のマスに入っても爆発させず、火薬を取る（味方の火薬のマスには入れない）。破壊マス・落とし穴にも打てる。いるマスが壊れると消失する。取られたら相手の持ち駒になる。");
+        }
+
+        SkillDefinition warp = FindEffect<WarpEffect>(src);
+        if (warp != null)
+        {
+            p.Heading($"{warp.skillName}（通常魔法）")
+             .Text("自分の駒（王将も可。アンデッドは不可）→ 行き先のマス、の順に選んで瞬間移動させる。")
+             .Text("行き先は、駒がいない通常のマス（破壊・炎上・落とし穴のマスは不可）で、自陣か中立。自分の駒が1つでも敵陣にいれば、敵陣のマスも選べる。")
+             .Text("移動ではないので、取り・成り・必殺技の移動回数にはならない。行き所のない駒になるマス（成っていない歩・香の一番奥、桂の奥2段）には飛ばせない。")
+             .Text("停止世界の時間停止中も使える（消失・爆発の予定ができた駒は選べない）。");
+        }
+
+        SkillDefinition bomb = FindEffect<BombEffect>(src);
+        if (bomb != null)
+        {
+            p.Heading($"{bomb.skillName}（通常魔法）")
+             .Text("自分の駒を1つ選び、その2マス先の前方1×3マス（左前・前・右前）に爆弾を3つ投げる。投げたマスそれぞれを中心に3×3が爆発する。")
+             .Text("爆発の範囲は、選んだ駒の前方1〜3マス × 横5マス。選んだ駒自身は巻き込まれない。盤外にはみ出した分は何も起こらない。", 2)
+             .Text("範囲の駒は敵味方問わず消失する（取りではないので盾では防げない。火薬は誘爆せずにそのまま消える）。")
+             .Text("範囲にどちらかの王将が入る駒・2マス先が盤外になる駒は選べない。対象選択中は、カーソルの駒の爆発の範囲が塗られる（選べない駒は赤）。");
         }
 
         if (HasRank(src, SkillRank.Transcendent))
@@ -304,7 +412,7 @@ public static class RulesBook
              .Text("行動の効果はその場では起こらず「予定」になる（マスの角などに印が付く）：")
              .Text("取り → 相手の駒は灰色になって残る。以降はないものとして扱う（その上を通ったり止まったりできる）。", 2)
              .Text("火薬に重なる・撃つ → 爆発の予定。炎上・落とし穴に入る → 消失の予定。その駒はもう動かせない。", 2)
-             .Text("成り・隕石や破壊砲で消える駒・マスの変化（落とし穴・破壊・炎上）も予定になる。", 2)
+             .Text("成り・隕石や破壊砲で消える駒・マスの変化（落とし穴・壁の設置・破壊・炎上）も予定になる。", 2)
              .Text("時間停止中はエナジーが増えない（魔法の消費はその場で減る）。ファランクス・アンデッドなどの自動行動も止まる。")
              .Text("回数を使い切るか「解除」を押すと時間が動き出し、予定を起きた順にまとめて処理する（取りのエナジー・盾も、このとき有効になる）。");
         }
@@ -329,6 +437,16 @@ public static class RulesBook
     static RulesPage ControlsPage(RulesSources src)
     {
         RulesPage p = new RulesPage("操作");
+        p.Heading("対戦モード")
+         .Text("タイトルの「ゲームスタート」で選ぶ：「2人で対戦」（1 台の画面で交代に操作）／「CPU と対戦」（自分が先手か後手か・CPU の強さを選ぶ）");
+        for (int lv = CpuLevels.Min; lv <= CpuLevels.Max; lv++) p.Text($"{CpuLevels.Label(lv)}：{CpuLevels.Note(lv)}", 2);
+        p.Text("CPU と対戦では、魔法スキルの編成は自分の分だけ（CPU は自分で選ぶ）。盤は回らず、いつも自分が手前。CPU の手番は操作できない（考えている間も画面は動く）");
+        if (src.CpuSide.HasValue)
+        {
+            string me = src.CpuSide.Value == PlayerType.Player1 ? "後手" : "先手";
+            p.Text($"この対局：あなたは{me}、CPU は {CpuLevels.Label(src.CpuLevel)}", 1, "CPU");
+        }
+
         p.Heading("盤の操作")
          .Text("カーソル移動：W A S D ／ 矢印キー")
          .Text("決定：F　　取り消し：Space")
@@ -358,6 +476,21 @@ public static class RulesBook
          .Text("魔法：画面の魔法ボタンをクリック → 対象・範囲を F で決定（R：向きを変える ／ Space：やめる）")
          .Text("時間停止の解除：Q（「解除」ボタン）");
 
+        p.Heading("棋譜")
+         .Text("棋譜メニュー：K（左下の「棋譜」ボタン）。この対局の棋譜の保存（.json）・棋譜を読み込んで再生（等速・4倍速）・今の局面の書き出しと読み込み")
+         .Text("棋譜の再生中は操作できない（画面の上に進み具合。「再生を止める」でその局面から続けて指せる）。最後まで再生しても、その局面から続けて指せる")
+         .Text("結果画面の「棋譜を保存」でも保存できる");
+        p.Heading("合戦将棋型の操作（先手・後手が同時に操作する）");
+        foreach (SeatKeys k in new[] { SeatKeys.KassenSente, SeatKeys.KassenGote })
+        {
+            p.Sub(k.Name)
+             .Text($"カーソル {SeatKeys.Labels(k.Up, k.Left, k.Down, k.Right)}　決定 {SeatKeys.Label(k.Ok)}　取消 {SeatKeys.Label(k.Cancel)}　持ち駒 {SeatKeys.Label(k.Hand)}", 2)
+             .Text($"必殺技 {SeatKeys.Label(k.Special)}　狙撃 {SeatKeys.Label(k.Snipe)}　範囲の向き {SeatKeys.Label(k.Orient)}　時間停止の解除 {SeatKeys.Label(k.Release)}", 2)
+             .Text($"魔法 {SeatKeys.Label(k.Skills, 0)}〜{SeatKeys.Label(k.Skills, k.Skills.Length - 1)}（編成の枠の順）　錬成 {SeatKeys.Labels(new[] { k.Forge[0] })}・{SeatKeys.Label(k.Forge, 1)}", 2);
+        }
+        p.Text("成る・成らない：カーソルのキーで選んで決定。画面のボタン（魔法・錬成・必殺技・狙撃）は、最後にキーを押した側（「操作中」）の分。")
+         .Text("一時停止：Esc（画面の上の「一時停止」ボタン）。");
+
         p.Heading("この画面")
          .Text("開く・閉じる：Tab（「ルール」ボタン）。閉じる：Esc・Space・枠の外をクリックでも閉じる")
          .Text("ページの切り替え：上のタブ ／ ← →・A D　　スクロール：マウスホイール ／ ↑ ↓・W S");
@@ -373,6 +506,27 @@ public static class RulesBook
         foreach (SkillDefinition s in src.Magics)
         {
             if (s != null && s.rank == rank) return true;
+        }
+        return false;
+    }
+
+    static bool HasRecipe(RulesSources src, PieceType type)
+    {
+        if (src.ForgeRecipes == null) return false;
+        foreach (ForgeRecipe r in src.ForgeRecipes)
+        {
+            if (r != null && r.pieceType == type) return true;
+        }
+        return false;
+    }
+
+    // 2 段階で選ぶ魔法（SkillEffect.UsesDestination。ワープ）が候補にあるか
+    static bool HasDestinationMagic(RulesSources src)
+    {
+        if (src.Magics == null) return false;
+        foreach (SkillDefinition s in src.Magics)
+        {
+            if (s != null && s.effect != null && s.effect.UsesDestination) return true;
         }
         return false;
     }

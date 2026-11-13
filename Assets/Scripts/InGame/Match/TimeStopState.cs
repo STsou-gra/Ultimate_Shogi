@@ -5,7 +5,8 @@ using UnityEngine;
 // 時間停止中は GameSystem.TimeStop にあり、それ以外は null。予定にする処理・解除の処理は GameSystem.TimeStop.cs。
 //
 //  ・Remaining / Total … 残り / 最初に行動できた回数（移動・打つ・魔法・必殺技・狙撃が各 1 回。錬成は数えない）
-//  ・Ending            … 回数を使い切った・「解除」を押した（このあと予定をまとめて処理する）
+//  ・Ending            … 回数を使い切った・「解除」を押した・合戦将棋型で 10 秒たった（このあと予定をまとめて処理する）
+//  ・Elapsed           … 合戦将棋型：止まってからの tick 数
 //  ・Moves            … 時間停止中の駒の移動（1 マスごと）の記録。盾で押し戻すときに来た道をたどるのに使う
 //  ・Pending          … 効果の予定。記録した順に、時間が動き出したときに処理する
 //  ・Held             … 盤のデータから外して、その場に残している駒（取られる予定の駒・消える予定の駒・爆発する予定の火薬）。
@@ -19,6 +20,8 @@ public class TimeStopState
     public bool Ending { get; set; }
     // 停止世界を発動した行動のあと（その行動は回数に数えない）
     public bool JustStarted { get; set; } = true;
+    // 合戦将棋型：止まってからの tick 数（MatchPolicy.TimeStopTicks に達したら、回数が残っていても解除する）
+    public int Elapsed { get; set; }
 
     public List<TimeStopMove> Moves { get; } = new List<TimeStopMove>();
     public List<TimeStopPending> Pending { get; } = new List<TimeStopPending>();
@@ -129,7 +132,7 @@ public class TimeStopMove
 }
 
 public enum TimeStopKind { Capture, Explode, Vanish, Promote, Cell }
-public enum TimeStopCellEffect { Trap, Break, Burn }
+public enum TimeStopCellEffect { Trap, Break, Burn, Wall }
 
 // 時間停止の予定 1 つ（Prototype の pending の 1 件）
 public class TimeStopPending
@@ -147,6 +150,6 @@ public class TimeStopPending
     public Vector2Int HitDirection; // 倒されるときに飛ばされる向き（演出用）
 
     public TimeStopCellEffect CellEffect; // マスの変化の種類
-    public PlayerType CellOwner;          // 落とし穴を仕掛けたプレイヤー
+    public PlayerType CellOwner;          // 落とし穴を仕掛けた・壁を建てたプレイヤー
     public int Turns;                     // 炎上のターン数
 }
