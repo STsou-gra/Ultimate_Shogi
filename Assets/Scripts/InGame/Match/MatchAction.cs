@@ -14,6 +14,8 @@ using UnityEngine;
 //  Forge           駒 piece を錬成する
 //  ReleaseTimeStop 停止世界の「解除」
 //
+// hash は棋譜（ActionHistory）に残した行動にだけ入る、処理が終わった時点の盤面のハッシュ（MatchHash）。
+//
 // 座標は GamePiece の X・Y と同じ（x = 段：先手の前進方向が +x、y = 筋）。Prototype（x = 筋・y = 段）とは x と y が逆なので注意。
 // owner は行動するプレイヤー（-1 = 手番のプレイヤー）。本将棋型では、手番と違うプレイヤーの行動は実行できない
 // （合戦将棋型のように手番がない対局で使う。Prototype の policies.js の actorOf）。
@@ -83,6 +85,10 @@ public class MatchAction
     public List<MatchSquare> targets = new List<MatchSquare>();
     // Magic：範囲を選ぶ魔法の向き（0 〜 SkillEffect.OrientCount - 1）
     public int orient;
+
+    // 棋譜（GameSystem.ActionHistory）にだけ入る：この行動の処理が終わった時点の盤面のハッシュ（MatchHash。Prototype の棋譜の hash）。
+    // 処理が終わるまでは ""。行動の中身ではないので、Key・判定・実行では見ない
+    public string hash = "";
 
     // ------------------------------------------------------------
     //  作る
@@ -245,6 +251,7 @@ public class MatchAction
             MatchAction a = JsonUtility.FromJson<MatchAction>(json);
             if (a != null && a.targets == null) a.targets = new List<MatchSquare>();
             if (a != null && a.skill == null) a.skill = "";
+            if (a != null && a.hash == null) a.hash = "";
             return a;
         }
         catch (System.ArgumentException)

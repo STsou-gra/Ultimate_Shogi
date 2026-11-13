@@ -167,8 +167,9 @@ public class GameBoard : MonoBehaviour
     }
 
     // 駒を作って (x, y) に置く（盤面の操作だけ）。作った駒を返す（置けなければ null）。
-    // 対局中に持ち駒を打つときは、置いたあとに GameSystem.EnterCell を呼ぶこと（炎上のマスなら消失する）
-    public GamePiece SpawnPiece(PieceType type, PlayerType player, int x, int y)
+    // 対局中に持ち駒を打つときは、置いたあとに GameSystem.EnterCell を呼ぶこと（炎上のマスなら消失する）。
+    // attach が false なら盤のデータには入れない（局面の読み込みで、時間停止の「予定の駒」をその場に置くとき）
+    public GamePiece SpawnPiece(PieceType type, PlayerType player, int x, int y, bool attach = true)
     {
         int index = GameHelper.CalcPanelNum(x, y);
         if (index == -1) return null;
@@ -192,8 +193,18 @@ public class GameBoard : MonoBehaviour
         {
             piece.transform.localRotation = Quaternion.Euler(0, 0, 180);
         }
-        boardData[index] = piece;
+        if (attach) boardData[index] = piece;
         return piece;
+    }
+
+    // 盤上の駒をすべて取り除いて破棄する（局面の読み込みで盤を作り直すとき。盤のデータから外している駒は呼び出し側が消す）
+    public void RemoveAllPieces()
+    {
+        for (int i = 0; i < boardData.Length; i++)
+        {
+            if (boardData[i] != null) Destroy(boardData[i].gameObject);
+            boardData[i] = null;
+        }
     }
 
     private GameObject GetPrefabByType(PieceType type)

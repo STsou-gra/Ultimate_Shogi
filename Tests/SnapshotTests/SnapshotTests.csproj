@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    盤面のスナップショット（BoardSnapshot・BoardSimulator・SnapshotRules・PieceMoves）の単体テスト。Unity の外（.NET 8 SDK）で動かす。
+    実行: このフォルダ（Tests/SnapshotTests）で dotnet run（0 件失敗なら終了コード 0）
+    Assets/ の外に置いているので、Unity はこのフォルダを読まない。UnityEngine は UnityStubs.cs の最小限の代わりを使う
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>CS0414;CS0169;CS0649;CS0067;CS0162</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="*.cs" />
+    <!-- テストする本体（GameObject に依存しないクラスと、照合に使う今のルール） -->
+    <Compile Include="../../Assets/Scripts/InGame/Match/BoardCells.cs" Link="Game/BoardCells.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/MatchSnapshot.cs" Link="Game/MatchSnapshot.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/BoardZones.cs" Link="Game/BoardZones.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/MatchConfig.cs" Link="Game/MatchConfig.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/PieceRules.cs" Link="Game/PieceRules.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/PieceValues.cs" Link="Game/PieceValues.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/PieceNames.cs" Link="Game/PieceNames.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/TurnState.cs" Link="Game/TurnState.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/MatchAction.cs" Link="Game/MatchAction.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/PieceMoves.cs" Link="Game/PieceMoves.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/BoardSnapshot.cs" Link="Game/BoardSnapshot.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/BoardSimulator.cs" Link="Game/BoardSimulator.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/SnapshotRules.cs" Link="Game/SnapshotRules.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/GameHelper.cs" Link="Game/GameHelper.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Rules/GameRules.cs" Link="Game/GameRules.cs" />
+  </ItemGroup>
+</Project>

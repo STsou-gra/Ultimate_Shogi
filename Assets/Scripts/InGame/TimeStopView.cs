@@ -81,6 +81,7 @@ public class TimeStopView : MonoBehaviour
         gameSystem.TimeStopResolving += OnResolving;
         gameSystem.TimeStopMarks += OnMarks;
         gameSystem.PieceHeldChanged += OnPieceHeld;
+        gameSystem.StateImported += OnStateImported;
     }
 
     void OnDestroy()
@@ -92,6 +93,7 @@ public class TimeStopView : MonoBehaviour
             gameSystem.TimeStopResolving -= OnResolving;
             gameSystem.TimeStopMarks -= OnMarks;
             gameSystem.PieceHeldChanged -= OnPieceHeld;
+            gameSystem.StateImported -= OnStateImported;
         }
         if (invert != null) Destroy(invert.gameObject);
         if (invertMaterial != null) Destroy(invertMaterial);
@@ -131,6 +133,17 @@ public class TimeStopView : MonoBehaviour
     {
         SetHeld(piece, on, gray);
         RefreshHeldOffsets();
+    }
+
+    // 局面を読み込んだ：前の局面の予定の駒（もう破棄された）を忘れ、時間停止中かどうかに表示を合わせる。
+    // 読み込んだ局面の予定の駒は、このあと PieceHeldChanged で届く
+    void OnStateImported()
+    {
+        held.Clear();
+        TimeStopState ts = gameSystem.TimeStop;
+        SetInverted(ts != null);
+        RenderMarks(ts, -1);
+        RefreshHud(false);
     }
 
     // ------------------------------------------------------------

@@ -145,6 +145,7 @@ public class BoardCellView : MonoBehaviour
 
         cells.Changed += OnCellChanged;
         cells.Rearranged += OnCellsRearranged;
+        cells.Reloaded += OnCellsReloaded;
         if (gameSystem != null) gameSystem.PieceDefeated += OnPieceDefeated;
     }
 
@@ -154,6 +155,7 @@ public class BoardCellView : MonoBehaviour
         {
             cells.Changed -= OnCellChanged;
             cells.Rearranged -= OnCellsRearranged;
+            cells.Reloaded -= OnCellsReloaded;
         }
         if (gameSystem != null) gameSystem.PieceDefeated -= OnPieceDefeated;
         if (root != null) Destroy(root.gameObject);
@@ -331,6 +333,29 @@ public class BoardCellView : MonoBehaviour
         }
         foreach (Vector2Int t in to) Refresh(t.x, t.y);
         SnapVisuals();
+    }
+
+    // ------------------------------------------------------------
+    //  局面を読み込んだ（GameSystem.ImportState）：演出なしで、全部のマスをデータどおりに描き直す
+    // ------------------------------------------------------------
+    void OnCellsReloaded()
+    {
+        foreach (CellVisual v in visuals)
+        {
+            if (v == null) continue;
+            v.trapClosing = false;
+            v.shownRemaining = int.MinValue;
+            if (v.trap != null)
+            {
+                v.trap.transform.DOKill();
+                v.trap.transform.localScale = Vector3.one;
+            }
+        }
+        SnapVisuals();
+        for (int x = 0; x < BoardCells.Size; x++)
+        {
+            for (int y = 0; y < BoardCells.Size; y++) Refresh(x, y);
+        }
     }
 
     // (x, y) のマスの炎上・落とし穴の表示（マスの中心。なければ null）。天変地異の演出で、駒と一緒に飛ばす
