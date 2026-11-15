@@ -8,8 +8,8 @@ using DG.Tweening;
 //  魔力の火花 … 魔法陣・光の粒・画面シェイク・「きらきら！」
 //  ワープ     … 元のマスと行き先に魔法陣が開き、駒に光が吸い込まれる → 駒がその場で縦に縮んで消え、行き先で伸びて現れる
 //                → 光が弾ける（衝撃波・光の粒・「ワープ！」）
-//  ボム       … 駒が振りかぶり、導火線に火のついた爆弾 3 つを前方へ放物線で投げる（落下地点が赤く明滅）
-//                → 投げたマスそれぞれで爆発（閃光・揺れは 1 回にまとめる。範囲全体が赤く光る。「ボム!!」）。駒の吹き飛びは SpecialMoveFx
+//  ボム       … 駒が振りかぶり、導火線に火のついた爆弾を狙ったマスへ放物線で投げる（爆発の範囲が赤く明滅）
+//                → 狙ったマスを中心に 3×3 の爆発（範囲が赤く光る。「ボム!!」）。駒の吹き飛びは SpecialMoveFx
 public partial class MagicFx
 {
     public static readonly Color SparkColor = Hex(0x7c4dff);
@@ -19,10 +19,8 @@ public partial class MagicFx
     // ワープ：魔法陣が開いてから駒が縮み始めるまで／縮み始めてから行き先に現れるまで（WarpEffect はこの分待つ）
     public const float WarpOutTime = 0.35f;
     public const float WarpMoveTime = 0.4f;
-    // ボム：投げてから 3 つ目の爆弾が着弾するまで（BombEffect はこの分待ってから爆発させる）
-    public const float BombFlightTime = BombFlight + BombStagger * 2f;
-    private const float BombFlight = 0.6f;
-    private const float BombStagger = 0.06f;
+    // ボム：投げてから爆弾が着弾するまで（BombEffect はこの分待ってから爆発させる）
+    public const float BombFlightTime = 0.6f;
 
     // ------------------------------------------------------------
     //  魔力の火花（動作確認用）
@@ -107,21 +105,21 @@ public partial class MagicFx
     //  ボム
     // ------------------------------------------------------------
 
-    // 駒が振りかぶり、導火線に火のついた爆弾を landing の各マスへ放物線で投げる（落下地点の予告つき。BombFlightTime 秒で全部着弾）
-    public void BombThrow(GamePiece caster, List<Vector2Int> landing, float time)
+    // 駒が振りかぶり、導火線に火のついた爆弾を狙ったマス at へ放物線で投げる（爆発の範囲 cells の予告つき。BombFlightTime 秒で着弾）
+    public void BombThrow(GamePiece caster, Vector2Int at, List<Vector2Int> cells, float time)
     {
-        if (caster == null || landing == null || landing.Count == 0) return;
-        List<Vector2Int> cells = new List<Vector2Int>(landing);
+        if (caster == null) return;
+        List<Vector2Int> warnArea = new List<Vector2Int>(cells);
         Vector2Int fromCell = new Vector2Int(caster.X, caster.Y);
         At(time, () =>
         {
             Vector3 from = CellWorld(fromCell.x, fromCell.y);
 
-            // 落下地点の予告：赤く明滅する（着弾まで）
-            Transform warn = AreaCells(cells, Hex(0xff1744), 0.35f, out SpriteRenderer[] warnCells);
+            // 爆発の範囲の予告：赤く明滅する（着弾まで）
+            Transform warn = AreaCells(warnArea, Hex(0xff1744), 0.3f, out SpriteRenderer[] warnCells);
             Tween blink = DOVirtual.Float(0.3f, 1f, 0.1f, a =>
             {
-                foreach (SpriteRenderer sr in warnCells) sr.color = WithAlpha(Hex(0xff1744), 0.35f * a);
+                foreach (SpriteRenderer sr in warnCells) sr.color = WithAlpha(Hex(0xff1744), 0.3f * a);
             }).SetLoops(-1, LoopType.Yoyo).SetLink(warn.gameObject);
             DOVirtual.DelayedCall(BombFlightTime, () =>
             {
@@ -144,12 +142,13 @@ public partial class MagicFx
             burst.speed = 140f * PX; burst.life = 0.35f; burst.size = 0.18f;
             fx.Burst(from, burst);
 
-            for (int i = 0; i < cells.Count; i++) ThrowBomb(from, CellWorld(cells[i].x, cells[i].y), i);
+            ThrowBomb(from, CellWorld(at.x, at.y), fromCell, at);
         });
     }
 
-    // 爆弾 1 つ：from から to へ放物線を描いて飛び、回りながら導火線の先から火花を散らす
-    void ThrowBomb(Vector3 from, Vector3 to, int index)
+    // 爆弾：from から to へ放物線を描いて飛び、回りながら導火線の先から火花を散らす。
+    // 回る向きは、画面で左へ投げるなら左回り（Prototype の spin = to.x < from.x ? -1 : 1。Prototype の x ＝ 筋）
+    void ThrowBomb(Vector3 from, Vector3 to, Vector2Int fromCell, Vector2Int toCell)
     {
         Transform bomb = new GameObject("Bomb").transform;
         bomb.position = new Vector3(from.x, from.y, from.z - 0.3f);
@@ -157,18 +156,16 @@ public partial class MagicFx
         sr.sprite = MagicSprites.Bomb;
         sr.sortingOrder = fxOrder + 5;
         bomb.localScale = Vector3.one * 0.6f;
-        sr.enabled = false; // 投げる順にずらして出す
 
         float camZ = cam != null ? cam.transform.eulerAngles.z : 0f; // 画面の上を上にする
-        float spin = (index % 2 == 1 ? -1f : 1f) * 270f;
+        float spin = (toCell.y < fromCell.y ? -1f : 1f) * 270f;
         Vector3 up = ScreenUp;
         Color[] sparkColors = { Hex(0xffea00), Hex(0xff9100), Color.white };
         Vector3 fuseTip = new Vector3(12f * PX, 28f * PX, 0f);
 
-        DOVirtual.Float(0f, 1f, BombFlight, k =>
+        DOVirtual.Float(0f, 1f, BombFlightTime, k =>
         {
             if (bomb == null) return;
-            sr.enabled = true;
             float arc = Mathf.Sin(Mathf.PI * k);
             Vector3 p = Vector3.Lerp(from, to, k) + up * (arc * 1.3f);
             bomb.position = new Vector3(p.x, p.y, from.z - 0.3f);
@@ -179,24 +176,18 @@ public partial class MagicFx
             o.life = 0.25f;
             o.size = Random.Range(0.08f, 0.16f);
             fx.Particle(bomb.TransformPoint(fuseTip), o);
-        }).SetDelay(index * BombStagger).SetEase(Ease.Linear).SetLink(bomb.gameObject)
+        }).SetEase(Ease.Linear).SetLink(bomb.gameObject)
           .OnComplete(() => { if (bomb != null) Destroy(bomb.gameObject); });
     }
 
-    // 投げたマスそれぞれで 3×3 の爆発（範囲全体が赤く光る。閃光・揺れは 1 回にまとめる）
-    public void BombBlast(List<Vector2Int> landing, List<Vector2Int> area, float time)
+    // 狙ったマス at を中心に 3×3 の爆発（火球・閃光・揺れ。範囲 area が赤く光る。「ボム!!」）
+    public void BombBlast(Vector2Int at, List<Vector2Int> area, float time)
     {
-        List<Vector2Int> centers = new List<Vector2Int>(landing);
         List<Vector2Int> cells = new List<Vector2Int>(area);
         At(time, () =>
         {
-            for (int i = 0; i < centers.Count; i++)
-            {
-                Vector3 p = CellWorld(centers[i].x, centers[i].y);
-                // 火球が重なりすぎて白く飛ばないよう、少し小さく・ずらす
-                At(i * 0.1f, () => { if (newPieceFx != null) newPieceFx.Explosion(p, 66f * 2.2f, true); });
-            }
-            if (newPieceFx != null) newPieceFx.Flash(Hex(0xfff3e0), 0.45f, 0.35f);
+            Vector3 c = CellWorld(at.x, at.y);
+            if (newPieceFx != null) newPieceFx.Explosion(c, 66f * 3f);
 
             Transform hot = AreaCells(cells, Hex(0xff3d00), 0.6f, out SpriteRenderer[] hotCells);
             DOVirtual.Float(1f, 0f, 0.9f, a =>
@@ -204,11 +195,7 @@ public partial class MagicFx
                 foreach (SpriteRenderer sr in hotCells) sr.color = WithAlpha(Hex(0xff3d00), 0.6f * a);
             }).SetLink(hot.gameObject).OnComplete(() => { if (hot != null) Destroy(hot.gameObject); });
 
-            fx.Shake(30f, 0.9f);
-            Vector3 center = Vector3.zero;
-            foreach (Vector2Int c in cells) center += CellWorld(c.x, c.y);
-            if (cells.Count > 0) center /= cells.Count;
-            PopText("ボム!!", center - ScreenUp * (10f * PX), 80f, Hex(0xfff59d), Hex(0xd50000), Hex(0x2a0000), 40f, 1.1f);
+            PopText("ボム!!", c + ScreenUp * (20f * PX), 76f, Hex(0xfff59d), Hex(0xd50000), Hex(0x2a0000), 40f, 1.1f);
         });
     }
 }

@@ -11,7 +11,7 @@ using UnityEngine;
 //  Special         from の駒の必殺技（対象を選ぶ技だけ targets[0]）
 //  Snipe           from の狙撃手で targets[0] の駒を撃つ
 //  Magic           魔法 skill（SkillDefinition.Id）。対象を選ぶ魔法だけ targets（選んだ順）。範囲を選ぶ魔法は向き orient も。
-//                  2 段階で選ぶ魔法（ワープの「駒 → 行き先」。SkillEffect.UsesDestination）は行き先 to も（Prototype の Action の to）
+//                  2 段階で選ぶ魔法（ワープの「駒 → 行き先」・ボムの「駒 → 狙うマス」。SkillEffect.UsesDestination）は行き先 to も（Prototype の Action の to）
 //  Forge           駒 piece を錬成する
 //  ReleaseTimeStop 停止世界の「解除」
 //
@@ -124,7 +124,7 @@ public class MatchAction
         return a;
     }
 
-    // 対象を選ばない魔法は targets を省く。行き先 to は 2 段階で選ぶ魔法（ワープ）だけ
+    // 対象を選ばない魔法は targets を省く。行き先 to は 2 段階で選ぶ魔法（ワープ・ボム）だけ
     public static MatchAction Magic(string skillId, IEnumerable<Vector2Int> targets = null, int orient = 0, Vector2Int? to = null)
     {
         MatchAction a = new MatchAction { type = MatchActionType.Magic, skill = skillId ?? "", orient = orient };

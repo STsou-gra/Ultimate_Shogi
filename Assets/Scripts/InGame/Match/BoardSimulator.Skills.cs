@@ -375,6 +375,7 @@ public static partial class BoardSimulator
             case MagicKind.Swap: return !chosen.Contains(new MatchSquare(x, y)) && IsOwnPiece(owner, p);
             case MagicKind.Explosion: return true;
             case MagicKind.Phalanx: return IsOwnPiece(owner, p) && p.shield && !p.phalanx && p.type != PieceType.King;
+            case MagicKind.Bomb: return IsOwnPiece(owner, p) && BombAimSquares(s, p).Count > 0;
             case MagicKind.Meteor:
             case MagicKind.Cannon:
             {
@@ -383,6 +384,21 @@ public static partial class BoardSimulator
                 return area != null && area.Count > 0 && AreaBlockers(s, owner, skill, x, y, area).Count == 0;
             }
             default: return true;
+        }
+    }
+
+    // SkillEffect.IsValidDestination：選んだ対象 chosen から、(x, y) を行き先に選べるか
+    static bool IsValidDestination(BoardSnapshot s, PlayerType owner, SnapshotSkill skill, List<MatchSquare> chosen, int x, int y)
+    {
+        if (chosen.Count == 0 || !BoardCells.InBounds(x, y)) return false;
+        switch (skill.kind)
+        {
+            case MagicKind.Bomb:
+            {
+                SnapshotPiece p = s.At(chosen[0].x, chosen[0].y);
+                return IsOwnPiece(owner, p) && BombAimSquares(s, p).Contains(new MatchSquare(x, y));
+            }
+            default: return false;
         }
     }
 
@@ -465,13 +481,25 @@ public static partial class BoardSimulator
             {
                 if (!IsTargetSelectable(s, player, skill, chosen, x, y)) continue;
                 chosen.Add(new MatchSquare(x, y));
-                if (chosen.Count >= skill.TargetCount)
+                if (chosen.Count < skill.TargetCount)
+                {
+                    AddMagicTargets(s, res, player, skill, chosen, orient);
+                }
+                else if (!skill.UsesDestination)
                 {
                     res.Add(new MatchAction { type = MatchActionType.Magic, skill = skill.id, targets = new List<MatchSquare>(chosen), orient = orient });
                 }
                 else
                 {
-                    AddMagicTargets(s, res, player, skill, chosen, orient);
+                    // 2 段階で選ぶ魔法：行き先ごとに 1 つ（GameSystem.AddMagicTargets と同じく x → y の順）
+                    for (int tx = 0; tx < BoardCells.Size; tx++)
+                    {
+                        for (int ty = 0; ty < BoardCells.Size; ty++)
+                        {
+                            if (!IsValidDestination(s, player, skill, chosen, tx, ty)) continue;
+                            res.Add(new MatchAction { type = MatchActionType.Magic, skill = skill.id, targets = new List<MatchSquare>(chosen), orient = orient, to = new MatchSquare(tx, ty) });
+                        }
+                    }
                 }
                 chosen.RemoveAt(chosen.Count - 1);
             }
@@ -485,6 +513,7 @@ public static partial class BoardSimulator
         if (skill == null) return "編成していない魔法です";
         string reason = SkillBlockReason(s, me, skill);
         if (reason != null) return reason;
+        if (!skill.UsesDestination && a.to.IsOnBoard) return "行き先を選ばない魔法です";
         if (skill.TargetCount <= 0) return a.TargetCount > 0 ? "対象を選ばない魔法です" : null;
         if (a.TargetCount != skill.TargetCount) return "対象の数が違います";
         if (a.orient < 0 || a.orient >= System.Math.Max(1, skill.OrientCount)) return "範囲の向きが違います";
@@ -493,6 +522,11 @@ public static partial class BoardSimulator
         {
             if (!IsTargetSelectable(s, me, skill, chosen, t.x, t.y)) return "そのマスは選べません";
             chosen.Add(t);
+        }
+        if (skill.UsesDestination)
+        {
+            if (!a.to.IsOnBoard) return "行き先がありません";
+            if (!IsValidDestination(s, me, skill, chosen, a.to.x, a.to.y)) return "その行き先は選べません";
         }
         return null;
     }
@@ -599,6 +633,26 @@ public static partial class BoardSimulator
                 foreach (MatchSquare sq in cells) BreakCell(s, sq.x, sq.y);
                 break;
             }
+            case MagicKind.Bomb:
+            {
+                // BombEffect：狙ったマス a.to を中心に 3×3 の駒がすべて消失（盾は無効。火薬は MatchConfig.ChainExplosion のときだけ誘爆）
+                List<MatchSquare> area = SquareArea(a.to.x, a.to.y, 1);
+                List<SnapshotPiece> victims = new List<SnapshotPiece>();
+                foreach (MatchSquare sq in area)
+                {
+                    SnapshotPiece q = s.At(sq.x, sq.y);
+                    if (q != null) victims.Add(q);
+                }
+                List<MatchSquare> chain = new List<MatchSquare>();
+                foreach (SnapshotPiece q in victims)
+                {
+                    MatchSquare at = new MatchSquare(q.x, q.y);
+                    bool explosive = PieceRules.IsExplosive(q.type);
+                    if (Vanish(s, q) && MatchConfig.ChainExplosion && explosive) chain.Add(at);
+                }
+                foreach (MatchSquare c in chain) Explode(s, c.x, c.y, null);
+                break;
+            }
             case MagicKind.Cataclysm:
                 ShuffleCells(s);
                 break;
@@ -697,6 +751,30 @@ public static partial class BoardSimulator
         {
             SnapshotPiece q = s.At(sq.x, sq.y);
             if (q != null && q.owner != p.owner) result.Add(q);
+        }
+        return result;
+    }
+
+    // MagicKit.BombLandingSquares：2 マス先の前方 1×3（盤外は除く。破壊マスにも落ちる）
+    static List<MatchSquare> BombLandingSquares(SnapshotPiece p)
+    {
+        List<MatchSquare> result = new List<MatchSquare>();
+        if (p == null) return result;
+        int x = p.x + 2 * Forward(p.Owner);
+        for (int y = p.y - 1; y <= p.y + 1; y++)
+        {
+            if (BoardCells.InBounds(x, y)) result.Add(new MatchSquare(x, y));
+        }
+        return result;
+    }
+
+    // MagicKit.BombAimSquares：投げられるマスのうち、そこを中心とした 3×3 にどちらの王将もいないもの
+    static List<MatchSquare> BombAimSquares(BoardSnapshot s, SnapshotPiece p)
+    {
+        List<MatchSquare> result = new List<MatchSquare>();
+        foreach (MatchSquare c in BombLandingSquares(p))
+        {
+            if (KingSquares(s, SquareArea(c.x, c.y, 1)).Count == 0) result.Add(c);
         }
         return result;
     }

@@ -143,17 +143,14 @@ public static class MagicKit
         return result;
     }
 
-    // ボムの爆発の範囲（Prototype の bomb.js の blastSquares）：投げたマスそれぞれを中心とした 3×3 を合わせたもの
-    // （盤内のみ・重複なし。駒の前方 1〜3 マス × 横 5 マス。投げた駒自身は入らない）
-    public static List<Vector2Int> BombBlastSquares(GamePiece p)
+    // 駒 p が狙えるマス（Prototype の bomb.js の aimSquares）：爆弾を投げられるマスのうち、
+    // そこを中心とした 3×3 にどちらの王将もいないもの。空なら、その駒ではボムを使えない
+    public static List<Vector2Int> BombAimSquares(GameBoard board, GamePiece p)
     {
         List<Vector2Int> result = new List<Vector2Int>();
         foreach (Vector2Int c in BombLandingSquares(p))
         {
-            foreach (Vector2Int s in SquareArea(c.x, c.y, 1))
-            {
-                if (!result.Contains(s)) result.Add(s);
-            }
+            if (KingSquares(board, SquareArea(c.x, c.y, 1)).Count == 0) result.Add(c);
         }
         return result;
     }

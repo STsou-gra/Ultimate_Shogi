@@ -270,7 +270,7 @@ public partial class GameSystem
                 if (!IsSkillTargetSelectable(effect, context, t)) return effect.UsesArea ? effect.BlockedText : "そのマスは選べません";
                 context.Targets.Add(t);
             }
-            // 2 段階で選ぶ魔法（ワープ）：選んだ対象からの行き先（対象選択の 2 段階目と同じ判定）
+            // 2 段階で選ぶ魔法（ワープ・ボム）：選んだ対象からの行き先（対象選択の 2 段階目と同じ判定）
             if (effect.UsesDestination)
             {
                 if (!a.to.IsOnBoard) return "行き先がありません";
@@ -565,7 +565,8 @@ public partial class GameSystem
         }
     }
 
-    // 対象を 1 つずつ選んでいく（context.Targets に選び終わった対象。TargetCount 個そろったら行動にする）
+    // 対象を 1 つずつ選んでいく（context.Targets に選び終わった対象。TargetCount 個そろったら行動にする）。
+    // 2 段階で選ぶ魔法（ワープ・ボム）は、そろった対象からの行き先ごとに 1 つの行動にする（Prototype の magicTargetPairs）
     void AddMagicTargets(List<MatchAction> res, SkillDefinition skill, SkillContext context)
     {
         SkillEffect effect = skill.effect;
@@ -576,8 +577,12 @@ public partial class GameSystem
                 Vector2Int pos = new Vector2Int(x, y);
                 if (!IsSkillTargetSelectable(effect, context, pos)) continue;
                 context.Targets.Add(pos);
-                if (context.Targets.Count >= effect.TargetCount) res.Add(MatchAction.Magic(skill.Id, context.Targets, context.Orient));
-                else AddMagicTargets(res, skill, context);
+                if (context.Targets.Count < effect.TargetCount) AddMagicTargets(res, skill, context);
+                else if (!effect.UsesDestination) res.Add(MatchAction.Magic(skill.Id, context.Targets, context.Orient));
+                else
+                {
+                    foreach (Vector2Int to in effect.GetDestinations(context)) res.Add(MatchAction.Magic(skill.Id, context.Targets, context.Orient, to));
+                }
                 context.Targets.RemoveAt(context.Targets.Count - 1);
             }
         }
