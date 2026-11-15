@@ -8,8 +8,9 @@ using UnityEngine;
 // EditMode テスト（Assets/Tests/EditMode/MatchSnapshotTests.cs）がリフレクションで Check〜 のメソッドを 1 つずつ呼ぶ。
 // 失敗したら CheckFailedException を投げる。メニュー「UltimateShogi/局面の書き出しを確かめる」からも全部を実行できる。
 //
-// Check〜 を足すと、テストにも自動で並ぶ（public static・引数なし・名前が Check で始まるメソッド）
-public static class MatchSnapshotChecks
+// Check〜 を足すと、テストにも自動で並ぶ（public static・引数なし・名前が Check で始まるメソッド）。
+// 魔法スキルの編成画面の確認は MatchSnapshotChecks.Loadout.cs（同じクラスの続き）
+public static partial class MatchSnapshotChecks
 {
     public class CheckFailedException : System.Exception
     {

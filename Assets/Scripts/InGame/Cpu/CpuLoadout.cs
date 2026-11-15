@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 // CPU の魔法スキルの編成（Prototype の CpuController.chooseLoadout）：ランクごとに、候補からランダムに選ぶ。
+// デバッグ用の魔法（SkillDefinition.debugOnly。魔力の火花）は候補に入れない（人の編成画面と同じ）
 // 編成画面（DeckSelectController）が CPU の分をこれで決める（人の分の枠だけを画面に出す）
 public static class CpuLoadout
 {
@@ -17,7 +18,7 @@ public static class CpuLoadout
             {
                 foreach (SkillDefinition s in all)
                 {
-                    if (s != null && s.rank == rank && !candidates.Contains(s)) candidates.Add(s);
+                    if (s != null && s.Selectable && s.rank == rank && !candidates.Contains(s)) candidates.Add(s);
                 }
             }
             List<SkillDefinition> picked = rng.Shuffle(candidates);

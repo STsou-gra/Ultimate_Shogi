@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.InputSystem;
 using TMPro;
 
 // 魔法スキルの編成画面（Prototype の src/scenes/LoadoutScene.js）。対局の前に、各プレイヤーがランクごとに魔法を選ぶ。
@@ -8,6 +9,11 @@ using TMPro;
 //  ・枠を押すと、その枠のランクの魔法だけが選択肢に並ぶ（同じ魔法は 2 つの枠に入れられない）
 //  ・候補が選ぶ数以下のランクは、全部を選んだ状態で固定（枠は押せない）。候補がないランクの枠は「候補なし」
 //  ・すべての枠が埋まると「対局開始」を押せる
+//  ・選択肢はカード（SkillCardView。Prototype の SkillCard）：ランク・名前・説明の書き出し・コスト・「詳細」ボタン。
+//    「詳細」で説明の全文と補足を小さなポップアップ（SkillDetailPopup）で出す。「閉じる」・外側のクリック・Esc で閉じる。
+//    説明の文は SkillDefinition の description から取り、ルール説明（RulesBook）と同じ文を使う
+//  ・キーボード：選択パネルを開いている間、← → ↑ ↓（W A S D）でカードを選ぶ・Enter（F）で決定・I で「詳細」・Esc で閉じる
+//  ・デバッグ用の魔法（SkillDefinition.debugOnly。魔力の火花）は候補に出さない（Prototype の RETIRED_SKILLS）
 // 選んだ魔法は枠の順に SkillDeck に入れて、DeckTransferManager で対局（GameSystem）に渡す
 // CPU と対戦（MatchSetup.IsVsCpu）のときは、人の分の枠だけを出し、CPU の分は CpuLoadout が選ぶ（Prototype と同じ）
 public class DeckSelectController : MonoBehaviour
@@ -46,6 +52,18 @@ public class DeckSelectController : MonoBehaviour
     //生成した選択肢ボタン（スキルごと）
     private readonly List<GameObject> spawnedButtons = new List<GameObject>();
     private readonly List<SkillDefinition> spawnedSkills = new List<SkillDefinition>();
+    private readonly List<SkillCardView> spawnedCards = new List<SkillCardView>();
+
+    // 選択パネルに今並んでいるカード（押した枠のランクの魔法）と、キーボードで選んでいるカード
+    private readonly List<SkillCardView> visibleCards = new List<SkillCardView>();
+    private int focusIndex = -1;
+    private int cardColumns = 3;
+    private int selectionOpenedFrame = -1;
+    private RulesSources detailSources; // 「詳細」の補足を作るのに使う（ルール説明と同じ）
+
+    const float CardSpacing = 14f;
+    const float CardPadding = 10f;
+    const float ScrollbarWidth = 17f;
 
     void Start()
     {
@@ -117,7 +135,7 @@ public class DeckSelectController : MonoBehaviour
         if (database == null) return result;
         foreach (SkillDefinition skill in database.allSkills)
         {
-            if (skill != null && skill.rank == rank && !result.Contains(skill)) result.Add(skill);
+            if (skill != null && skill.Selectable && skill.rank == rank && !result.Contains(skill)) result.Add(skill);
         }
         return result;
     }
@@ -191,6 +209,8 @@ public class DeckSelectController : MonoBehaviour
         }
         spawnedButtons.Clear();
         spawnedSkills.Clear();
+        spawnedCards.Clear();
+        PrepareCardLayout();
 
         //データベースに登録されている魔法の数だけボタンを生成（表示するのは、押した枠のランクの魔法だけ）
         foreach (SkillRank rank in SkillRanks.All)
@@ -201,6 +221,7 @@ public class DeckSelectController : MonoBehaviour
                 GameObject buttonObject = Instantiate(skillButtonPrefab, selectionButtonsContainer);
                 spawnedButtons.Add(buttonObject);
                 spawnedSkills.Add(skill);
+                spawnedCards.Add(SkillCardView.Decorate(buttonObject, skill, OpenDetail, OnCardHover));
 
                 //クリックイベントの登録
                 Button buttonComponent = buttonObject.GetComponent<Button>();
@@ -256,6 +277,9 @@ public class DeckSelectController : MonoBehaviour
         SkillDefinition[] slots = SlotsOf(player);
 
         // その枠のランクの魔法だけを並べる。同じプレイヤーのほかの枠に入っている魔法は選べない
+        SkillDetailPopup.CloseCurrent();
+        visibleCards.Clear();
+        focusIndex = -1;
         for (int i = 0; i < spawnedButtons.Count; i++)
         {
             GameObject buttonObject = spawnedButtons[i];
@@ -270,15 +294,16 @@ public class DeckSelectController : MonoBehaviour
             {
                 if (s != slotIndex && slots[s] == skill) usedElsewhere = true;
             }
-            Button button = buttonObject.GetComponent<Button>();
-            if (button != null) button.interactable = !usedElsewhere;
-            TextMeshProUGUI text = buttonObject.GetComponentInChildren<TextMeshProUGUI>();
-            if (text != null)
-            {
-                string mark = slots[slotIndex] == skill ? "● " : usedElsewhere ? "（選択済み）" : "";
-                text.text = $"{mark}{skill.skillName}（コスト：{skill.cost}）";
-            }
+            SkillCardView card = spawnedCards[i];
+            card.SetState(slots[slotIndex] == skill, usedElsewhere);
+            card.SetFocused(false);
+            if (slots[slotIndex] == skill) focusIndex = visibleCards.Count;
+            visibleCards.Add(card);
         }
+        if (focusIndex < 0) focusIndex = visibleCards.FindIndex(c => c.CanChoose);
+        if (focusIndex < 0 && visibleCards.Count > 0) focusIndex = 0;
+        SetFocus(focusIndex, true);
+        selectionOpenedFrame = Time.frameCount;
 
         //スキル選択パネルを表示
         if (skillSelectionPanel != null)
@@ -326,6 +351,13 @@ public class DeckSelectController : MonoBehaviour
         }
 
         UpdateSlotDisplays();
+        CloseSelection();
+    }
+
+    // 選択パネルを閉じる（枠の中身は変えない）
+    void CloseSelection()
+    {
+        SkillDetailPopup.CloseCurrent();
         if (skillSelectionPanel != null)
         {
             skillSelectionPanel.SetActive(false);
@@ -334,6 +366,159 @@ public class DeckSelectController : MonoBehaviour
         {
             removeSkillButton.gameObject.SetActive(false);
         }
+        visibleCards.Clear();
+        focusIndex = -1;
+        RuntimeUi.ClearUiSelection();
+    }
+
+    bool IsSelectionOpen => skillSelectionPanel != null && skillSelectionPanel.activeInHierarchy;
+
+    // ------------------------------------------------------------
+    //  カード・「詳細」・キーボード
+    // ------------------------------------------------------------
+
+    // 選択パネルをカードが並ぶ大きさにする（シーンの選択パネル・Content の GridLayoutGroup を実行時に直す）。
+    // 列の数は画面の幅に入るだけ（最大 3）。縦はスクロール
+    void PrepareCardLayout()
+    {
+        if (selectionButtonsContainer == null) return;
+        RectTransform canvasRect = null;
+        Canvas canvas = selectionButtonsContainer.GetComponentInParent<Canvas>();
+        if (canvas != null) canvasRect = canvas.rootCanvas.transform as RectTransform;
+        float canvasW = canvasRect != null && canvasRect.rect.width > 0f ? canvasRect.rect.width : 1920f;
+        float canvasH = canvasRect != null && canvasRect.rect.height > 0f ? canvasRect.rect.height : 1080f;
+
+        float extra = CardPadding * 2f + ScrollbarWidth;
+        cardColumns = Mathf.Clamp(Mathf.FloorToInt((canvasW - 40f - extra + CardSpacing) / (SkillCardView.Width + CardSpacing)), 1, 3);
+        float panelW = cardColumns * SkillCardView.Width + (cardColumns - 1) * CardSpacing + extra;
+        float panelH = Mathf.Min(canvasH - 220f, 2.5f * (SkillCardView.Height + CardSpacing) + extra);
+        panelH = Mathf.Max(panelH, SkillCardView.Height + extra);
+
+        GridLayoutGroup grid = selectionButtonsContainer.GetComponent<GridLayoutGroup>();
+        if (grid != null)
+        {
+            grid.cellSize = new Vector2(SkillCardView.Width, SkillCardView.Height);
+            grid.spacing = new Vector2(CardSpacing, CardSpacing);
+            grid.padding = new RectOffset((int)CardPadding, (int)CardPadding, (int)CardPadding, (int)CardPadding);
+            grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            grid.constraintCount = cardColumns;
+            grid.childAlignment = TextAnchor.UpperLeft;
+        }
+        ContentSizeFitter fitter = selectionButtonsContainer.GetComponent<ContentSizeFitter>();
+        if (fitter == null) fitter = selectionButtonsContainer.gameObject.AddComponent<ContentSizeFitter>();
+        fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        if (skillSelectionPanel == null) return;
+        RectTransform panelRt = skillSelectionPanel.transform as RectTransform;
+        if (panelRt != null) panelRt.sizeDelta = new Vector2(panelW, panelH);
+        ScrollRect scroll = skillSelectionPanel.GetComponentInChildren<ScrollRect>(true);
+        if (scroll != null)
+        {
+            scroll.horizontal = false;
+            if (scroll.horizontalScrollbar != null) scroll.horizontalScrollbar.gameObject.SetActive(false);
+            scroll.horizontalScrollbar = null;
+            scroll.scrollSensitivity = Mathf.Max(scroll.scrollSensitivity, 30f);
+        }
+
+        // 操作の案内（パネルの上の左）と「なし」ボタン（パネルの上の右）
+        if (panelRt != null)
+        {
+            TextMeshProUGUI hint = RuntimeUi.CreateText("KeyHint", panelRt, "クリックで選ぶ・「詳細」で説明　｜　← → ↑ ↓：選ぶ　Enter：決定　I：詳細　Esc：閉じる",
+                15f, Color.white, TextAlignmentOptions.BottomLeft, RuntimeUi.LoadFont());
+            hint.enableAutoSizing = true;
+            hint.fontSizeMin = 10f;
+            hint.fontSizeMax = 15f;
+            hint.textWrappingMode = TextWrappingModes.NoWrap;
+            RuntimeUi.Place(hint.rectTransform, new Vector2(0f, 1f), new Vector2(0f, -34f), new Vector2(panelW - 130f, 30f));
+            if (removeSkillButton != null && removeSkillButton.transform.parent == panelRt.parent)
+            {
+                RectTransform removeRt = (RectTransform)removeSkillButton.transform;
+                removeRt.anchorMin = removeRt.anchorMax = panelRt.anchorMin;
+                removeRt.pivot = new Vector2(1f, 0f);
+                removeRt.sizeDelta = new Vector2(110f, 30f);
+                removeRt.anchoredPosition = panelRt.anchoredPosition + new Vector2(panelW * (1f - panelRt.pivot.x), panelH * (1f - panelRt.pivot.y) + 4f);
+            }
+        }
+    }
+
+    void OnCardHover(SkillCardView card)
+    {
+        if (SkillDetailPopup.IsOpen) return;
+        int index = visibleCards.IndexOf(card);
+        if (index >= 0) SetFocus(index, false);
+    }
+
+    void SetFocus(int index, bool scrollTo)
+    {
+        if (visibleCards.Count == 0) { focusIndex = -1; return; }
+        focusIndex = Mathf.Clamp(index, 0, visibleCards.Count - 1);
+        for (int i = 0; i < visibleCards.Count; i++) visibleCards[i].SetFocused(i == focusIndex);
+        if (scrollTo) ScrollToFocus();
+    }
+
+    // キーボードで選んだカードが見えるように縦にスクロールする
+    void ScrollToFocus()
+    {
+        if (skillSelectionPanel == null || focusIndex < 0) return;
+        ScrollRect scroll = skillSelectionPanel.GetComponentInChildren<ScrollRect>(true);
+        if (scroll == null) return;
+        int rows = Mathf.CeilToInt(visibleCards.Count / (float)Mathf.Max(1, cardColumns));
+        int row = focusIndex / Mathf.Max(1, cardColumns);
+        scroll.verticalNormalizedPosition = rows <= 1 ? 1f : 1f - row / (float)(rows - 1);
+    }
+
+    // 「詳細」：説明の全文と補足をカードの近くにポップアップで出す（同時に 1 つだけ）
+    void OpenDetail(SkillCardView card)
+    {
+        if (card == null || card.Skill == null) return;
+        int index = visibleCards.IndexOf(card);
+        if (index >= 0) SetFocus(index, false);
+        SkillDetailPopup.Open(card.Skill, (RectTransform)card.transform, DetailSources());
+    }
+
+    RulesSources DetailSources()
+    {
+        if (detailSources != null) return detailSources;
+        detailSources = new RulesSources();
+        if (database != null) detailSources.Magics = database.Selectable;
+        ForgeRecipeBook book = ForgeRecipeBook.LoadDefault();
+        if (book != null) detailSources.ForgeRecipes = book.recipes;
+        return detailSources;
+    }
+
+    void Update()
+    {
+        if (!IsSelectionOpen) return;
+        Keyboard k = Keyboard.current;
+        if (k == null || Time.frameCount == selectionOpenedFrame) return; // 枠を押した Enter を決定として読まない
+        bool esc = k.escapeKey.wasPressedThisFrame;
+        bool info = k.iKey.wasPressedThisFrame;
+        bool enter = k.enterKey.wasPressedThisFrame || k.numpadEnterKey.wasPressedThisFrame || k.fKey.wasPressedThisFrame;
+
+        // 「詳細」を開いている間は、Esc（と I・Enter）で閉じるだけ
+        if (SkillDetailPopup.IsOpen)
+        {
+            if (esc || info || enter) SkillDetailPopup.CloseCurrent();
+            return;
+        }
+        if (RulesOverlayView.IsBlockingInput) return;
+
+        int cols = Mathf.Max(1, cardColumns);
+        if (k.leftArrowKey.wasPressedThisFrame || k.aKey.wasPressedThisFrame) SetFocus(focusIndex - 1, true);
+        else if (k.rightArrowKey.wasPressedThisFrame || k.dKey.wasPressedThisFrame) SetFocus(focusIndex + 1, true);
+        else if (k.upArrowKey.wasPressedThisFrame || k.wKey.wasPressedThisFrame) SetFocus(focusIndex - cols < 0 ? focusIndex : focusIndex - cols, true);
+        else if (k.downArrowKey.wasPressedThisFrame || k.sKey.wasPressedThisFrame) SetFocus(focusIndex + cols >= visibleCards.Count ? focusIndex : focusIndex + cols, true);
+
+        SkillCardView focused = focusIndex >= 0 && focusIndex < visibleCards.Count ? visibleCards[focusIndex] : null;
+        if (info && focused != null) OpenDetail(focused);
+        else if (enter && focused != null && focused.CanChoose) OnSkillSelected(focused.Skill);
+        else if (esc) CloseSelection();
+    }
+
+    void OnDisable()
+    {
+        SkillDetailPopup.CloseCurrent();
     }
 
     SkillDefinition[] SlotsOf(PlayerType player)
