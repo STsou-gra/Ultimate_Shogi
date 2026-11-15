@@ -55,7 +55,7 @@ public static class MatchSnapshotChecks
 
                 GamePiece rook = g.board[GameHelper.CalcPanelNum(4, 4)];
                 True(rook != null && rook.type == PieceType.Rook && rook.player == PlayerType.Player1, "(4, 4) の先手の飛車がない");
-                True(rook.isPromoted && rook.hasShield && rook.hasPhalanx && rook.moveCount == 3, "飛車の成り・盾・ファランクス・移動回数が戻らない");
+                True(rook.isPromoted && rook.hasShield && rook.hasPhalanx && rook.hasCounter && rook.moveCount == 3, "飛車の成り・盾・ファランクス・カウンター・移動回数が戻らない");
                 GamePiece undead = g.board[GameHelper.CalcPanelNum(5, 2)];
                 True(undead != null && undead.isUndead && !undead.IsInitial, "アンデッドが戻らない");
 
@@ -317,6 +317,7 @@ public static class MatchSnapshotChecks
             rook.isPromoted = true;
             rook.hasShield = true;
             rook.hasPhalanx = true;
+            rook.hasCounter = true;
             rook.moveCount = 3;
             GamePiece undead = NewPiece(PieceType.GoldGeneral, PlayerType.Player2, 5, 2);
             undead.MakeUndead();

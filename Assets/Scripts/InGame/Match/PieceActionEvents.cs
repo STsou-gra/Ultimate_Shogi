@@ -30,7 +30,7 @@ public class SnipeShot
     public PieceType TargetType { get; }
     public bool Explosive { get; }   // 撃った駒が火薬（その場で爆発する）
     public float ImpactDelay { get; } // 照準 → ビームが着弾するまでの秒数
-    public bool Guarded { get; }      // 撃った駒が盾状態（弾は盾に防がれ、「SNIPE!」は出さない）
+    public bool Guarded { get; }      // 撃った駒が盾・カウンター状態（弾は防がれ・無効にされ、「SNIPE!」は出さない）
 
     public SnipeShot(PlayerType owner, GamePiece sniper, Vector2Int from, Vector2Int to, PieceType targetType, bool explosive, float impactDelay, bool guarded = false)
     {
@@ -59,5 +59,40 @@ public class ShieldBreak
         Attacker = attacker;
         By = by;
         Delay = delay;
+    }
+}
+
+// カウンター状態の駒が「取り」を無効にした 1 回分（通常魔法「カウンター」。Prototype の effects.js の counterGuard）
+public class CounterGuard
+{
+    public GamePiece Piece { get; }     // カウンター状態だった駒（盤に残る。カウンター状態は解ける）
+    public GamePiece Attacker { get; }  // 取ろうとした駒（わからなければ null。元のマスへ戻る）
+    public PlayerType By { get; }       // 取ろうとした側
+    public float Delay { get; }         // 無効にする見た目を始めるまでの秒数（攻撃が届くまで）
+
+    public CounterGuard(GamePiece piece, GamePiece attacker, PlayerType by, float delay)
+    {
+        Piece = piece;
+        Attacker = attacker;
+        By = by;
+        Delay = delay;
+    }
+}
+
+// カウンターの反撃 1 回分（Prototype の play.js の resolveCounters の counterStrike）。
+// 続く移動・取りは SpecialContext.Step の演出（MovePiece・取りの通知）で出る
+public class CounterStrike
+{
+    public GamePiece Piece { get; }     // 反撃する駒（カウンター状態だった駒）
+    public GamePiece Target { get; }    // 攻撃した駒（取り返す相手）
+    public Vector2Int At { get; }       // 攻撃した駒のマス（反撃して入るマス）
+    public float Time { get; }          // 反撃の見た目を始める時刻（行動の時間軸の秒数）
+
+    public CounterStrike(GamePiece piece, GamePiece target, Vector2Int at, float time)
+    {
+        Piece = piece;
+        Target = target;
+        At = at;
+        Time = time;
     }
 }

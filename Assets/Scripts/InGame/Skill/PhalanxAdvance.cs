@@ -7,6 +7,7 @@ using UnityEngine;
 //     炎上・落とし穴のマスなら入って消失、火薬なら爆発（SpecialContext.Step）。敵陣に入る・出ると成る
 //  2. 生き残っていれば（前進したかどうかに関係なく）前方 1×3 マスの相手の駒を取る（盾は有効。相手の火薬は爆発）
 // 盾が割れてもファランクス状態は続く。取られて持ち駒になると解除される（駒の GameObject ごと消える）
+// 1 体の行動が終わるたびに、カウンターの反撃を処理する（槍の取りがカウンターに無効にされたら反撃される。Prototype の phalanxAct の resolveCounters）
 public class PhalanxAdvance : TurnEndAction
 {
     public static readonly Color PhalanxColor = SpecialMove.Hex(0xffc400);
@@ -51,6 +52,7 @@ public class PhalanxAdvance : TurnEndAction
         {
             if (!context.Timeline.IsAlive(p)) continue; // 先に動いた駒の爆発などで消えた
             Act(context, p);
+            context.GameSystem.ResolveCounters(context.Timeline);
             if (AnyKingLost(context.Board)) return;      // 王将を取った・巻き込んだ（勝敗は GameSystem が判定する）
         }
         context.Timeline.Wait(0.2f);

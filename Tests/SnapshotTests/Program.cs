@@ -29,6 +29,7 @@ static partial class Program
         TestJson(new System.Random(2));
         TestPlayouts(400, new System.Random(3));
         TestSkills();
+        TestCounter();
         TestCpu();
         Console.WriteLine($"checks={checks} fails={fails}");
         return fails == 0 ? 0 : 1;

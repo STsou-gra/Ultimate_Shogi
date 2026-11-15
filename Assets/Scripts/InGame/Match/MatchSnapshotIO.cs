@@ -119,6 +119,7 @@ public static class MatchSnapshotIO
             phalanx = piece.hasPhalanx,
             undead = piece.isUndead,
             wing = piece.hasWing,
+            counter = piece.hasCounter,
             held = held,
         };
     }
@@ -229,6 +230,7 @@ public static class MatchSnapshotIO
         piece.hasShield = ps.shield;
         piece.hasPhalanx = ps.phalanx;
         piece.hasWing = ps.wing;
+        piece.hasCounter = ps.counter;
         piece.UpdateVisual();
     }
 

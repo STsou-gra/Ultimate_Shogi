@@ -10,6 +10,7 @@ using System.Collections.Generic;
 //    必殺技・魔法 … スナップショットを作った局面で GameSystem が出した合法手（skillActions）だけ。行動を当てはめたあとは分からない
 //  当てはめる（Apply）：移動・打つ・狙撃・錬成
 //    取り（取られた側が駒の価値の全額、取った側が半分のエナジー・持ち駒になる）、盾（取りを 1 回防いで割れる。移動した駒は元のマスに残る）、
+//    カウンター（盾より先に取りを 1 回無効にし、攻撃した駒が前方 1×3 にいれば行動の終わりに反撃して取る。ResolveCounters）、
 //    アンデッド（取られると成仏＝消失）、火薬（入ると 3×3 が爆発。王将は残る）、マスの状態（炎上・落とし穴に入ると消失・落とし穴は消える）、
 //    成り、移動回数（必殺技のチャージ）、倒された初期配置の駒の記録、王将が全部いなくなったら終局、
 //    手番の交代（2回行動なら続く。後手の手番の終わりに期限の来た炎上を鎮火、手番の始まりにエナジー +1）
@@ -429,6 +430,7 @@ public static partial class BoardSimulator
         {
             case MatchActionType.Move:
                 ApplyMove(s, s.At(a.from.x, a.from.y), a.to.x, a.to.y, a.promote);
+                ResolveCounters(s);
                 AfterAction(s, true);
                 break;
             case MatchActionType.Drop:
@@ -437,16 +439,19 @@ public static partial class BoardSimulator
                 break;
             case MatchActionType.Snipe:
                 ApplySnipe(s, s.At(a.from.x, a.from.y), a.Target.x, a.Target.y);
+                ResolveCounters(s);
                 AfterAction(s, true);
                 break;
             case MatchActionType.Special:
                 ApplySpecial(s, s.At(a.from.x, a.from.y), a.TargetCount > 0 ? a.Target : MatchSquare.None);
+                ResolveCounters(s);
                 AfterAction(s, true);
                 break;
             case MatchActionType.Magic:
             {
                 SnapshotSkill skill = FindSkill(s, me, a.skill);
                 ApplyMagic(s, me, skill, a);
+                ResolveCounters(s);
                 AfterAction(s, skill.endsTurn);
                 break;
             }
@@ -481,8 +486,8 @@ public static partial class BoardSimulator
         }
         if (target != null && target.owner != p.owner)
         {
-            // 取りが防がれた（盾）：元のマスへ跳ね返る。移動回数は数えない（手番は使う）
-            if (!Capture(s, target, p.Owner)) return;
+            // 取りが防がれた（盾・カウンター）：元のマスへ跳ね返る。移動回数は数えない（手番は使う）
+            if (!Capture(s, target, p.Owner, p)) return;
         }
         s.MovePiece(p, x, y);
         if (!EnterCell(s, p, x, y)) return; // 炎上・落とし穴のマスに入って消失した（成りも起きない）
@@ -515,18 +520,30 @@ public static partial class BoardSimulator
         EnterCell(s, p, x, y); // 炎上のマスに打ったら消失する
     }
 
-    // 狙撃（GameSystem.ExecuteSnipe と同じ）：火薬なら爆発、それ以外は取り（盾なら防がれる）
+    // 狙撃（GameSystem.ExecuteSnipe と同じ）：火薬なら爆発、それ以外は取り（盾・カウンターなら防がれる）
     static void ApplySnipe(BoardSnapshot s, SnapshotPiece sniper, int x, int y)
     {
         SnapshotPiece target = s.At(x, y);
         if (target == null) return;
         if (PieceRules.IsExplosive(target.type)) Explode(s, x, y, null);
-        else Capture(s, target, sniper.Owner);
+        else Capture(s, target, sniper.Owner, sniper);
     }
 
-    // 取り（GameSystem.CapturePiece と同じ）。取れたら true（盾で防がれたら false）
-    static bool Capture(BoardSnapshot s, SnapshotPiece target, PlayerType by)
+    // 取り（GameSystem.CapturePiece と同じ）。取れたら true（盾・カウンターで防がれたら false）。attacker は取ろうとした駒（なければ null）
+    static bool Capture(BoardSnapshot s, SnapshotPiece target, PlayerType by, SnapshotPiece attacker)
     {
+        // カウンター：取りを 1 回だけ無効にし（盾より先。盾は残る）、攻撃した駒への反撃を予定する（行動の終わりの ResolveCounters）。
+        // 時間停止中（CPU の先読みの近似）は、本当の対局では解除のときに取りになり、カウンターは効かないので無効にしない
+        if (target.counter && target.Owner != by && !s.timeStopped)
+        {
+            target.counter = false;
+            if (attacker != null && attacker.owner != target.owner)
+            {
+                if (s.counters == null) s.counters = new List<SnapshotPiece[]>();
+                s.counters.Add(new[] { target, attacker });
+            }
+            return false;
+        }
         bool guarded = target.shield && target.Owner != by;
         // アンデッドは取られると成仏する（持ち駒にもエナジーにもならない）
         if (target.undead && !guarded) return Vanish(s, target);
@@ -541,6 +558,31 @@ public static partial class BoardSimulator
         Vanish(s, target);
         AddToHand(s, by, target.type); // 成った駒も元の駒として持ち駒になる（王将・火薬はならない）
         return true;
+    }
+
+    // カウンターの反撃（GameSystem.ResolveCounters と同じ）：予定を順に処理して空にする。攻撃した駒（元のマスに戻っている）が、
+    // カウンター状態だった駒の前方 1×3（前・左前・右前の順）にいて、そのマスに入れれば、動いて取る（盾は有効）。
+    // 移動回数は数えないが、敵陣に入る・出ると成る。反撃がさらにカウンターに阻まれれば、それも続けて処理する
+    static void ResolveCounters(BoardSnapshot s)
+    {
+        while (s.counters != null && s.counters.Count > 0)
+        {
+            SnapshotPiece c = s.counters[0][0], a = s.counters[0][1];
+            s.counters.RemoveAt(0);
+            if (!s.Contains(c) || !s.Contains(a) || a.owner == c.owner) continue;
+            int x = c.x + (c.Owner == PlayerType.Player1 ? 1 : -1);
+            int hitY = -1;
+            foreach (int y in new[] { c.y, c.y - 1, c.y + 1 })
+            {
+                if (!BoardCells.InBounds(x, y) || s.At(x, y) != a || s.IsBlockedFor(c, x, y)) continue;
+                hitY = y;
+                break;
+            }
+            if (hitY < 0) continue;
+            int fromX = c.x;
+            if (Step(s, c, x, hitY) == true && s.Contains(c) && CanPromote(c, fromX, c.x)) c.promoted = true;
+        }
+        s.counters = null;
     }
 
     // 盤から取り除く（取り・消失の共通。初期配置の駒なら記録する）
