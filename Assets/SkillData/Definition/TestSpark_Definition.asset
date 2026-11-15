@@ -20,3 +20,4 @@ MonoBehaviour:
   rank: 0
   endsTurn: 1
   color: {r: 0.4862745, g: 0.3019608, b: 1.0000000, a: 1}
+  debugOnly: 1

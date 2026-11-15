@@ -9,8 +9,10 @@ using System.Text;
 //  ・錬成 … ForgeRecipeBook にレシピを足す
 //  ・必殺技 … SpecialMoveBook に技を足す
 //  ・魔法 … SkillDatabase（編成の候補）に定義を足す。ランクごとに並ぶ
-// 一部の魔法（ファランクス・停止世界・アンデッド・パラダイス）は「魔法の補足」ページに詳しい決まりを載せる。
-// その魔法が候補にないときは補足も出さない。
+// 一部の魔法（壁・ファランクス・翼・カウンター・ワープ・ボム・停止世界・アンデッド・パラダイスと超常魔法の解放条件）は「魔法の補足」ページに詳しい決まりを載せる。
+// その魔法が候補にないときは補足も出さない。デバッグ用の魔法（SkillDefinition.debugOnly。魔力の火花）は一覧にも補足にも出さない。
+// 編成画面（DeckSelectController・SkillCardView・SkillDetailPopup）のカードと「詳細」も、
+// MagicDescription・MagicTagText・MagicDetailLines を使ってここと同じ文を出す（Prototype の description・details）。
 //
 // 文面は DEVELOPMENT_PLAN の決定事項に合わせる（Prototype と違うところは Unity 側の決まりで書く）
 public enum RulesLineKind
@@ -295,7 +297,8 @@ public static class RulesBook
 
         p.Heading("編成（対局前）")
          .Text($"対局を始める前に、それぞれ魔法を選ぶ：{string.Join(" ／ ", picks)}。")
-         .Text("候補が選ぶ数以下のランクは全部が自動で入る。候補がないランクの枠は「候補なし」。");
+         .Text("候補が選ぶ数以下のランクは全部が自動で入る。候補がないランクの枠は「候補なし」。")
+         .Text("候補のカードには説明の書き出しだけが載る。カードの「詳細」（キーボードは I）で、説明の全文と補足（このページと「魔法の補足」と同じ文）を見られる。");
 
         p.Heading("発動")
          .Text("自分の手番に、画面の魔法ボタン（名前とコスト）を押す。発動するとエナジーを払う。")
@@ -319,9 +322,8 @@ public static class RulesBook
             {
                 foreach (SkillDefinition s in src.Magics)
                 {
-                    if (s == null || s.rank != rank) continue;
-                    string turn = s.EndsTurn ? "手番を使う" : "手番を使わない";
-                    p.Text($"・{s.skillName}（{s.cost}エナジー・{turn}）：{Clean(s.description)}", 2, DeckBadge(src, s));
+                    if (s == null || !s.Selectable || s.rank != rank) continue;
+                    p.Text($"・{s.skillName}（{s.cost}エナジー・{MagicTurnLabel(s)}）：{MagicDescription(s)}", 2, DeckBadge(src, s));
                     n++;
                 }
             }
@@ -338,27 +340,10 @@ public static class RulesBook
         RulesPage p = new RulesPage("魔法の補足");
 
         SkillDefinition wall = FindEffect<WallEffect>(src);
-        if (wall != null)
-        {
-            p.Heading($"{wall.skillName}（通常魔法）")
-             .Text("自陣か中立の空きマス（駒がなく、破壊・炎上・落とし穴・壁でないマス）に壁を建てる。縁の色＝建てた側。")
-             .Text("壁のマスは敵味方問わず、移動・通過・持ち駒の打ち込みができない：")
-             .Text("走り駒・突進技（突撃・貫通槍）は壁の手前で止まり、光線（光芒四射・龍王旋風）は壁に当たって止まる。押し出された駒（金剛衝）は壁にぶつかって止まる。", 2)
-             .Text("ファランクスの前進・アンデッドの自動行動も壁を通れない。桂の跳躍（通常の移動・天馬跳躍）は飛び越せる。狙撃はさえぎらない。", 2)
-             .Text("壁は対局終了まで残る（取り・爆発・隕石・炎上では壊れない）。マスが破壊される（破壊砲・世界の終わり）と壁ごと崩れる。天変地異ではマスと一緒に動く。");
-        }
+        if (wall != null) WallDetail(p.Heading($"{wall.skillName}（通常魔法）"), wall);
 
         SkillDefinition phalanx = FindEffect<PhalanxEffect>(src);
-        if (phalanx != null)
-        {
-            p.Heading($"{phalanx.skillName}（必殺魔法）")
-             .Text("盾状態の自分の駒（王将以外）を1つ選んでファランクス状態にする。盾はそのまま残り、駒は前方へ金色の槍を構える。")
-             .Text("ファランクスの駒は、持ち主の手番の行動が終わったあと、手番が替わる前に自動で動く：")
-             .Text("① 1マス前進する。前が盤外・破壊マス・壁・駒で塞がっていれば前進しない。炎上・落とし穴なら消失し、火薬なら爆発する。敵陣に入る・出ると成る。", 2)
-             .Text("② 生き残っていれば（前進できなくても）、前方1×3マス（左前・前・右前）の相手の駒を取る（盾で防がれる。相手の火薬は爆発する）。", 2)
-             .Text("複数いるときは、盤の奥（相手の陣地側）にいる駒から順に動く。2回行動で手番が続くときは動かない。")
-             .Text("盾が割れてもファランクス状態は続く。取られて持ち駒になると解除される。");
-        }
+        if (phalanx != null) PhalanxDetail(p.Heading($"{phalanx.skillName}（必殺魔法）"));
 
         // 翼状態（魔法「翼」・錬成駒「鳥」）。どちらかがこの対局で使えるときだけ載せる
         SkillDefinition wing = FindEffect<WingEffect>(src);
@@ -366,88 +351,170 @@ public static class RulesBook
         if (wing != null || bird)
         {
             string who = wing != null && bird ? $"{wing.skillName}（通常魔法）・鳥（錬成駒）" : wing != null ? $"{wing.skillName}（通常魔法）" : "鳥（錬成駒）";
-            p.Heading($"翼状態（{who}）");
-            if (wing != null) p.Text($"{wing.skillName}：翼状態ではない自分の駒（火薬・鳥以外。王将も可）を1つ選んで翼状態にする（両脇に白い翼）。");
-            if (bird) p.Text("鳥：常に翼状態（左右に白い翼）。前の1×3マス（左前・前・右前）にしか動けず、成らない。");
-            p.Text("翼状態の駒はマスの効果を受けない：")
-             .Text("破壊マスにも入れる（押し出し・ファランクスの前進も）。炎上・落とし穴のマスに入っても消失しない（落とし穴は閉じずに残る）。", 2)
-             .Text("走り駒・突進（突撃・貫通槍）は、破壊・炎上・落とし穴のマスと火薬の上を通り抜ける。通った火薬は爆発しない（火薬のマスに止まれば爆発）。", 2)
-             .Text("破壊マスの上の翼の駒は、翼のない駒では取れない（狙撃・魔法・光線・槍は届く）。", 2)
-             .Text("爆発・隕石・破壊砲など、駒に直接当たる効果は受ける（消失する）。");
-            if (wing != null) p.Text($"{wing.skillName}の駒は、いるマスが壊れても（世界の終わりなど）消失しない。取られて持ち駒になると翼状態は解除される。");
-            if (bird) p.Text("鳥は火薬のマスに入っても爆発させず、火薬を取る（味方の火薬のマスには入れない）。破壊マス・落とし穴にも打てる。いるマスが壊れると消失する。取られたら相手の持ち駒になる。");
+            WingDetail(p.Heading($"翼状態（{who}）"), wing, bird);
         }
 
         SkillDefinition counter = FindEffect<CounterEffect>(src);
-        if (counter != null)
-        {
-            p.Heading($"{counter.skillName}（通常魔法）")
-             .Text("カウンター状態ではない自分の駒（王将も可。アンデッドは不可）を1つ選んでカウンター状態にする（駒を囲んで回る赤橙の輪）。")
-             .Text("相手の「取り」を1回だけ無効にし、攻撃した駒を元のマスへ戻す：")
-             .Text("移動・必殺技（突進・光線・押し出しの場外）・狙撃・剣・ファランクスの槍など。突進技はカウンターの駒の手前で止まる（盾と同じ）。", 2)
-             .Text("戻った駒がカウンター状態だった駒の前方1×3マス（左前・前・右前）にいれば、そのマスへ動いて取る（反撃）：")
-             .Text("反撃も「取り」なので盾で防がれる（相手がカウンター状態なら、さらに反撃が返ってくる）。移動回数には数えないが、敵陣に入る・出ると成る。", 2)
-             .Text("爆発・ボム・隕石・破壊砲などの消失には効かない。停止世界の中での取りも無効にできない（時間が動き出すとそのまま取られる）。")
-             .Text("無効にするとカウンター状態は解ける。盾状態でもあれば先にカウンターが効き、盾は残る。取られて持ち駒になると解除される。");
-        }
+        if (counter != null) CounterDetail(p.Heading($"{counter.skillName}（通常魔法）"));
 
         SkillDefinition warp = FindEffect<WarpEffect>(src);
-        if (warp != null)
-        {
-            p.Heading($"{warp.skillName}（通常魔法）")
-             .Text("自分の駒（王将も可。アンデッドは不可）→ 行き先のマス、の順に選んで瞬間移動させる。")
-             .Text("行き先は、駒がいない通常のマス（破壊・炎上・落とし穴のマスは不可）で、自陣か中立。自分の駒が1つでも敵陣にいれば、敵陣のマスも選べる。")
-             .Text("移動ではないので、取り・成り・必殺技の移動回数にはならない。行き所のない駒になるマス（成っていない歩・香の一番奥、桂の奥2段）には飛ばせない。")
-             .Text("停止世界の時間停止中も使える（消失・爆発の予定ができた駒は選べない）。");
-        }
+        if (warp != null) WarpDetail(p.Heading($"{warp.skillName}（通常魔法）"));
 
         SkillDefinition bomb = FindEffect<BombEffect>(src);
-        if (bomb != null)
-        {
-            p.Heading($"{bomb.skillName}（通常魔法）")
-             .Text("自分の駒を1つ選び、次にその2マス先の前方1×3マス（左前・前・右前）から狙うマスを1つ選んで爆弾を投げる。狙ったマスを中心に3×3が爆発する。")
-             .Text("盤外にはみ出した分は何も起こらない。破壊マスも狙える。", 2)
-             .Text("範囲の駒は敵味方問わず消失する（取りではないので盾では防げない。火薬は誘爆せずにそのまま消える）。")
-             .Text("3×3にどちらかの王将が入るマスは狙えない（狙えるマスがない駒・2マス先が盤外の駒は選べない）。")
-             .Text("駒にカーソルを合わせると狙えるマスが、狙うマスにカーソルを合わせると爆発の範囲が塗られる。", 2);
-        }
+        if (bomb != null) BombDetail(p.Heading($"{bomb.skillName}（通常魔法）"));
 
-        if (HasRank(src, SkillRank.Transcendent))
-        {
-            p.Heading("超常魔法の解放条件")
-             .Text("最初は使えない。次の2つが同時に成り立つと解放される（一度解放されたら、条件が崩れても解放のまま）。")
-             .Text("① 相手の駒が1つ以上、自陣（自分側の3段）にいる　② 盤上の駒の数（火薬を除く）が、自分より相手のほうが多い", 2)
-             .Text("達成状況（侵入 ○／×、駒数）は超常魔法のボタンの下に出る。1対局に1回だけ使える（使うと「使用済み」）。");
-        }
+        if (HasRank(src, SkillRank.Transcendent)) UnlockDetail(p.Heading("超常魔法の解放条件"));
 
         SkillDefinition timeStop = FindEffect<TimeStopEffect>(src);
-        if (timeStop != null)
-        {
-            int moves = MatchConfig.TimeStopMoves;
-            p.Heading($"{timeStop.skillName}（時間停止）")
-             .Text($"画面の色が反転して時間が止まり、{moves} 回まで続けて行動できる（同じ駒を何回動かしてもよい）。")
-             .Text("行動＝移動・持ち駒を打つ・魔法・必殺技・狙撃（各1回。錬成は数えない）。2回行動は使えない。相手の駒は動かない。")
-             .Text("残り回数は画面の上に出る。「解除」ボタン（Q キー）で、回数が残っていても終われる。")
-             .Text("行動の効果はその場では起こらず「予定」になる（マスの角などに印が付く）：")
-             .Text("取り → 相手の駒は灰色になって残る。以降はないものとして扱う（その上を通ったり止まったりできる）。", 2)
-             .Text("火薬に重なる・撃つ → 爆発の予定。炎上・落とし穴に入る → 消失の予定。その駒はもう動かせない。", 2)
-             .Text("成り・隕石や破壊砲で消える駒・マスの変化（落とし穴・壁の設置・破壊・炎上）も予定になる。", 2)
-             .Text("時間停止中はエナジーが増えない（魔法の消費はその場で減る）。ファランクス・アンデッドなどの自動行動も止まる。")
-             .Text("回数を使い切るか「解除」を押すと時間が動き出し、予定を起きた順にまとめて処理する（取りのエナジー・盾も、このとき有効になる）。");
-        }
+        if (timeStop != null) TimeStopDetail(p.Heading($"{timeStop.skillName}（時間停止）"));
 
         SkillDefinition undead = FindEffect<UndeadParadiseEffect>(src);
-        if (undead != null)
-        {
-            p.Heading($"{undead.skillName}（アンデッド）")
-             .Text("復活するのは、倒された自分の初期配置の駒（王将以外。取られた駒も消失した駒も）。自陣の空きマスが足りない分は復活しない。")
-             .Text("紫がかった半透明の駒で、緑の鬼火をまとう。持ち主は操作できず、必殺技も使えない。自分の魔法の対象にも選べない。")
-             .Text("持ち主の手番の1手が終わるたび（手番が替わる前）に、全員が自動で1手ずつ動く（相手の王将に近い駒から順に）。")
-             .Text("相手の王将を取れる手が最優先。なければ相手の王将に一番近づく手（同じなら相手の駒を取る手）。炎上・落とし穴のマスには入らない。", 2)
-             .Text("相手の攻撃は通常どおり受ける。倒されると「成仏」して消える（持ち駒にならず、エナジーも入らない）。");
-        }
+        if (undead != null) UndeadDetail(p.Heading($"{undead.skillName}（アンデッド）"));
 
         return p.Lines.Count > 0 ? p : null;
+    }
+
+    // ------------------------------------------------------------
+    //  魔法 1 つ分の説明（ルール説明と編成画面のカード・「詳細」で同じ文を使う）
+    // ------------------------------------------------------------
+
+    // 説明文（定義データの description を 1 行にしたもの。Prototype の description）
+    public static string MagicDescription(SkillDefinition s)
+    {
+        return s != null ? Clean(s.description) : "";
+    }
+
+    public static string MagicTurnLabel(SkillDefinition s)
+    {
+        return s != null && s.EndsTurn ? "手番を使う" : "手番を使わない";
+    }
+
+    // 「詳細」の上に出す印：ランク・手番（超常魔法は「1対局1回」も）
+    public static string MagicTagText(SkillDefinition s)
+    {
+        if (s == null) return "";
+        string tag = $"{SkillRanks.Label(s.rank)}・{MagicTurnLabel(s)}";
+        return s.rank == SkillRank.Transcendent ? tag + "・1対局1回" : tag;
+    }
+
+    // 補足（「魔法の補足」ページのその魔法の節の本文。見出しは除く。Prototype の details）。補足のない魔法は空。
+    // 超常魔法は解放条件の節も付ける。翼は、src に鳥の錬成があれば鳥の文も付ける（ルール説明と同じ）
+    public static List<RulesLine> MagicDetailLines(SkillDefinition s, RulesSources src)
+    {
+        if (src == null) src = new RulesSources();
+        RulesPage p = new RulesPage("");
+        if (s != null && s.effect != null)
+        {
+            if (s.effect is WallEffect) WallDetail(p, s);
+            else if (s.effect is PhalanxEffect) PhalanxDetail(p);
+            else if (s.effect is WingEffect) WingDetail(p, s, HasRecipe(src, PieceType.Bird));
+            else if (s.effect is CounterEffect) CounterDetail(p);
+            else if (s.effect is WarpEffect) WarpDetail(p);
+            else if (s.effect is BombEffect) BombDetail(p);
+            if (s.rank == SkillRank.Transcendent) UnlockDetail(p);
+            if (s.effect is TimeStopEffect) TimeStopDetail(p);
+            else if (s.effect is UndeadParadiseEffect) UndeadDetail(p);
+        }
+        else if (s != null && s.rank == SkillRank.Transcendent)
+        {
+            UnlockDetail(p);
+        }
+        List<RulesLine> lines = new List<RulesLine>();
+        foreach (RulesLine line in p.Lines)
+        {
+            if (line.Kind != RulesLineKind.Heading) lines.Add(line);
+        }
+        return lines;
+    }
+
+    static void WallDetail(RulesPage p, SkillDefinition wall)
+    {
+        p.Text("自陣か中立の空きマス（駒がなく、破壊・炎上・落とし穴・壁でないマス）に壁を建てる。縁の色＝建てた側。")
+         .Text("壁のマスは敵味方問わず、移動・通過・持ち駒の打ち込みができない：")
+         .Text("走り駒・突進技（突撃・貫通槍）は壁の手前で止まり、光線（光芒四射・龍王旋風）は壁に当たって止まる。押し出された駒（金剛衝）は壁にぶつかって止まる。", 2)
+         .Text("ファランクスの前進・アンデッドの自動行動も壁を通れない。桂の跳躍（通常の移動・天馬跳躍）は飛び越せる。狙撃はさえぎらない。", 2)
+         .Text("壁は対局終了まで残る（取り・爆発・隕石・炎上では壊れない）。マスが破壊される（破壊砲・世界の終わり）と壁ごと崩れる。天変地異ではマスと一緒に動く。");
+    }
+
+    static void PhalanxDetail(RulesPage p)
+    {
+        p.Text("盾状態の自分の駒（王将以外）を1つ選んでファランクス状態にする。盾はそのまま残り、駒は前方へ金色の槍を構える。")
+         .Text("ファランクスの駒は、持ち主の手番の行動が終わったあと、手番が替わる前に自動で動く：")
+         .Text("① 1マス前進する。前が盤外・破壊マス・壁・駒で塞がっていれば前進しない。炎上・落とし穴なら消失し、火薬なら爆発する。敵陣に入る・出ると成る。", 2)
+         .Text("② 生き残っていれば（前進できなくても）、前方1×3マス（左前・前・右前）の相手の駒を取る（盾で防がれる。相手の火薬は爆発する）。", 2)
+         .Text("複数いるときは、盤の奥（相手の陣地側）にいる駒から順に動く。2回行動で手番が続くときは動かない。")
+         .Text("盾が割れてもファランクス状態は続く。取られて持ち駒になると解除される。");
+    }
+
+    static void WingDetail(RulesPage p, SkillDefinition wing, bool bird)
+    {
+        if (wing != null) p.Text($"{wing.skillName}：翼状態ではない自分の駒（火薬・鳥以外。王将も可）を1つ選んで翼状態にする（両脇に白い翼）。");
+        if (bird) p.Text("鳥：常に翼状態（左右に白い翼）。前の1×3マス（左前・前・右前）にしか動けず、成らない。");
+        p.Text("翼状態の駒はマスの効果を受けない：")
+         .Text("破壊マスにも入れる（押し出し・ファランクスの前進も）。炎上・落とし穴のマスに入っても消失しない（落とし穴は閉じずに残る）。", 2)
+         .Text("走り駒・突進（突撃・貫通槍）は、破壊・炎上・落とし穴のマスと火薬の上を通り抜ける。通った火薬は爆発しない（火薬のマスに止まれば爆発）。", 2)
+         .Text("破壊マスの上の翼の駒は、翼のない駒では取れない（狙撃・魔法・光線・槍は届く）。", 2)
+         .Text("爆発・隕石・破壊砲など、駒に直接当たる効果は受ける（消失する）。");
+        if (wing != null) p.Text($"{wing.skillName}の駒は、いるマスが壊れても（世界の終わりなど）消失しない。取られて持ち駒になると翼状態は解除される。");
+        if (bird) p.Text("鳥は火薬のマスに入っても爆発させず、火薬を取る（味方の火薬のマスには入れない）。破壊マス・落とし穴にも打てる。いるマスが壊れると消失する。取られたら相手の持ち駒になる。");
+    }
+
+    static void CounterDetail(RulesPage p)
+    {
+        p.Text("カウンター状態ではない自分の駒（王将も可。アンデッドは不可）を1つ選んでカウンター状態にする（駒を囲んで回る赤橙の輪）。")
+         .Text("相手の「取り」を1回だけ無効にし、攻撃した駒を元のマスへ戻す：")
+         .Text("移動・必殺技（突進・光線・押し出しの場外）・狙撃・剣・ファランクスの槍など。突進技はカウンターの駒の手前で止まる（盾と同じ）。", 2)
+         .Text("戻った駒がカウンター状態だった駒の前方1×3マス（左前・前・右前）にいれば、そのマスへ動いて取る（反撃）：")
+         .Text("反撃も「取り」なので盾で防がれる（相手がカウンター状態なら、さらに反撃が返ってくる）。移動回数には数えないが、敵陣に入る・出ると成る。", 2)
+         .Text("爆発・ボム・隕石・破壊砲などの消失には効かない。停止世界の中での取りも無効にできない（時間が動き出すとそのまま取られる）。")
+         .Text("無効にするとカウンター状態は解ける。盾状態でもあれば先にカウンターが効き、盾は残る。取られて持ち駒になると解除される。");
+    }
+
+    static void WarpDetail(RulesPage p)
+    {
+        p.Text("自分の駒（王将も可。アンデッドは不可）→ 行き先のマス、の順に選んで瞬間移動させる。")
+         .Text("行き先は、駒がいない通常のマス（破壊・炎上・落とし穴のマスは不可）で、自陣か中立。自分の駒が1つでも敵陣にいれば、敵陣のマスも選べる。")
+         .Text("移動ではないので、取り・成り・必殺技の移動回数にはならない。行き所のない駒になるマス（成っていない歩・香の一番奥、桂の奥2段）には飛ばせない。")
+         .Text("停止世界の時間停止中も使える（消失・爆発の予定ができた駒は選べない）。");
+    }
+
+    static void BombDetail(RulesPage p)
+    {
+        p.Text("自分の駒を1つ選び、次にその2マス先の前方1×3マス（左前・前・右前）から狙うマスを1つ選んで爆弾を投げる。狙ったマスを中心に3×3が爆発する。")
+         .Text("盤外にはみ出した分は何も起こらない。破壊マスも狙える。", 2)
+         .Text("範囲の駒は敵味方問わず消失する（取りではないので盾では防げない。火薬は誘爆せずにそのまま消える）。")
+         .Text("3×3にどちらかの王将が入るマスは狙えない（狙えるマスがない駒・2マス先が盤外の駒は選べない）。")
+         .Text("駒にカーソルを合わせると狙えるマスが、狙うマスにカーソルを合わせると爆発の範囲が塗られる。", 2);
+    }
+
+    static void UnlockDetail(RulesPage p)
+    {
+        p.Text("最初は使えない。次の2つが同時に成り立つと解放される（一度解放されたら、条件が崩れても解放のまま）。")
+         .Text("① 相手の駒が1つ以上、自陣（自分側の3段）にいる　② 盤上の駒の数（火薬を除く）が、自分より相手のほうが多い", 2)
+         .Text("達成状況（侵入 ○／×、駒数）は超常魔法のボタンの下に出る。1対局に1回だけ使える（使うと「使用済み」）。");
+    }
+
+    static void TimeStopDetail(RulesPage p)
+    {
+        int moves = MatchConfig.TimeStopMoves;
+        p.Text($"画面の色が反転して時間が止まり、{moves} 回まで続けて行動できる（同じ駒を何回動かしてもよい）。")
+         .Text("行動＝移動・持ち駒を打つ・魔法・必殺技・狙撃（各1回。錬成は数えない）。2回行動は使えない。相手の駒は動かない。")
+         .Text("残り回数は画面の上に出る。「解除」ボタン（Q キー）で、回数が残っていても終われる。")
+         .Text("行動の効果はその場では起こらず「予定」になる（マスの角などに印が付く）：")
+         .Text("取り → 相手の駒は灰色になって残る。以降はないものとして扱う（その上を通ったり止まったりできる）。", 2)
+         .Text("火薬に重なる・撃つ → 爆発の予定。炎上・落とし穴に入る → 消失の予定。その駒はもう動かせない。", 2)
+         .Text("成り・隕石や破壊砲で消える駒・マスの変化（落とし穴・壁の設置・破壊・炎上）も予定になる。", 2)
+         .Text("時間停止中はエナジーが増えない（魔法の消費はその場で減る）。ファランクス・アンデッドなどの自動行動も止まる。")
+         .Text("回数を使い切るか「解除」を押すと時間が動き出し、予定を起きた順にまとめて処理する（取りのエナジー・盾も、このとき有効になる）。");
+    }
+
+    static void UndeadDetail(RulesPage p)
+    {
+        p.Text("復活するのは、倒された自分の初期配置の駒（王将以外。取られた駒も消失した駒も）。自陣の空きマスが足りない分は復活しない。")
+         .Text("紫がかった半透明の駒で、緑の鬼火をまとう。持ち主は操作できず、必殺技も使えない。自分の魔法の対象にも選べない。")
+         .Text("持ち主の手番の1手が終わるたび（手番が替わる前）に、全員が自動で1手ずつ動く（相手の王将に近い駒から順に）。")
+         .Text("相手の王将を取れる手が最優先。なければ相手の王将に一番近づく手（同じなら相手の駒を取る手）。炎上・落とし穴のマスには入らない。", 2)
+         .Text("相手の攻撃は通常どおり受ける。倒されると「成仏」して消える（持ち駒にならず、エナジーも入らない）。");
     }
 
     // ------------------------------------------------------------
@@ -524,7 +591,7 @@ public static class RulesBook
         if (src.Magics == null) return false;
         foreach (SkillDefinition s in src.Magics)
         {
-            if (s != null && s.rank == rank) return true;
+            if (s != null && s.Selectable && s.rank == rank) return true;
         }
         return false;
     }
@@ -545,7 +612,7 @@ public static class RulesBook
         if (src.Magics == null) return false;
         foreach (SkillDefinition s in src.Magics)
         {
-            if (s != null && s.effect != null && s.effect.UsesDestination) return true;
+            if (s != null && s.Selectable && s.effect != null && s.effect.UsesDestination) return true;
         }
         return false;
     }
@@ -555,7 +622,7 @@ public static class RulesBook
         if (src.Magics == null) return null;
         foreach (SkillDefinition s in src.Magics)
         {
-            if (s != null && s.effect is T) return s;
+            if (s != null && s.Selectable && s.effect is T) return s;
         }
         return null;
     }

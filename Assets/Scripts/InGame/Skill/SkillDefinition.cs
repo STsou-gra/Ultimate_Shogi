@@ -23,6 +23,13 @@ public class SkillDefinition : ScriptableObject
     [Tooltip("カットイン・演出の色")]
     public Color color = new Color(0xb3 / 255f, 0xe5 / 255f, 0xfc / 255f);
 
+    [Tooltip("デバッグ用（動作確認用）の魔法。編成画面・CPU の編成・ルール説明には出さない（SkillDatabase には残すので、昔の棋譜の再生やデッキのアセットに入れての確認には使える）。" +
+             "Prototype の src/defs/magic/index.js の RETIRED_SKILLS（今は魔力の火花）")]
+    public bool debugOnly = false;
+
+    // 編成で選べるか（デバッグ用の魔法は選べない）
+    public bool Selectable => !debugOnly;
+
     // 発動で手番を消費するか（Prototype の CONFIG.MAGIC_ENDS_TURN）
     public bool EndsTurn => endsTurn && MatchConfig.MagicEndsTurn;
 
