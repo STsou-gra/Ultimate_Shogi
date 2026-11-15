@@ -18,7 +18,7 @@ public class SkillContext
   // 範囲を選ぶスキルの向き（0 〜 SkillEffect.OrientCount - 1。対象選択中に R キーで切り替える）
   public int Orient { get; set; }
 
-  // 2 段階で選ぶスキル（SkillEffect.UsesDestination。ワープ）の行き先（Prototype の Action の to）。
+  // 2 段階で選ぶスキル（SkillEffect.UsesDestination。ワープ・ボム）の行き先（Prototype の Action の to）。
   // 対象を選び終わったあとに選ぶ。行き先を選ばないスキル・選んでいる途中は null
   public Vector2Int? Destination { get; set; }
 
@@ -148,7 +148,7 @@ public abstract class SkillEffect : ScriptableObject
   }
 
   // ------------------------------------------------------------
-  //  2 段階で選ぶ（Prototype の skill.getDestinations。ワープの「駒 → 行き先」）
+  //  2 段階で選ぶ（Prototype の skill.getDestinations。ワープの「駒 → 行き先」・ボムの「駒 → 狙うマス」）
   //  TargetCount 個の対象を選び終わったあとに、行き先のマスを 1 つ選ぶ。行き先の候補は選んだ対象（context.Targets）で変わる。
   //  選んだ行き先は MatchAction.to に入り、Execute では context.Destination で受け取る。
   //  行き先を選ぶ段階で、最後に選んだ対象をもう一度選ぶと対象選びに戻り、ほかの対象を選ぶとその対象で選び直す
@@ -168,6 +168,13 @@ public abstract class SkillEffect : ScriptableObject
   public virtual string GetDestinationPrompt()
   {
     return "行き先のマスを選択";
+  }
+
+  // 行き先を選んでいる段階で、カーソルの行き先 cursor（IsValidDestination が true のマス）で起こる効果の範囲。
+  // null なら範囲を塗らない（Prototype の skill.preview に origin が渡るとき。ボムの爆発の 3×3）
+  public virtual List<Vector2Int> GetDestinationAreaCells(SkillContext context, Vector2Int cursor)
+  {
+    return null;
   }
 
   // 選んだ対象（context.Targets）からの行き先の候補（盤の全マスのうち IsValidDestination が true のもの）
@@ -193,13 +200,19 @@ public abstract class SkillEffect : ScriptableObject
   }
 
   // 対象選択中の表示（GetPreviewCells に、カーソル位置の範囲と選べない原因を足したもの）。
-  // 行き先を選んでいる段階は、選んだ対象と行き先の候補を光らせる（範囲は塗らない）
+  // 行き先を選んでいる段階は、選んだ対象と行き先の候補を光らせ、カーソルが行き先の候補にあれば
+  // GetDestinationAreaCells の範囲を塗る（選べない原因は出さない）
   public SkillPreview GetPreview(SkillContext context, Vector2Int cursor)
   {
     if (IsChoosingDestination(context))
     {
       SkillPreview dest = SkillPreview.FromPanels(context.Targets);
       dest.Panels.AddRange(GetDestinations(context));
+      if (BoardCells.InBounds(cursor.x, cursor.y) && IsValidDestination(context, cursor))
+      {
+        List<Vector2Int> destArea = GetDestinationAreaCells(context, cursor);
+        if (destArea != null) dest.Area.AddRange(destArea);
+      }
       return dest;
     }
     SkillPreview preview = SkillPreview.FromPanels(GetPreviewCells(context, cursor));

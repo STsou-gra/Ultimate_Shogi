@@ -36,6 +36,7 @@ public enum MagicKind
     WorldEnd,       // 世界の終わり（WorldEndEffect）
     UndeadParadise, // アンデッド・パラダイス（UndeadParadiseEffect）
     TimeStop,       // 停止世界（TimeStopEffect）
+    Bomb,           // ボム（BombEffect。2 段階で選ぶ：駒 → 狙うマス。スナップショットの JSON に数で入るので、足すときは末尾に）
 }
 
 // 編成した魔法 1 つ分（SkillDefinition のうち、判定・効果に使う値）
@@ -67,6 +68,7 @@ public class SnapshotSkill
                 case MagicKind.Phalanx:
                 case MagicKind.Meteor:
                 case MagicKind.Cannon:
+                case MagicKind.Bomb:
                     return 1;
                 case MagicKind.Swap:
                     return 2;
@@ -78,4 +80,7 @@ public class SnapshotSkill
 
     // 範囲の向きの数（SkillEffect.OrientCount。今の魔法はすべて 1）
     public int OrientCount => 1;
+
+    // 対象を選んだあとに行き先を選ぶか（SkillEffect.UsesDestination。行き先は MatchAction.to）
+    public bool UsesDestination => kind == MagicKind.Bomb;
 }
