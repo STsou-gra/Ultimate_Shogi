@@ -200,6 +200,10 @@ public partial class GameSystem : MonoBehaviour
     public event System.Action<GamePiece> PhalanxGiven;
     // 駒が翼状態になった（魔法「翼」。MagicFx が翼が広がる演出を出す）
     public event System.Action<GamePiece> WingGiven;
+    // カウンター状態になった・カウンターが取りを無効にした・カウンターの反撃（通常魔法「カウンター」。MagicFx が演出を出す）
+    public event System.Action<GamePiece> CounterGiven;
+    public event System.Action<CounterGuard> CounterGuarded;
+    public event System.Action<CounterStrike> CounterStruck;
 
     // ------------------------------------------------------------
     //  超常魔法（Prototype の turn.js の checkTranscendentUnlock・skills.js の magicStatus）
@@ -260,6 +264,15 @@ public partial class GameSystem : MonoBehaviour
     private float enterCellFxDelay = 0f;
     public float EnterCellFxDelay => enterCellFxDelay;
     public const float ShieldBreakFxDuration = 0.6f; // 盾が割れてから手番が替わるまで（「GUARD!」を見せる）
+    public const float CounterGuardFxDuration = 0.6f; // カウンターが取りを無効にしてから手番が替わるまで（「COUNTER!」を見せる）
+    // カウンターが取りを無効にしてから反撃を始めるまで（攻撃した駒が元のマスへ跳ね返るのを見せる。MagicFx.Bounce の戻り 0.22 秒より少し長く）
+    public const float CounterStrikeLag = 0.3f;
+
+    // カウンターの反撃の予定（Prototype の s.counters）。CapturePiece でカウンターが取りを無効にしたら積み、
+    // 同じ行動の終わり（移動・狙撃・必殺技・魔法・ファランクスやアンデッドの 1 体ごと）に ResolveCounters で処理して空にする
+    private readonly List<KeyValuePair<GamePiece, GamePiece>> pendingCounters = new List<KeyValuePair<GamePiece, GamePiece>>();
+    // 反撃を始めてよい時刻（行動の時間軸の秒数。無効にした取りの攻撃が届く時刻 + CounterStrikeLag）
+    private float counterStrikeFrom = 0f;
 
     // 行動の演出を見せている間（手番の交代待ち）は操作できない
     private bool isResolvingAction = false;
@@ -960,8 +973,21 @@ public partial class GameSystem : MonoBehaviour
         EndActionTurn();
     }
 
-    // 駒の移動（相手の駒がいれば取り）。盤面のデータを変え、見た目の移動を始める。対局が終わったら true
+    // 駒の移動（相手の駒がいれば取り）。盤面のデータを変え、見た目の移動を始める。
+    // カウンターに取りを無効にされたら、最後に反撃する（Prototype の play.js の move）。対局が終わったら true
     bool ApplyMove(GamePiece piece, int targetX, int targetY, bool promote)
+    {
+        if (MovePieceCore(piece, targetX, targetY, promote))
+        {
+            ClearCounters();
+            return true;
+        }
+        if (!HasPendingCounters) return false;
+        ResolveCountersAfterAction();
+        return ResolveKingLoss();
+    }
+
+    bool MovePieceCore(GamePiece piece, int targetX, int targetY, bool promote)
     {
         GamePiece targetPiece = gameBoard.GetPieceAt(targetX, targetY);
         RecordTimeStopMove(piece, targetX, targetY); // 時間停止中は 1 マスごとの移動を記録する（盾で押し戻すときに使う）
@@ -978,7 +1004,7 @@ public partial class GameSystem : MonoBehaviour
             captureFxDelay = 0f;
             if (!captured)
             {
-                // 取りが防がれた（盾など）：盾にぶつかって元のマスへ跳ね返る。移動回数は数えず、手番は消費する
+                // 取りが防がれた（盾・カウンターなど）：バリアにぶつかって元のマスへ跳ね返る。移動回数は数えず、手番は消費する
                 if (magicFx != null) magicFx.Bounce(piece, targetX, targetY, reach);
                 return ResolveKingLoss();
             }
@@ -1224,7 +1250,9 @@ public partial class GameSystem : MonoBehaviour
         bool explosive = PieceRules.IsExplosive(target.type);
         Debug.Log($"狙撃！ ({sniper.X}, {sniper.Y}) → ({tx}, {ty}) の {HandUIManager.GetJapaneseName(target.type)}");
         pendingActionFxTime = Mathf.Max(pendingActionFxTime, SnipeImpactDelay + SnipeAfterDelay);
-        bool guarded = !explosive && target.hasShield && target.player != sniper.player && timeStop == null; // 時間停止中は盾の判定も時間が動き出してから
+        // 盾・カウンターで防がれる（「SNIPE!」を出さない）。時間停止中は盾・カウンターの判定も時間が動き出してから
+        bool guarded = !explosive && (target.hasShield || target.hasCounter) && target.player != sniper.player && timeStop == null;
+        bool countered = guarded && target.hasCounter;
         Sniped?.Invoke(new SnipeShot(sniper.player, sniper, new Vector2Int(sniper.X, sniper.Y), new Vector2Int(tx, ty), target.type, explosive, SnipeImpactDelay, guarded));
 
         string targetName = HandUIManager.GetJapaneseName(target.type);
@@ -1237,15 +1265,17 @@ public partial class GameSystem : MonoBehaviour
         {
             captureFxDelay = SnipeImpactDelay;
             isSnipeCapture = true;
-            captured = CapturePiece(target, sniper.player, sniper); // 盾なら防がれる
+            captured = CapturePiece(target, sniper.player, sniper); // 盾・カウンターなら防がれる
             isSnipeCapture = false;
             captureFxDelay = 0f;
+            ResolveCountersAfterAction(); // カウンターに無効にされたら、狙撃手が前方 1×3 にいれば反撃される
         }
         if (HandUIManager.Instance != null)
         {
             HandUIManager.Instance.SetStatusText(timeStop != null ? (explosive ? "【狙撃】 火薬を撃ち抜いた！（時間が動き出すと爆発する）" : $"【狙撃】 {targetName}を撃ち抜いた！（時間が動き出すと取れる）")
                 : explosive ? "【狙撃】 火薬を撃ち抜いた！ 大爆発！"
                 : captured ? $"【狙撃】 {targetName}を撃ち抜いた！"
+                : countered ? $"【狙撃】 {targetName}のカウンターが弾を無効にした！"
                 : $"【狙撃】 {targetName}の盾が弾を防いだ！（盾は割れた）");
         }
         if (ResolveKingLoss()) return;
@@ -1452,6 +1482,7 @@ public partial class GameSystem : MonoBehaviour
                 }
             }
         }
+        RunCounters(context); // 技の取りがカウンターに無効にされたら反撃される（Prototype の special の resolveCounters）
 
         // 演出を見せ終わってから、勝敗の判定と手番の交代
         float wait = Mathf.Max(pendingActionFxTime, context.Time + 0.5f);
@@ -1706,6 +1737,15 @@ public partial class GameSystem : MonoBehaviour
             return true;
         }
 
+        // カウンター（Prototype の effects.js の tryCapture / isCountering）：相手の取りを 1 回だけ無効にし（カウンター状態は解ける）、
+        // 攻撃した駒への反撃を予定する（反撃は行動の終わりの ResolveCounters）。盾より先に効く（盾は残る）。
+        // 時間停止の解除で処理する取り（停止世界の中での取り）は無効にできない（Prototype の noCounter）
+        if (IsCountering(piece, by) && resolvingTimeStop == null)
+        {
+            BlockByCounter(piece, attacker, by);
+            return false;
+        }
+
         // アンデッド（Prototype の effects.js の capture）：取られても持ち駒にならず、「成仏」で消失する（エナジーもなし）。
         // 盾は自分の魔法でしかかけられず、アンデッドは自分の魔法の対象にならないので、盾状態のアンデッドはいない
         if (piece.isUndead && !(piece.hasShield && piece.player != by))
@@ -1760,6 +1800,130 @@ public partial class GameSystem : MonoBehaviour
         Debug.Log($"({piece.X}, {piece.Y})：{piece.player} の{HandUIManager.GetJapaneseName(piece.type)}が翼状態になった！（マスの効果を受けない）");
         WingGiven?.Invoke(piece);
         return true;
+    }
+
+    // 駒をカウンター状態にする（通常魔法「カウンター」。Prototype の effects.js の giveCounter）。
+    // カウンター状態にしたら true（もうカウンター状態なら false）
+    public bool GiveCounter(GamePiece piece)
+    {
+        if (!IsOnBoard(piece) || piece.hasCounter) return false;
+        piece.hasCounter = true;
+        Debug.Log($"({piece.X}, {piece.Y})：{piece.player} の{HandUIManager.GetJapaneseName(piece.type)}がカウンター状態になった！（相手の取りを 1 回無効にして反撃する）");
+        CounterGiven?.Invoke(piece);
+        return true;
+    }
+
+    // by による取りをカウンターで無効にできる駒か（Prototype の isCountering。時間停止中・解除中かは見ない）
+    public static bool IsCountering(GamePiece piece, PlayerType by)
+    {
+        return piece != null && piece.hasCounter && piece.player != by;
+    }
+
+    // カウンター状態の駒が取りを無効にする（Prototype の effects.js の counterGuard）：カウンター状態を解き、
+    // 攻撃した駒（attacker）がいれば反撃の予定に積む（攻撃した駒は、呼び出し側で元のマスへ跳ね返る。盾と同じ）
+    void BlockByCounter(GamePiece piece, GamePiece attacker, PlayerType by)
+    {
+        piece.hasCounter = false;
+        float delay = ActiveSpecial != null ? Mathf.Max(0f, ActiveSpecial.HitTime) : captureFxDelay;
+        pendingActionFxTime = Mathf.Max(pendingActionFxTime, delay + CounterGuardFxDuration);
+        string by2 = attacker != null ? $"{HandUIManager.GetJapaneseName(attacker.type)}の" : "";
+        Debug.Log($"({piece.X}, {piece.Y})：{piece.player} の{HandUIManager.GetJapaneseName(piece.type)}が{by2}攻撃を無効にした！（カウンター）");
+        CounterGuarded?.Invoke(new CounterGuard(piece, attacker, by, delay));
+        if (attacker != null && attacker.player != piece.player)
+        {
+            pendingCounters.Add(new KeyValuePair<GamePiece, GamePiece>(piece, attacker));
+            counterStrikeFrom = Mathf.Max(counterStrikeFrom, delay + CounterStrikeLag);
+        }
+    }
+
+    bool HasPendingCounters => pendingCounters.Count > 0;
+
+    void ClearCounters()
+    {
+        pendingCounters.Clear();
+        counterStrikeFrom = 0f;
+    }
+
+    // 必殺技・魔法・自動行動の時間軸 tl の続きで反撃を処理する（予定がなければ何もしない）
+    void RunCounters(SpecialContext tl)
+    {
+        if (!HasPendingCounters || tl == null) return;
+        SpecialContext before = ActiveSpecial;
+        ActiveSpecial = tl;
+        try
+        {
+            ResolveCounters(tl);
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogException(e);
+            ClearCounters();
+        }
+        finally
+        {
+            ActiveSpecial = before;
+        }
+    }
+
+    // 移動・狙撃のあと（必殺技・魔法・自動行動の時間軸がないとき）に反撃を処理する。演出は行動の始まりからの秒数で並べ、
+    // 手番の交代はその演出が終わるまで待つ（pendingActionFxTime）
+    void ResolveCountersAfterAction()
+    {
+        if (!HasPendingCounters) return;
+        SpecialContext tl = new SpecialContext(this, gameBoard, CurrentSide, specialFx);
+        RunCounters(tl);
+        pendingActionFxTime = Mathf.Max(pendingActionFxTime, tl.Time + 0.2f);
+    }
+
+    // カウンターの反撃（Prototype の play.js の resolveCounters）：積んだ予定を順に処理して空にする。
+    // 攻撃した駒は元のマスへ跳ね返っている。その駒が、カウンター状態だった駒の前方 1×3 マス（前・左前・右前の順に探す）にいれば、
+    // そのマスへ動いて取る（SpecialContext.Step：盾は有効・巨人駒は今はいない。入れないマス（翼のない駒にとっての破壊マス）なら反撃しない）。
+    // 反撃の移動は移動回数に数えないが、敵陣に入る・出ると成る（自動で成る）。反撃がさらにカウンターに阻まれれば、その反撃も続けて処理する。
+    // 行動（移動・必殺技・狙撃・魔法）と、ファランクス・アンデッドの自動行動の 1 体ごとの終わりに呼ぶ
+    public void ResolveCounters(SpecialContext tl)
+    {
+        if (tl == null) return;
+        if (pendingCounters.Count > 0) tl.Time = Mathf.Max(tl.Time, counterStrikeFrom);
+        while (pendingCounters.Count > 0)
+        {
+            KeyValuePair<GamePiece, GamePiece> e = pendingCounters[0];
+            pendingCounters.RemoveAt(0);
+            GamePiece c = e.Key, a = e.Value;
+            if (!IsOnBoard(c) || !IsOnBoard(a) || a.player == c.player) continue;
+            int x = c.X + SpecialContext.Forward(c.player);
+            int? hitY = null;
+            foreach (int y in new[] { c.Y, c.Y - 1, c.Y + 1 })
+            {
+                if (!BoardCells.InBounds(x, y) || gameBoard.GetPieceAt(x, y) != a || PieceRules.IsBlockedFor(Cells, c, x, y)) continue;
+                hitY = y;
+                break;
+            }
+            if (!hitY.HasValue) continue;
+
+            Vector2Int at = new Vector2Int(x, hitY.Value);
+            int fromX = c.X;
+            Debug.Log($"{TurnEndAction.SideName(c.player)}の{HandUIManager.GetJapaneseName(c.type)}がカウンター！ {TurnEndAction.SideName(a.player)}の{HandUIManager.GetJapaneseName(a.type)}へ反撃");
+            CounterStruck?.Invoke(new CounterStrike(c, a, at, tl.Time));
+            tl.Wait(0.2f);
+            bool? alive = tl.Step(c, at.x, at.y, PieceMoveStyle.Dash, 0.16f);
+            if (alive == true && IsOnBoard(c))
+            {
+                tl.Landed(c, 3);
+                if (CanPromote(c, fromX, c.X))
+                {
+                    if (timeStop != null) DeferPromote(c);
+                    else
+                    {
+                        c.isPromoted = true;
+                        tl.Schedule(c.UpdateVisual);
+                    }
+                }
+            }
+            tl.Wait(0.2f);
+            // 反撃がさらにカウンターに阻まれたときは、その取りの攻撃が届く時刻から続ける
+            if (pendingCounters.Count > 0) tl.Time = Mathf.Max(tl.Time, counterStrikeFrom);
+        }
+        counterStrikeFrom = 0f;
     }
 
     // 盾が取りを防いで割れる（Prototype の effects.js の breakShield）
@@ -2217,6 +2381,7 @@ public partial class GameSystem : MonoBehaviour
                 {
                     ActiveSpecial = null;
                 }
+                RunCounters(timeline); // 自動行動は 1 体ごとに反撃まで済ませている（PhalanxAdvance・UndeadMarch）。残っていれば念のため
 
                 float wait = Mathf.Max(pendingActionFxTime, timeline.Time + 0.2f);
                 pendingActionFxTime = 0f;
@@ -2502,6 +2667,7 @@ public partial class GameSystem : MonoBehaviour
             if (piece.hasPhalanx) sb.Append('p'); // ファランクス状態（〃）
             if (piece.isUndead) sb.Append('u');   // アンデッド（〃）
             if (piece.hasWing) sb.Append('w');    // 翼状態（魔法「翼」。〃。鳥は駒の種類でわかる）
+            if (piece.hasCounter) sb.Append('c'); // カウンター状態（〃）
         }
         foreach (Player p in new[] { player1, player2 })
         {
@@ -2874,6 +3040,7 @@ public partial class GameSystem : MonoBehaviour
         {
             ActiveSpecial = null;
         }
+        RunCounters(context.Timeline); // 剣などの取りがカウンターに無効にされたら反撃される（Prototype の castMagic の resolveCounters）
 
         if (!endsTurn && IsOnlineMatch)
         {

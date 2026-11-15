@@ -8,6 +8,7 @@ using DG.Tweening;
 //  発動     … 対象のマスに魔法陣（GameSystem がこのあとカットインを出す）
 //  盾       … 魔法陣・光の粒・「盾！」。水色のバリアは GameTickEffects が駒に重ねて出す
 //  盾が割れる … 破片・衝撃波・閃光・画面シェイク・「GUARD!」。取ろうとして動いた駒はバリアにぶつかって跳ね返る
+//  カウンター … 「カウンター！」・取りを無効にして「COUNTER!」・「反撃！」（MagicFx.Counter.cs）。赤橙の輪は GameTickEffects
 //  剣       … 駒が構えて弾む → 前方へ三日月形の斬撃の弧（刃先から火花）→ 閃光・シェイク・範囲の駒に火花
 //  落とし穴 … 魔法陣に闇の粒が吸い込まれる → 穴が開く（衝撃波・土くれ・「落とし穴 設置！」。穴の見た目は BoardCellView）
 //  壁       … 魔法陣から土煙が立ち上る → 壁がせり上がる（衝撃波・石くれ・シェイク・「壁 建造！」。石積みの壁の見た目は BoardCellView）
@@ -73,6 +74,9 @@ public partial class MagicFx : MonoBehaviour
             gameSystem.ShieldBroken += OnShieldBroken;
             gameSystem.PhalanxGiven += OnPhalanxGiven;
             gameSystem.WingGiven += OnWingGiven;
+            gameSystem.CounterGiven += OnCounterGiven;
+            gameSystem.CounterGuarded += OnCounterGuarded;
+            gameSystem.CounterStruck += OnCounterStruck;
             gameSystem.PieceDefeated += OnPieceDefeatedFx;
         }
     }
@@ -85,6 +89,9 @@ public partial class MagicFx : MonoBehaviour
             gameSystem.ShieldBroken -= OnShieldBroken;
             gameSystem.PhalanxGiven -= OnPhalanxGiven;
             gameSystem.WingGiven -= OnWingGiven;
+            gameSystem.CounterGiven -= OnCounterGiven;
+            gameSystem.CounterGuarded -= OnCounterGuarded;
+            gameSystem.CounterStruck -= OnCounterStruck;
             gameSystem.PieceDefeated -= OnPieceDefeatedFx;
         }
     }
@@ -161,6 +168,10 @@ public partial class MagicFx : MonoBehaviour
         Vector2 to = GameHelper.CalcPanelLocation(toX, toY);
         Vector3 basePos = new Vector3(from.x, from.y, t.localPosition.z);
         Vector3 hit = Vector3.Lerp(basePos, new Vector3(to.x, to.y, basePos.z), 0.55f);
+        piece.bounceStartAt = Time.time;
+        piece.bounceReach = Mathf.Max(0.05f, reach);
+        piece.bounceBase = basePos;
+        piece.bounceHit = hit;
 
         // 移動中は手前に描く（PieceMoveAnimator と同じ）
         SpriteRenderer[] renderers = piece.GetComponentsInChildren<SpriteRenderer>(true);
@@ -181,7 +192,7 @@ public partial class MagicFx : MonoBehaviour
             burst.speed = 160f * PX; burst.life = 0.35f; burst.size = 0.16f;
             fx.Burst(t.position, burst);
         });
-        seq.Append(t.DOLocalMove(basePos, 0.22f).SetEase(Ease.OutBack, 2f));
+        seq.Append(t.DOLocalMove(basePos, BounceReturnTime).SetEase(Ease.OutBack, 2f));
         seq.OnKill(() =>
         {
             if (t != null) t.localPosition = basePos;
@@ -190,6 +201,21 @@ public partial class MagicFx : MonoBehaviour
                 if (renderers[i] != null) renderers[i].sortingOrder = orders[i];
             }
         });
+    }
+
+    // 跳ね返りの戻りにかかる秒数（Bounce）
+    const float BounceReturnTime = 0.22f;
+
+    // 跳ね返っている途中の駒 source が取られて写し ghost に置き換わったら（カウンターの反撃で取られたときなど）、
+    // 写しが跳ね返りの続き（移動先の手前まで → 元のマス）を演じる。跳ね返っていなければ何もしない
+    public static void ContinueBounce(GamePiece source, Transform ghost)
+    {
+        if (source == null || ghost == null) return;
+        float elapsed = Time.time - source.bounceStartAt;
+        if (elapsed < 0f || elapsed >= source.bounceReach + BounceReturnTime) return;
+        Sequence seq = DOTween.Sequence().SetLink(ghost.gameObject);
+        if (elapsed < source.bounceReach) seq.Append(ghost.DOLocalMove(source.bounceHit, source.bounceReach - elapsed).SetEase(Ease.InQuad));
+        seq.Append(ghost.DOLocalMove(source.bounceBase, Mathf.Min(BounceReturnTime, source.bounceReach + BounceReturnTime - elapsed)).SetEase(Ease.OutBack, 2f));
     }
 
     // ------------------------------------------------------------

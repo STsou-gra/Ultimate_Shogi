@@ -564,8 +564,9 @@ public partial class GameSystem
         finally
         {
             ActiveSpecial = null;
-            pendingActionFxTime = 0f;
         }
+        RunCounters(timeline); // 自動行動は 1 体ごとに反撃まで済ませている。残っていれば念のため
+        pendingActionFxTime = 0f;
         boardChangedThisStep = true;
         UpdateActivePlayerSkillUI();
     }
@@ -602,7 +603,6 @@ public partial class GameSystem
         finally
         {
             ActiveSpecial = null;
-            pendingActionFxTime = 0f;
         }
 
         if (IsOnBoard(caster))
@@ -622,6 +622,8 @@ public partial class GameSystem
                 }
             }
         }
+        RunCounters(context); // 技の取りがカウンターに無効にされたら反撃される
+        pendingActionFxTime = 0f;
         UpdateActivePlayerSkillUI();
     }
 
@@ -655,8 +657,9 @@ public partial class GameSystem
         finally
         {
             ActiveSpecial = null;
-            pendingActionFxTime = 0f;
         }
+        RunCounters(context.Timeline); // 剣などの取りがカウンターに無効にされたら反撃される
+        pendingActionFxTime = 0f;
         UpdateActivePlayerSkillUI();
     }
 

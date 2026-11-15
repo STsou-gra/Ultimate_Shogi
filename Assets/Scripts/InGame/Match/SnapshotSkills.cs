@@ -36,6 +36,7 @@ public enum MagicKind
     WorldEnd,       // 世界の終わり（WorldEndEffect）
     UndeadParadise, // アンデッド・パラダイス（UndeadParadiseEffect）
     TimeStop,       // 停止世界（TimeStopEffect）
+    Counter,        // カウンター（CounterEffect）
 }
 
 // 編成した魔法 1 つ分（SkillDefinition のうち、判定・効果に使う値）
@@ -61,6 +62,7 @@ public class SnapshotSkill
             switch (kind)
             {
                 case MagicKind.Shield:
+                case MagicKind.Counter:
                 case MagicKind.Sword:
                 case MagicKind.Pitfall:
                 case MagicKind.Explosion:

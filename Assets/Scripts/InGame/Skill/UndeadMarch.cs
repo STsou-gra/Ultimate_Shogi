@@ -7,7 +7,7 @@ using UnityEngine;
 //  手の選び方: 相手の王将を取れる手 → 相手の王将とのチェビシェフ距離が一番縮まる手
 //              →（同じ距離なら）相手の駒（火薬を除く）を取る手 →（それでも同じなら）対局の乱数（GameRng）で選ぶ
 //  動けるマスは通常の駒の動き（BaseMoveRule。破壊マス・壁には入れず、走り駒はその手前で止まる）から、炎上・落とし穴のマスを除いたもの。動ける手がなければ動かない
-//  成り（敵陣に入る・出ると自動で成る）・取り・火薬の爆発は通常の移動と同じ
+//  成り（敵陣に入る・出ると自動で成る）・取り・火薬の爆発は通常の移動と同じ。カウンターに取りを無効にされたら、1 体ごとに反撃を処理する
 // 相手の王将が 2 枚以上あるとき（王将複製）は、駒ごとにいちばん近い王将へ向かう（Prototype は王将が 1 枚の前提）
 public class UndeadMarch : TurnEndAction
 {
@@ -99,6 +99,7 @@ public class UndeadMarch : TurnEndAction
             Vector2Int? m = Choose(context.GameSystem, board, p);
             if (!m.HasValue) continue; // 動ける手がなければ動かない
             Move(context, p, m.Value.x, m.Value.y);
+            context.GameSystem.ResolveCounters(tl); // 取りがカウンターに無効にされたら反撃される（Prototype の move の resolveCounters）
             tl.Wait(StepGap);
         }
         tl.Wait(0.2f);

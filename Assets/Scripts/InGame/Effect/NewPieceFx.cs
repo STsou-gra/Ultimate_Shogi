@@ -179,7 +179,7 @@ public class NewPieceFx : MonoBehaviour
         DOVirtual.DelayedCall(impact, () =>
         {
             Impact(to, SnipeColor);
-            if (shot.Guarded) return; // 盾に防がれた（「GUARD!」は MagicFx が出す）
+            if (shot.Guarded) return; // 盾に防がれた・カウンターに無効にされた（「GUARD!」「COUNTER!」は MagicFx が出す）
             PopText("SNIPE!", to + ScreenUpVector * (40f * PX), 44f, Color.white, SnipeColor, Hex(0x2a0000), shot.Explosive ? 70f : 40f, 0.9f);
         }, false).SetLink(gameObject);
     }
@@ -417,6 +417,8 @@ public class NewPieceFx : MonoBehaviour
         foreach (GamePiece gp in ghost.GetComponentsInChildren<GamePiece>(true)) DestroyImmediate(gp);
         ghost.transform.localPosition = from;
         ghost.transform.localScale = scale;
+        // 盾・カウンターにぶつかって跳ね返っている途中の駒なら、写しが続きを演じる（カウンターの反撃で取られた駒など）
+        MagicFx.ContinueBounce(source, ghost.transform);
         return ghost;
     }
 

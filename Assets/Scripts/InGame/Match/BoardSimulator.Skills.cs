@@ -119,7 +119,7 @@ public static partial class BoardSimulator
                 foreach (Neighbor n in Neighbors(s, p))
                 {
                     if (n.Piece.owner == p.owner || !s.Contains(n.Piece)) continue;
-                    Push(s, p.Owner, n.Piece, n.DX, n.DY);
+                    Push(s, p, n.Piece, n.DX, n.DY);
                 }
                 break;
             case SpecialKind.BishopBeam: FireBeams(s, p, Diagonal); break;
@@ -254,7 +254,7 @@ public static partial class BoardSimulator
         {
             if (b.Hit == null || !s.Contains(b.Hit)) continue;
             if (PieceRules.IsExplosive(b.Hit.type)) Explode(s, b.Hit.x, b.Hit.y, null);
-            else Capture(s, b.Hit, owner);
+            else Capture(s, b.Hit, owner, p);
         }
     }
 
@@ -273,20 +273,20 @@ public static partial class BoardSimulator
                 s.MovePiece(p, tx, ty);
                 return EnterCell(s, p, tx, ty);
             }
-            if (!Capture(s, target, p.Owner)) return null;
+            if (!Capture(s, target, p.Owner, p)) return null;
         }
         s.MovePiece(p, tx, ty);
         return EnterCell(s, p, tx, ty);
     }
 
-    // SpecialContext.Push：駒 q を (dx, dy) へ 1 マス押し出す（盤外なら取り。by は押し出したプレイヤー）
-    static void Push(BoardSnapshot s, PlayerType by, SnapshotPiece q, int dx, int dy)
+    // SpecialContext.Push：駒 q を (dx, dy) へ 1 マス押し出す（盤外なら取り。by は押し出した駒）
+    static void Push(BoardSnapshot s, SnapshotPiece by, SnapshotPiece q, int dx, int dy)
     {
         if (!s.Contains(q)) return;
         int tx = q.x + dx, ty = q.y + dy;
         if (!BoardCells.InBounds(tx, ty))
         {
-            Capture(s, q, by);
+            Capture(s, q, by.Owner, by);
             return;
         }
         SnapshotPiece d = s.At(tx, ty);
@@ -369,6 +369,7 @@ public static partial class BoardSimulator
         switch (skill.kind)
         {
             case MagicKind.Shield: return IsOwnPiece(owner, p) && !p.shield;
+            case MagicKind.Counter: return IsOwnPiece(owner, p) && !p.counter;
             case MagicKind.Sword: return IsOwnPiece(owner, p) && FrontEnemies(s, p).Count > 0;
             case MagicKind.Pitfall: return IsEmptyNormal(s, x, y);
             case MagicKind.Swap: return !chosen.Contains(new MatchSquare(x, y)) && IsOwnPiece(owner, p);
@@ -518,6 +519,12 @@ public static partial class BoardSimulator
                 if (p != null) p.phalanx = true;
                 break;
             }
+            case MagicKind.Counter:
+            {
+                SnapshotPiece p = s.At(t0.x, t0.y);
+                if (p != null) p.counter = true;
+                break;
+            }
             case MagicKind.Sword:
             {
                 SnapshotPiece caster = s.At(t0.x, t0.y);
@@ -531,7 +538,7 @@ public static partial class BoardSimulator
                 foreach (SnapshotPiece q in inRange)
                 {
                     if (!s.Contains(q) || q.Owner == owner || PieceRules.IsExplosive(q.type)) continue;
-                    Capture(s, q, owner);
+                    Capture(s, q, owner, caster);
                 }
                 foreach (SnapshotPiece q in inRange)
                 {
@@ -880,6 +887,7 @@ public static partial class BoardSimulator
         {
             if (!s.Contains(p)) continue;
             PhalanxAct(s, p);
+            ResolveCounters(s); // 槍の取りがカウンターに無効にされたら反撃される（1 体ごと。PhalanxAdvance.Run）
             if (s.KingCount(PlayerType.Player1) == 0 || s.KingCount(PlayerType.Player2) == 0) return;
         }
     }
@@ -899,7 +907,7 @@ public static partial class BoardSimulator
         foreach (SnapshotPiece t in targets)
         {
             if (!s.Contains(t) || PieceRules.IsExplosive(t.type)) continue;
-            Capture(s, t, p.Owner);
+            Capture(s, t, p.Owner, p);
         }
         foreach (SnapshotPiece t in targets)
         {
@@ -938,9 +946,12 @@ public static partial class BoardSimulator
             MatchSquare? m = ChooseUndeadMove(s, p);
             if (!m.HasValue) continue;
             int fromX = p.x;
-            if (Step(s, p, m.Value.x, m.Value.y) != true) continue;
-            p.moveCount++;
-            if (CanPromote(p, fromX, p.x)) p.promoted = true;
+            if (Step(s, p, m.Value.x, m.Value.y) == true)
+            {
+                p.moveCount++;
+                if (CanPromote(p, fromX, p.x)) p.promoted = true;
+            }
+            ResolveCounters(s); // 取りがカウンターに無効にされたら反撃される（1 体ごと。UndeadMarch.Run）
         }
     }
 

@@ -23,6 +23,7 @@ public class SnapshotPiece
     public bool phalanx;           // ファランクス状態
     public bool undead;            // アンデッド
     public bool wing;              // 翼状態（通常魔法「翼」。鳥は駒の種類で決まるので false のまま。HasWing を使う）
+    public bool counter;           // カウンター状態（通常魔法「カウンター」）
     public bool initial;           // 初期配置の駒（倒されると fallenInitial に記録する）
     public bool frozen;            // 時間停止中：消失・爆発の予定があり、もう動かせない
     public bool pendingPromote;    // 時間停止中：成りの予定がある（もう成れない）
@@ -48,6 +49,7 @@ public class SnapshotPiece
         if (phalanx) sb.Append(" ファランクス");
         if (undead) sb.Append(" アンデッド");
         if (wing) sb.Append(" 翼");
+        if (counter) sb.Append(" カウンター");
         if (!initial) sb.Append(" (初期配置でない)");
         return sb.ToString();
     }
@@ -165,6 +167,10 @@ public class BoardSnapshot
     public List<MatchAction> skillActions = new List<MatchAction>();
 
     [System.NonSerialized] private SnapshotPiece[] grid;
+
+    // カウンターの反撃の予定（Prototype の s.counters。[カウンター状態だった駒, 攻撃した駒]）。
+    // BoardSimulator が 1 つの行動の中で積んで処理し、空にする（JSON・写しには入れない）
+    [System.NonSerialized] public List<SnapshotPiece[]> counters;
 
     static SnapshotCell[] NewCells()
     {
@@ -358,6 +364,7 @@ public class BoardSnapshot
         s.skillActions = new List<MatchAction>(skillActions.Count);
         foreach (MatchAction a in skillActions) s.skillActions.Add(a.Clone());
         s.grid = null;
+        s.counters = null; // 反撃の予定は 1 つの行動の中だけ（行動と行動のあいだには残らない）
         return s;
     }
 
@@ -459,7 +466,7 @@ public class BoardSnapshot
     static string PieceKey(SnapshotPiece p, bool all)
     {
         if (p == null) return "";
-        string key = $"{p.type}|{p.owner}|{p.promoted}|{p.moveCount}|{p.shield}|{p.phalanx}|{p.undead}|{p.wing}|{p.initial}";
+        string key = $"{p.type}|{p.owner}|{p.promoted}|{p.moveCount}|{p.shield}|{p.phalanx}|{p.undead}|{p.wing}|{p.counter}|{p.initial}";
         return all ? $"{key}|{p.frozen}|{p.pendingPromote}" : key;
     }
 

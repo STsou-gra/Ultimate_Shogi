@@ -9,6 +9,7 @@ using TMPro;
 // ・盤上の駒は自軍の色の淡い光（陣営オーラ。先手：青 0x2f7bff ／ 後手：赤 0xff2a4a）をまとう。駒の形にぼかした光が駒の後ろで sin(t*2) でゆっくり息づく
 //   （盾のバリアは水色 0x4fc3f7 の六角形を駒の手前に重ねるので、濃い青の駒形の光とは形・色・前後で見分けられる）
 // ・盾状態の駒に水色のバリア（六角形。現れるときは大きく出て縮み、sin(t*3) でゆらめく）
+// ・カウンター状態の駒に、駒を囲んで回る矢じり付きの 3 本の赤橙の弧（現れるときは大きく出て縮み、ゆっくり回りながら sin(t*4) で明滅する）
 // ・ファランクス状態の駒に金色の槍（前方 1×3 へ構えた穂先。現れるときは小さく出て広がり、sin(t*4) で光りながら前へ小さく突き出す）
 // ・アンデッドの駒に紫の瘴気（後ろでゆらめく。sin(t*2.2)）と緑の鬼火（2 つが周りを回り、明滅しながら漂う）、立ち上る緑の火の粉
 //   （駒の本体を紫がかった半透明にするのは GamePiece.MakeUndead）
@@ -52,6 +53,7 @@ public class GameTickEffects : MonoBehaviour
     private static readonly Color[] DoomEmberColors = { Hex(0xff1744), Hex(0xd50000), Hex(0xff6d00), Hex(0x8d6e63) };
     private static readonly Color BarrierColor = Hex(0x4fc3f7);
     private static readonly Color SpearColor = Hex(0xffc400);
+    private static readonly Color CounterColor = Hex(0xff6e40);       // カウンターの輪（Prototype の counter.js の色）
     private static readonly Color WingGlowColor = Hex(0xccff90);     // 翼状態の羽の光（Prototype の wing.js の色）
     private static readonly Color BirdWingGlowColor = Hex(0xb3e5fc); // 鳥の翼の光
     // 陣営オーラ（Prototype の config.js の SIDE_GLOW_COLORS）。盾のバリア（水色）と紛れないよう、パネルの色より濃い青にしている
@@ -75,6 +77,10 @@ public class GameTickEffects : MonoBehaviour
         public SpriteRenderer barrierGlow;
         public SpriteRenderer barrierFace;
         public float barrierAge; // バリアが現れてからの秒数（現れる演出用）
+        public Transform counter;          // カウンターの輪（駒の上）
+        public SpriteRenderer counterGlow;
+        public SpriteRenderer counterFace;
+        public float counterAge;           // 輪が現れてからの秒数（現れる演出用）
         public Transform spear;
         public SpriteRenderer spearGlow;
         public SpriteRenderer spearFace;
@@ -203,7 +209,8 @@ public class GameTickEffects : MonoBehaviour
             if (piece == null) continue;
             bool shielded = piece.hasShield || Time.time < piece.barrierHoldUntil;
             bool bird = PieceRules.IsWingType(piece.type);
-            bool needsFx = piece.isSpecialReady || piece.hasFuse || piece.hasScope || shielded || piece.hasPhalanx || piece.isUndead || piece.hasWing || bird;
+            bool countering = piece.hasCounter || Time.time < piece.counterHoldUntil;
+            bool needsFx = piece.isSpecialReady || piece.hasFuse || piece.hasScope || shielded || countering || piece.hasPhalanx || piece.isUndead || piece.hasWing || bird;
             PieceFx fx;
             if (!pieceFx.TryGetValue(piece, out fx))
             {
@@ -294,6 +301,32 @@ public class GameTickEffects : MonoBehaviour
             else if (fx.barrier != null && fx.barrier.gameObject.activeSelf)
             {
                 fx.barrier.gameObject.SetActive(false);
+            }
+
+            // カウンターの輪（Prototype の pieceView.js の counter・Game.tick の回転と明滅・events.js の counterGiven）
+            if (countering)
+            {
+                if (fx.counter == null) CreateCounterRing(piece, fx);
+                if (!fx.counter.gameObject.activeSelf)
+                {
+                    fx.counter.gameObject.SetActive(true);
+                    fx.counterAge = 0f;
+                }
+                fx.counterAge += dt;
+                // 大きく出て縮む（0.45 秒・back.out(2.5)）、0.3 秒でフェードイン
+                float k = Mathf.Clamp01(fx.counterAge / 0.45f);
+                float back = 1f + 3.5f * Mathf.Pow(k - 1f, 3f) + 2.5f * Mathf.Pow(k - 1f, 2f);
+                fx.counter.localScale = Vector3.one * Mathf.LerpUnclamped(1.8f, 1f, back);
+                // ゆっくり回る（Prototype の rotation = t * 1.6 + id。PIXI の正の回転は画面で時計回り）
+                float seed = piece.GetInstanceID() * 0.37f;
+                fx.counter.localRotation = Quaternion.Euler(0f, 0f, -(time * 1.6f + seed) * Mathf.Rad2Deg);
+                float appear = Mathf.Clamp01(fx.counterAge / 0.3f);
+                fx.counterGlow.color = WithAlpha(CounterColor, appear * (0.5f + 0.4f * Mathf.Sin(time * 4f + seed)));
+                fx.counterFace.color = WithAlpha(Color.white, appear);
+            }
+            else if (fx.counter != null && fx.counter.gameObject.activeSelf)
+            {
+                fx.counter.gameObject.SetActive(false);
             }
 
             // ファランクスの槍（Prototype の pieceView.js の spear・Game.tick・events.js の phalanxGiven / phalanxStep）。
@@ -808,10 +841,21 @@ public class GameTickEffects : MonoBehaviour
         fx.barrier.gameObject.SetActive(false);
     }
 
-    // ファランクスの槍：駒の上に重ねる（バリアよりさらに手前）
-    void CreateSpear(GamePiece piece, PieceFx fx)
+    // カウンターの輪：駒の上に重ねる（バリアより手前）
+    void CreateCounterRing(GamePiece piece, PieceFx fx)
     {
         int order = MaxSortingOrder(piece) + 3;
+        fx.counter = new GameObject(CounterName).transform;
+        fx.counter.SetParent(piece.transform, false);
+        fx.counterGlow = CreateChildSprite(fx.counter, "Glow", MagicSprites.CounterGlow, order, Vector2.one);
+        fx.counterFace = CreateChildSprite(fx.counter, "Face", MagicSprites.CounterFace, order + 1, Vector2.one);
+        fx.counter.gameObject.SetActive(false);
+    }
+
+    // ファランクスの槍：駒の上に重ねる（バリア・カウンターの輪よりさらに手前）
+    void CreateSpear(GamePiece piece, PieceFx fx)
+    {
+        int order = MaxSortingOrder(piece) + 5;
         fx.spear = new GameObject(SpearName).transform;
         fx.spear.SetParent(piece.transform, false);
         fx.spearGlow = CreateChildSprite(fx.spear, "Glow", MagicSprites.SpearGlow, order, Vector2.one);
@@ -845,15 +889,16 @@ public class GameTickEffects : MonoBehaviour
     private const string SideName = "SideGlow";
     private const string AuraName = "SpecialAura";
     private const string BarrierName = "ShieldBarrier";
+    private const string CounterName = "CounterRing";
     private const string SpearName = "PhalanxSpear";
     private const string UndeadName = "UndeadAura";
     private const string WingsName = "PieceWings";
     private const string BirdWingsName = "BirdWings";
 
-    // 駒に重ねる表示（陣営オーラ・必殺技オーラ・バリア・槍・アンデッドの瘴気と鬼火・翼）。駒の描画順を調べるときは数えない
+    // 駒に重ねる表示（陣営オーラ・必殺技オーラ・バリア・カウンターの輪・槍・アンデッドの瘴気と鬼火・翼）。駒の描画順を調べるときは数えない
     static bool IsOverlay(Transform t)
     {
-        return t.name == SideName || t.name == AuraName || t.name == BarrierName || t.name == SpearName || t.name == UndeadName
+        return t.name == SideName || t.name == AuraName || t.name == BarrierName || t.name == CounterName || t.name == SpearName || t.name == UndeadName
             || t.name == WingsName || t.name == BirdWingsName;
     }
 

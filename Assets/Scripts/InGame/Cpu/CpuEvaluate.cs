@@ -57,6 +57,7 @@ public static class CpuEvaluate
 
     const double WEnergy = 0.2;        // エナジー 1 あたり
     const double WShield = 0.3;        // 盾の駒 1 つ（取られそうな駒を守る効果は hanging で別に入る）
+    const double WCounter = 0.5;       // カウンターの駒 1 つ（取りを無効にして反撃する。hanging でも盾と同じく取られない駒として扱う）
     const double WPhalanx = 1.5;       // ファランクスの駒 1 つ
     const double WSpecial = 0.6;       // 必殺技が使える駒 1 つ
     const double WTranscendent = 4;    // 超常魔法が解放されていて、まだ使っていない
@@ -90,6 +91,7 @@ public static class CpuEvaluate
             double sign = p.Owner == me ? 1 : -1;
             score += sign * PieceValue(p);
             if (p.shield) score += sign * WShield;
+            if (p.counter) score += sign * WCounter;
             if (p.phalanx) score += sign * WPhalanx;
             if (IsSpecialReady(s, p)) score += sign * WSpecial;
             bool[] map = attacks[p.owner];
@@ -118,12 +120,12 @@ public static class CpuEvaluate
         }
         score += (mobility[(int)me] - mobility[(int)opp]) * WMobility;
 
-        // 次に動く側が取れる駒：動く側には得、動かれる側には損（いちばん高い 1 つだけ数える。盾の駒は取られない）
+        // 次に動く側が取れる駒：動く側には得、動かれる側には損（いちばん高い 1 つだけ数える。盾・カウンターの駒は取られない）
         PlayerType toMove = s.Current, waiting = BoardZones.Opponent(toMove);
         double best = 0;
         foreach (SnapshotPiece p in grid)
         {
-            if (p == null || p.Owner != waiting || p.shield) continue;
+            if (p == null || p.Owner != waiting || p.shield || p.counter) continue;
             if (!attacks[(int)toMove][GameHelper.CalcPanelNum(p.x, p.y)]) continue;
             best = System.Math.Max(best, PieceValue(p));
         }

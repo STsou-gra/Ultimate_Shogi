@@ -138,6 +138,7 @@ public partial class GameSystem
         pendingActionFxTime = 0f;
         captureFxDelay = 0f;
         enterCellFxDelay = 0f;
+        ClearCounters();
         turnNotice = "";
 
         // 棋譜は読み込んだ局面から記録し直す（Prototype と同じ）

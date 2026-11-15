@@ -43,6 +43,20 @@ public abstract class GamePiece : MonoBehaviour
     // 盾が割れても、攻撃が届くこの時刻（Time.time）まではバリアを出しておく（MagicFx が設定する。見た目だけ）
     [System.NonSerialized] public float barrierHoldUntil = 0f;
 
+    // カウンター状態（通常魔法「カウンター」。Prototype の p.counter）。相手の「取り」を1回だけ無効にし（盾より先に効く）、
+    // 攻撃した駒を元のマスへ戻して、その駒が前方 1×3 にいれば反撃して取る（GameSystem.CapturePiece・ResolveCounters）。
+    // 消失（爆発・隕石・破壊砲など）と、停止世界の中での取りには効かない。取られて持ち駒になると駒の GameObject ごと消えるので解除される。
+    // カウンター状態の間は、駒を囲んで回る赤橙の輪が出る（GameTickEffects）
+    public bool hasCounter = false;
+    // カウンターが効いても、攻撃が届くこの時刻（Time.time）までは輪を出しておく（MagicFx が設定する。見た目だけ）
+    [System.NonSerialized] public float counterHoldUntil = 0f;
+    // 盾・カウンターにぶつかって跳ね返っている途中か（MagicFx.Bounce が設定する。見た目だけ）。
+    // 跳ね返った駒がそのままカウンターの反撃で取られたとき、取られた駒の写しが跳ね返りの続きを演じるのに使う（MagicFx.ContinueBounce）
+    [System.NonSerialized] public float bounceStartAt = -10f;
+    [System.NonSerialized] public float bounceReach = 0f;
+    [System.NonSerialized] public Vector3 bounceBase;
+    [System.NonSerialized] public Vector3 bounceHit;
+
     // ファランクス状態（必殺魔法「ファランクス」。Prototype の phalanx）。盾状態の駒にだけ付けられる（盾が割れても続く）。
     // 持ち主の手番の行動のあと・手番交代の前に自動で 1 マス前進し、前方 1×3 の相手の駒を取る（PhalanxAdvance）。
     // 取られて持ち駒になると駒の GameObject ごと消えるので、打ち直した駒は普通の駒に戻る。金色の槍のマーカーが出る（GameTickEffects）

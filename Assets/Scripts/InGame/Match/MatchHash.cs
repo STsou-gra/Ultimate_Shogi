@@ -6,7 +6,8 @@ using System.Text;
 //
 // 局面（MatchSnapshot）から、次の項目を JSON の配列の形の文字列にして、FNV-1a 32bit の 16 進 8 桁にする：
 //   手番・ターン数・手数・勝敗が決まったか・エナジー・持ち駒（PieceRules.HandOrder の順）・
-//   盤の駒（[種類, 持ち主, 成り, 移動回数, 盾, ファランクス, アンデッド]。時間停止の予定の駒は入れない）・
+//   盤の駒（[種類, 持ち主, 成り, 移動回数, 盾, ファランクス, アンデッド]。翼・カウンターの駒は [.., 翼] と [.., 翼, 1] を足す。
+//   時間停止の予定の駒は入れない）・
 //   マス（[状態, 炎上が終わるターン, 落とし穴の持ち主]）・超常魔法の使用・解放・世界の終わり・倒された初期配置の駒の種類・
 //   時間停止（[発動したプレイヤー, 残り回数, 予定の [種類, x, y, 処理済み]]）
 // 盤は Prototype と同じく「段ごとに筋を並べた」9×9 の配列にする。本編の座標は x = 段・y = 筋で、Prototype（x = 筋・y = 段）とは
@@ -101,7 +102,10 @@ public static class MatchHash
                 }
                 sb.Append("[\"").Append(p.type).Append("\",").Append(p.owner).Append(',').Append(Flag(p.promoted)).Append(',')
                   .Append(p.moveCount).Append(',').Append(Flag(p.shield)).Append(',').Append(Flag(p.phalanx)).Append(',').Append(Flag(p.undead));
-                if (p.wing) sb.Append(',').Append(Flag(true)); // 翼は その状態のときだけ足す（Prototype と同じ。今までのハッシュを変えない）
+                // 翼・カウンターは その状態のときだけ足す（Prototype の hash.js と同じ。今までのハッシュを変えない）：
+                // 翼かカウンターなら翼の値、カウンターならさらに 1
+                if (p.wing || p.counter) sb.Append(',').Append(Flag(p.wing));
+                if (p.counter) sb.Append(',').Append(Flag(true));
                 sb.Append(']');
             }
             sb.Append(']');

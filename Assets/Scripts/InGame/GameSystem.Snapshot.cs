@@ -51,6 +51,7 @@ public partial class GameSystem
                 phalanx = p.hasPhalanx,
                 undead = p.isUndead,
                 wing = p.hasWing,
+                counter = p.hasCounter,
                 initial = p.IsInitial,
                 frozen = IsFrozenInTimeStop(p),
                 pendingPromote = timeStop != null && timeStop.HasPendingPromote(p),
@@ -200,6 +201,7 @@ public partial class GameSystem
             case WorldEndEffect _: return MagicKind.WorldEnd;
             case UndeadParadiseEffect _: return MagicKind.UndeadParadise;
             case TimeStopEffect _: return MagicKind.TimeStop;
+            case CounterEffect _: return MagicKind.Counter;
             default: return MagicKind.Unknown;
         }
     }

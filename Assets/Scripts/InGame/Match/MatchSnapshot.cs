@@ -173,6 +173,7 @@ public class PieceSnapshot
     public bool phalanx;    // ファランクス状態
     public bool undead;     // アンデッド
     public bool wing;       // 翼状態（通常魔法「翼」。鳥は駒の種類で決まるので入れない）
+    public bool counter;    // カウンター状態（通常魔法「カウンター」）
     public bool held;       // 時間停止の予定の駒（盤のデータから外して、その場に残している）
 }
 
