@@ -2938,7 +2938,7 @@ public partial class GameSystem : MonoBehaviour
             Orient = context.Orient,
             SetOrient = orient => context.Orient = orient,
             OrientLabel = effect.GetOrientLabel,
-            // 2 段階で選ぶ魔法（ワープ）：対象のあとに行き先 →「魔法」行動に行き先 to を付けて Dispatch
+            // 2 段階で選ぶ魔法（ワープ・ボム）：対象のあとに行き先 →「魔法」行動に行き先 to を付けて Dispatch
             IsValidDestination = effect.UsesDestination ? (System.Func<Vector2Int, bool>)(pos => effect.IsValidDestination(context, pos)) : null,
             DestinationPrompt = effect.GetDestinationPrompt,
             OnCompleteTo = to =>

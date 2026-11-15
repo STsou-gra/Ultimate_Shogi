@@ -32,6 +32,7 @@ static partial class Program
         ["WorldEnd"] = Sk("WorldEnd", MagicKind.WorldEnd, 30, true, true),
         ["UndeadParadise"] = Sk("UndeadParadise", MagicKind.UndeadParadise, 30, true, true),
         ["TimeStop"] = Sk("TimeStop", MagicKind.TimeStop, 30, true, true),
+        ["Bomb"] = Sk("Bomb", MagicKind.Bomb, 4, true),
     };
 
     // 必殺技・魔法をシミュレーションできるスナップショットにする（Unity の既定の必殺技と、両者の編成）
@@ -59,6 +60,10 @@ static partial class Program
         => MatchAction.Magic(id, t.Select(p => new Vector2Int(p.x, p.y)).ToArray());
 
     static bool Has(List<MatchAction> list, MatchAction a) => list.Any(b => b.Key == a.Key);
+
+    // 2 段階で選ぶ魔法（ボム）：対象 (x, y) → 行き先 (tx, ty)
+    static MatchAction MgTo(string id, int x, int y, int tx, int ty)
+        => MatchAction.Magic(id, new[] { new Vector2Int(x, y) }, 0, new Vector2Int(tx, ty));
 
     static int Hand(BoardSnapshot s, PlayerType o, PieceType t) => s.HandCount(o, t);
 
@@ -235,6 +240,60 @@ static partial class Program
             BoardSimulator.Apply(s, Mg("Cannon", (0, 4)));
             Check(s.At(6, 4) == null && s.cells.Count(c => c.IsBroken) == 27, "破壊砲: 27 マス破壊");
         }
+        // ボム（Prototype の tests/core/actions.test.js。座標は x = 段・y = 筋に直した）：
+        // 駒を選び、2 マス先の前方 1×3 から 1 マス選んで投げ、そこを中心に 3×3 が爆発（敵味方問わず消失・盾は無効）
+        {
+            BoardSnapshot s = KingsOnly();
+            s.players[0].skills = new List<SnapshotSkill> { Skills["Bomb"] };
+            s.players[0].energy = 20;
+            SnapshotPiece caster = Put(s, PieceType.SilverGeneral, P1, 2, 4);
+            SnapshotPiece[] hit = { Put(s, PieceType.GoldGeneral, P2, 5, 3), Put(s, PieceType.SilverGeneral, P2, 3, 4), Put(s, PieceType.Pawn, P1, 4, 2) };
+            hit[0].shield = true;
+            SnapshotPiece[] safe = { Put(s, PieceType.Pawn, P2, 4, 5), Put(s, PieceType.Pawn, P2, 6, 3), Put(s, PieceType.Pawn, P2, 4, 1) };
+            Check(!BoardSimulator.CanApply(s, Mg("Bomb", (2, 4))), "ボム: 狙うマスがない行動は不可");
+            Check(!BoardSimulator.CanApply(s, MgTo("Bomb", 2, 4, 5, 4)), "ボム: 3 マス先は狙えない");
+            Check(!BoardSimulator.CanApply(s, MgTo("Bomb", 2, 4, 4, 6)), "ボム: 2 マス先の前方 1×3 の外は狙えない");
+            Check(BoardSimulator.Apply(s, MgTo("Bomb", 2, 4, 4, 3)), "ボム: apply");
+            Check(s.players[0].energy == 16 && s.Current == P2, "ボム: コスト 4・手番を使う");
+            Check(hit.All(q => !s.Contains(q)), "ボム: 3×3 の駒は敵味方・盾に関係なく消失");
+            Check(s.Contains(caster) && safe.All(q => s.Contains(q)), "ボム: 範囲の外の駒・投げた駒は残る");
+            Check(Hand(s, P1, PieceType.GoldGeneral) == 0 && Hand(s, P1, PieceType.SilverGeneral) == 0, "ボム: 消失なので持ち駒にならない（エナジーも増えない：上の 16）");
+        }
+        // ボム：王将を巻き込むマスは狙えない・2 マス先が盤外の駒は選べない。後手は逆向きに投げる。合法手に全部の狙うマスが並ぶ
+        {
+            BoardSnapshot s = KingsOnly();
+            s.players[0].skills = new List<SnapshotSkill> { Skills["Bomb"] };
+            s.players[1].skills = new List<SnapshotSkill> { Skills["Bomb"] };
+            s.players[0].energy = 20; s.players[1].energy = 20;
+            Put(s, PieceType.SilverGeneral, P1, 5, 4);   // 2 マス先は (7, 3..5)。どこを中心にしても後手の王将 (8, 4) を巻き込む
+            Put(s, PieceType.SilverGeneral, P1, 5, 6);   // (7, 5) は王将を巻き込む、(7, 6)・(7, 7) は狙える
+            Put(s, PieceType.SilverGeneral, P1, 7, 0);   // 2 マス先が盤外
+            Check(!BoardSimulator.CanApply(s, MgTo("Bomb", 5, 4, 7, 4)), "ボム: 王将を巻き込むマスは狙えない");
+            Check(!BoardSimulator.CanApply(s, MgTo("Bomb", 5, 6, 7, 5)), "ボム: 王将を巻き込むマスは狙えない（左前）");
+            Check(!BoardSimulator.CanApply(s, MgTo("Bomb", 7, 0, 9, 0)), "ボム: 2 マス先が盤外の駒は選べない");
+            List<MatchAction> legal = BoardSimulator.LegalActions(s, P1).Where(a => a.type == MatchActionType.Magic).ToList();
+            List<string> keys = legal.Select(a => $"{a.targets[0].x},{a.targets[0].y}>{a.to.x},{a.to.y}").ToList();
+            // 王将 (0, 4) も投げられる（自分の駒なら王将も可。Prototype と同じ）
+            Check(keys.SequenceEqual(new[] { "0,4>2,3", "0,4>2,4", "0,4>2,5", "5,6>7,6", "5,6>7,7" }), $"ボム: 合法手は狙えるマスごと（{string.Join(" ", keys)}）");
+            s.current = (int)P2;
+            Put(s, PieceType.SilverGeneral, P2, 6, 7);
+            SnapshotPiece victim = Put(s, PieceType.Pawn, P1, 3, 8);
+            Check(BoardSimulator.Apply(s, MgTo("Bomb", 6, 7, 4, 8)), "ボム: 後手 apply");
+            Check(!s.Contains(victim), "ボム: 後手は段の小さい側へ投げる");
+        }
+        // ボム：範囲の火薬は誘爆せずにそのまま消える。破壊マスも狙える
+        {
+            BoardSnapshot s = KingsOnly();
+            s.players[0].skills = new List<SnapshotSkill> { Skills["Bomb"] };
+            s.players[0].energy = 4;
+            Put(s, PieceType.Pawn, P1, 2, 2);
+            SnapshotPiece powder = Put(s, PieceType.Gunpowder, P2, 5, 2);
+            SnapshotPiece outside = Put(s, PieceType.Pawn, P2, 6, 2);
+            s.Cell(4, 2).state = CellState.Broken;
+            Check(BoardSimulator.Apply(s, MgTo("Bomb", 2, 2, 4, 2)), "ボム: 破壊マスを狙える");
+            Check(!s.Contains(powder) && s.Contains(outside), "ボム: 火薬は誘爆しない");
+        }
+
         // 超常魔法：解放するまで使えない。天変地異は同じ乱数なら同じ結果
         {
             BoardSnapshot s = Known(Initial(), new[] { "Cataclysm" }, null, 7);
@@ -316,7 +375,7 @@ static partial class Program
         new[] { "Shield", "Sword", "Pitfall", "Phalanx", "TimeStop" },
         new[] { "DoubleTurn", "SwapPiece", "Explosion", "Meteor", "UndeadParadise" },
         new[] { "Shield", "ReplicateKing", "Sword", "Cannon", "Cataclysm" },
-        new[] { "Pitfall", "Explosion", "Shield", "Meteor", "WorldEnd" },
+        new[] { "Pitfall", "Explosion", "Bomb", "Meteor", "WorldEnd" },
     };
 
     static BoardSnapshot SkillGame(int lo0, int lo1, uint seed)

@@ -200,6 +200,7 @@ public partial class GameSystem
             case WorldEndEffect _: return MagicKind.WorldEnd;
             case UndeadParadiseEffect _: return MagicKind.UndeadParadise;
             case TimeStopEffect _: return MagicKind.TimeStop;
+            case BombEffect _: return MagicKind.Bomb;
             default: return MagicKind.Unknown;
         }
     }
