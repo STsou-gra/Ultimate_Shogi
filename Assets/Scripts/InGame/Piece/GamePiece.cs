@@ -1,8 +1,8 @@
 using UnityEngine;
 
 // 末尾に足していく（シーン・プレハブ・通信では数値で保存しているため、途中に入れると既存の値がずれる）
-// Gunpowder（火薬）・Sniper（狙撃手）・Bird（鳥）は錬成で作るオリジナル駒（Prototype の src/defs/pieces.js の KAYAKU・SNIPER・TORI）
-public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn, Gunpowder, Sniper, Bird }
+// Gunpowder（火薬）・Sniper（狙撃手）・Bird（鳥）・Giant（巨人）は錬成で作るオリジナル駒（Prototype の src/defs/pieces.js の KAYAKU・SNIPER・TORI・KYOJIN）
+public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn, Gunpowder, Sniper, Bird, Giant }
 public enum PlayerType { Player1, Player2 }
 public abstract class GamePiece : MonoBehaviour
 {
@@ -29,6 +29,10 @@ public abstract class GamePiece : MonoBehaviour
     // 合戦将棋型：この tick（MatchState.Clock.Tick）になるまで次の行動ができない（動いた駒の連打の間隔。Prototype の p.cd）。
     // 判定は MatchPolicy.IsCoolingDown。本将棋型では使わない
     [System.NonSerialized] public int cooldownUntilTick = 0;
+
+    // 巨人（Giant）の残りの HP（Prototype の p.hp。巨人以外は 0 のまま）。攻撃を受けるたびに 1 減り、0 になる攻撃で倒れる（GameSystem.HitGiant）。
+    // 巨人は 3×3 マスを占め、X・Y は中央のマス（GameBoard は占めるマス全部に同じ駒を入れる。GiantRules）
+    [System.NonSerialized] public int hp = 0;
 
     [Header("Tick Effects")]
     public bool isSpecialReady = false; // 必殺技を発動できる（オーラが光り、光の粒が立ち上る）。moveCount から GameSystem が設定する

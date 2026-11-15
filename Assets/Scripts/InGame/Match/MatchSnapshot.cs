@@ -175,6 +175,7 @@ public class PieceSnapshot
     public bool wing;       // 翼状態（通常魔法「翼」。鳥は駒の種類で決まるので入れない）
     public bool counter;    // カウンター状態（通常魔法「カウンター」）
     public bool held;       // 時間停止の予定の駒（盤のデータから外して、その場に残している）
+    public int hp;          // 巨人の残りの HP（巨人以外は 0。巨人の x・y は 3×3 の中央のマス）
 }
 
 // 通常でないマス 1 つ（BoardCell）

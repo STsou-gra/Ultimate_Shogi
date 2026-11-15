@@ -27,8 +27,18 @@ public class SnapshotPiece
     public bool initial;           // 初期配置の駒（倒されると fallenInitial に記録する）
     public bool frozen;            // 時間停止中：消失・爆発の予定があり、もう動かせない
     public bool pendingPromote;    // 時間停止中：成りの予定がある（もう成れない）
+    public int hp;                 // 巨人の残りの HP（巨人以外は 0）。巨人の x・y は 3×3 の中央のマス（盤の Grid には占めるマス全部に入る）
 
     public PlayerType Owner => (PlayerType)owner;
+
+    // 巨人か（3×3 マスを占める。GiantRules）
+    public bool IsGiant => PieceRules.IsGiant(type);
+
+    // 占めるマス（ふつうの駒は 1 マス、巨人は 3×3）
+    public List<MatchSquare> Footprint()
+    {
+        return IsGiant ? GiantRules.Cells(x, y) : new List<MatchSquare> { new MatchSquare(x, y) };
+    }
 
     // 翼状態か（鳥、または魔法「翼」。PieceRules.HasWing と同じ）
     public bool HasWing => wing || PieceRules.IsWingType(type);
@@ -50,6 +60,7 @@ public class SnapshotPiece
         if (undead) sb.Append(" アンデッド");
         if (wing) sb.Append(" 翼");
         if (counter) sb.Append(" カウンター");
+        if (IsGiant) sb.Append(" HP").Append(hp);
         if (!initial) sb.Append(" (初期配置でない)");
         return sb.ToString();
     }
@@ -202,11 +213,45 @@ public class BoardSnapshot
     void RebuildGrid()
     {
         grid = new SnapshotPiece[BoardCells.Size * BoardCells.Size];
-        foreach (SnapshotPiece p in pieces)
+        foreach (SnapshotPiece p in pieces) PutCells(p);
+    }
+
+    // 駒を占めるマス全部に書く（巨人は 3×3）
+    void PutCells(SnapshotPiece p)
+    {
+        if (!p.IsGiant)
         {
             int i = GameHelper.CalcPanelNum(p.x, p.y);
             if (i >= 0) grid[i] = p;
+            return;
         }
+        foreach (MatchSquare c in GiantRules.Cells(p.x, p.y))
+        {
+            int i = GameHelper.CalcPanelNum(c.x, c.y);
+            if (i >= 0) grid[i] = p;
+        }
+    }
+
+    // 駒がいるマスを空ける（p がいるマスだけ）
+    void ClearCells(SnapshotPiece p)
+    {
+        if (!p.IsGiant)
+        {
+            int i = GameHelper.CalcPanelNum(p.x, p.y);
+            if (i >= 0 && grid[i] == p) grid[i] = null;
+            return;
+        }
+        foreach (MatchSquare c in GiantRules.Cells(p.x, p.y))
+        {
+            int i = GameHelper.CalcPanelNum(c.x, c.y);
+            if (i >= 0 && grid[i] == p) grid[i] = null;
+        }
+    }
+
+    // 盤の添字 i が、駒 p の代表のマス（巨人は中央。ふつうの駒はいるマス）か。Grid を回すときに巨人を 1 回だけ数えるのに使う
+    public static bool IsAnchor(SnapshotPiece p, int i)
+    {
+        return p != null && GameHelper.CalcPanelNum(p.x, p.y) == i;
     }
 
     // (x, y) の駒（盤の外・空きなら null）
@@ -314,34 +359,38 @@ public class BoardSnapshot
     //  書き換える（BoardSimulator・CaptureSnapshot から）
     // ------------------------------------------------------------
 
-    // 駒を盤に置く（p.x・p.y のマス。そこにいた駒は上書きされるので、空きマスに置くこと）
+    // 駒を盤に置く（p.x・p.y のマス。巨人は中央にして 3×3。そこにいた駒は上書きされるので、空きマスに置くこと）
     public void Place(SnapshotPiece p)
     {
         int i = GameHelper.CalcPanelNum(p.x, p.y);
         if (i < 0) return;
-        SnapshotPiece old = Grid[i];
-        if (old != null) pieces.Remove(old);
-        pieces.Add(p);
-        grid[i] = p;
+        foreach (MatchSquare c in p.Footprint())
+        {
+            SnapshotPiece old = At(c.x, c.y);
+            if (old != null && old != p) Remove(old);
+        }
+        if (p.IsGiant && p.hp <= 0) p.hp = GiantRules.MaxHp;
+        if (!pieces.Contains(p)) pieces.Add(p);
+        PutCells(p);
     }
 
     // 駒を盤から取り除く
     public void Remove(SnapshotPiece p)
     {
         if (!Contains(p)) return;
-        grid[GameHelper.CalcPanelNum(p.x, p.y)] = null;
+        ClearCells(p);
         pieces.Remove(p);
     }
 
-    // 駒を (x, y) へ動かす（移動先は空いていること）
+    // 駒を (x, y) へ動かす（移動先は空いていること。巨人は中央のマス。火薬のマスに重なるときは、火薬の駒は盤の Grid から外れる）
     public void MovePiece(SnapshotPiece p, int x, int y)
     {
         int to = GameHelper.CalcPanelNum(x, y);
         if (!Contains(p) || to < 0) return;
-        grid[GameHelper.CalcPanelNum(p.x, p.y)] = null;
+        ClearCells(p);
         p.x = x;
         p.y = y;
-        grid[to] = p;
+        PutCells(p);
     }
 
     // ------------------------------------------------------------
@@ -466,7 +515,7 @@ public class BoardSnapshot
     static string PieceKey(SnapshotPiece p, bool all)
     {
         if (p == null) return "";
-        string key = $"{p.type}|{p.owner}|{p.promoted}|{p.moveCount}|{p.shield}|{p.phalanx}|{p.undead}|{p.wing}|{p.counter}|{p.initial}";
+        string key = $"{p.type}|{p.owner}|{p.promoted}|{p.moveCount}|{p.shield}|{p.phalanx}|{p.undead}|{p.wing}|{p.counter}|{p.initial}|{p.hp}";
         return all ? $"{key}|{p.frozen}|{p.pendingPromote}" : key;
     }
 

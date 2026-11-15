@@ -131,7 +131,9 @@ public class TimeStopMove
     public bool Counted;    // 必殺技の移動回数に数えた（取り消したら戻す）
 }
 
-public enum TimeStopKind { Capture, Explode, Vanish, Promote, Cell }
+// Giant：巨人への攻撃（Target が巨人。Reason が空なら取り（ByOwner が取った側）、空でなければその理由の消失。巨人は盤に残したまま。
+// 時間が動き出してから GameSystem.HitGiant で HP を減らす）。数値で保存しているので末尾に足していく
+public enum TimeStopKind { Capture, Explode, Vanish, Promote, Cell, Giant }
 public enum TimeStopCellEffect { Trap, Break, Burn, Wall }
 
 // 時間停止の予定 1 つ（Prototype の pending の 1 件）

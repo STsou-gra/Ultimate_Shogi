@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text;
 
 // 盤面のハッシュ（Prototype の src/core/hash.js の hashState と同じ考え方）。
@@ -9,7 +10,10 @@ using System.Text;
 //   盤の駒（[種類, 持ち主, 成り, 移動回数, 盾, ファランクス, アンデッド]。翼・カウンターの駒は [.., 翼] と [.., 翼, 1] を足す。
 //   時間停止の予定の駒は入れない）・
 //   マス（[状態, 炎上が終わるターン, 落とし穴の持ち主]）・超常魔法の使用・解放・世界の終わり・倒された初期配置の駒の種類・
-//   時間停止（[発動したプレイヤー, 残り回数, 予定の [種類, x, y, 処理済み]]）
+//   時間停止（[発動したプレイヤー, 残り回数, 予定の [種類, x, y, 処理済み]]）・
+//   巨人の HP（盤上に巨人がいるときだけ、いちばん最後に [[x, y, HP], …]（段 → 筋の順）。Prototype の hash.js の giantPart）
+// 巨人は盤の駒の 9 マス全部に同じ駒の値が入る（Prototype の board と同じ）。持ち駒の巨人は、持っているプレイヤーの分だけ入れる
+// （Prototype の handPart。巨人がいない局面のハッシュは、巨人を足す前と同じ）
 // 盤は Prototype と同じく「段ごとに筋を並べた」9×9 の配列にする。本編の座標は x = 段・y = 筋で、Prototype（x = 筋・y = 段）とは
 // x と y が逆なので、外側を x（段）、内側を y（筋）で回す。
 // 乱数・魔法の編成・千日手の記録・2回行動の続きは Prototype と同じく入れない。
@@ -45,14 +49,25 @@ public static class MatchHash
         PlayerSnapshot[] players = { p1, p2 };
 
         PieceSnapshot[] board = new PieceSnapshot[BoardCells.Size * BoardCells.Size];
+        List<PieceSnapshot> giants = new List<PieceSnapshot>();
         if (s.pieces != null)
         {
             foreach (PieceSnapshot p in s.pieces)
             {
                 if (p == null || p.held || !BoardCells.InBounds(p.x, p.y)) continue;
-                board[GameHelper.CalcPanelNum(p.x, p.y)] = p;
+                if (!PieceRules.IsGiant(p.type))
+                {
+                    board[GameHelper.CalcPanelNum(p.x, p.y)] = p;
+                    continue;
+                }
+                giants.Add(p);
+                foreach (MatchSquare c in GiantRules.Cells(p.x, p.y))
+                {
+                    if (BoardCells.InBounds(c.x, c.y)) board[GameHelper.CalcPanelNum(c.x, c.y)] = p;
+                }
             }
         }
+        giants.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x) : a.y.CompareTo(b.y));
         CellSnapshot?[] cells = new CellSnapshot?[BoardCells.Size * BoardCells.Size];
         if (s.cells != null)
         {
@@ -75,11 +90,15 @@ public static class MatchHash
         {
             if (i > 0) sb.Append(',');
             sb.Append('{');
+            bool first = true;
             for (int k = 0; k < PieceRules.HandOrder.Length; k++)
             {
                 PieceType type = PieceRules.HandOrder[k];
-                if (k > 0) sb.Append(',');
-                sb.Append('"').Append(type).Append("\":").Append(players[i].HandCountOf(type));
+                int count = players[i].HandCountOf(type);
+                if (type == PieceType.Giant && count <= 0) continue; // あとから足した巨人は、持っているときだけ入れる
+                if (!first) sb.Append(',');
+                first = false;
+                sb.Append('"').Append(type).Append("\":").Append(count);
             }
             sb.Append('}');
         }
@@ -177,6 +196,19 @@ public static class MatchHash
                 }
             }
             sb.Append("]]");
+        }
+
+        // 巨人の HP（盤上にいるときだけ）
+        if (giants.Count > 0)
+        {
+            sb.Append(",[");
+            for (int i = 0; i < giants.Count; i++)
+            {
+                if (i > 0) sb.Append(',');
+                PieceSnapshot g = giants[i];
+                sb.Append('[').Append(g.x).Append(',').Append(g.y).Append(',').Append(g.hp > 0 ? g.hp : GiantRules.MaxHp).Append(']');
+            }
+            sb.Append(']');
         }
         sb.Append(']');
         return sb.ToString();

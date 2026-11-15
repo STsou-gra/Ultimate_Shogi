@@ -30,6 +30,7 @@ static partial class Program
         TestPlayouts(400, new System.Random(3));
         TestSkills();
         TestCounter();
+        TestGiant();
         TestCpu();
         Console.WriteLine($"checks={checks} fails={fails}");
         return fails == 0 ? 0 : 1;
@@ -78,6 +79,12 @@ static partial class Program
             else if (v < 0.18) c.trap = r.Next(2);
             else if (v < 0.22) { c.state = CellState.Wall; c.wall = r.Next(2); }
         }
+        // 巨人（3×3 マス。ときどき 1〜2 体。HP は 1〜3）
+        if (r.NextDouble() < 0.35)
+        {
+            int giants = 1 + r.Next(2);
+            for (int k = 0; k < giants; k++) PlaceGiant(s, r, r.Next(2) == 0 ? P1 : P2);
+        }
         // 王将（たいていは 1 枚ずつ。ときどき 0 枚・2 枚）
         foreach (PlayerType o in new[] { P1, P2 })
         {
@@ -112,6 +119,23 @@ static partial class Program
         }
     }
 
+    static void PlaceGiant(BoardSnapshot s, System.Random r, PlayerType o)
+    {
+        for (int tries = 0; tries < 50; tries++)
+        {
+            int x = 1 + r.Next(7), y = 1 + r.Next(7);
+            bool ok = true;
+            foreach (MatchSquare c in GiantRules.Cells(x, y))
+            {
+                SnapshotCell cell = s.Cell(c.x, c.y);
+                if (s.At(c.x, c.y) != null || cell.IsWall || cell.IsBroken || cell.HasTrap) ok = false;
+            }
+            if (!ok) continue;
+            s.Place(new SnapshotPiece { type = PieceType.Giant, owner = (int)o, x = x, y = y, hp = 1 + r.Next(3), moveCount = r.Next(3) });
+            return;
+        }
+    }
+
     // スナップショットから GameBoard（今のルールの判定用）を作る
     static Pos Build(BoardSnapshot s)
     {
@@ -127,7 +151,7 @@ static partial class Program
         }
         foreach (SnapshotPiece p in s.pieces)
         {
-            GamePiece g = new GamePiece { type = p.type, player = p.Owner, X = p.x, Y = p.y, isPromoted = p.promoted, isUndead = p.undead, hasShield = p.shield, hasWing = p.wing };
+            GamePiece g = new GamePiece { type = p.type, player = p.Owner, X = p.x, Y = p.y, isPromoted = p.promoted, isUndead = p.undead, hasShield = p.shield, hasWing = p.wing, hp = p.hp };
             pos.Board.Put(g);
             pos.Map[p] = g;
         }
@@ -146,7 +170,7 @@ static partial class Program
         };
     }
 
-    static int uchifuzumeHits, checkHits;
+    static int uchifuzumeHits, checkHits, giantPositions;
 
     static void CompareRules(Pos pos, string label)
     {
@@ -182,13 +206,44 @@ static partial class Program
             if (a) checkHits++;
             if (a != b) Check(false, $"{label} check {o} rules={a} snap={b}");
         }
+        // 巨人がいる局面：王手を防げる手か（詰みの判定）も同じか
+        if (s.pieces.Any(p => p.IsGiant) || s.players.Any(p => p.hand[BoardSnapshot.HandIndex(PieceType.Giant)] > 0))
+        {
+            giantPositions++;
+            foreach (SnapshotPiece p in s.pieces.ToList())
+            {
+                GamePiece g = pos.Map[p];
+                for (int x = 0; x < 9; x++) for (int y = 0; y < 9; y++)
+                {
+                    if (!BoardSimulator.CanMoveTo(s, p, x, y)) continue;
+                    bool a = CheckRules.IsMoveSafe(pos.Board, g, x, y), b = SnapshotRules.IsMoveSafe(s, p, x, y);
+                    if (a != b) Check(false, $"{label} moveSafe {p.Describe()} ({p.x},{p.y})->({x},{y}) rules={a} snap={b}");
+                }
+                if (PieceRules.IsSniper(p.type))
+                {
+                    foreach (MatchSquare t in BoardSimulator.SnipeTargets(s, p))
+                    {
+                        bool a = CheckRules.IsSnipeSafe(pos.Board, g, t.x, t.y), b = SnapshotRules.IsSnipeSafe(s, p, t.x, t.y);
+                        if (a != b) Check(false, $"{label} snipeSafe {p.Describe()} -> {t} rules={a} snap={b}");
+                    }
+                }
+            }
+            foreach (PlayerType o in new[] { P1, P2 })
+                foreach (PieceType t in new[] { PieceType.Giant, PieceType.GoldGeneral })
+                    for (int x = 0; x < 9; x++) for (int y = 0; y < 9; y++)
+                    {
+                        if (!BoardSimulator.CanDropTo(s, o, t, x, y)) continue;
+                        bool a = CheckRules.IsDropSafe(pos.Board, o, t, x, y), b = SnapshotRules.IsDropSafe(s, o, t, x, y);
+                        if (a != b) Check(false, $"{label} dropSafe {o} {t} ({x},{y}) rules={a} snap={b}");
+                    }
+        }
         Check(true, label);
     }
 
     static void TestRandomRules(int n, System.Random r)
     {
         for (int i = 0; i < n; i++) CompareRules(RandomPos(r), $"random#{i}");
-        Console.WriteLine($"random rules: {n} 局面（王手 {checkHits} 回・打ち歩詰め {uchifuzumeHits} 回）");
+        Console.WriteLine($"random rules: {n} 局面（王手 {checkHits} 回・打ち歩詰め {uchifuzumeHits} 回・巨人のいる局面 {giantPositions}）");
     }
 
     // ------------------------------------------------------------
@@ -515,13 +570,19 @@ static partial class Program
     static void Invariants(BoardSnapshot s, string label)
     {
         HashSet<int> seen = new HashSet<int>();
+        int cells = 0;
         foreach (SnapshotPiece p in s.pieces)
         {
-            int i = GameHelper.CalcPanelNum(p.x, p.y);
-            if (i < 0 || !seen.Add(i) || s.At(p.x, p.y) != p) { Check(false, $"{label}: 駒の位置が壊れた {p.Describe()} ({p.x},{p.y})"); return; }
+            foreach (MatchSquare c in p.Footprint()) // 巨人は 3×3 マス全部
+            {
+                int i = GameHelper.CalcPanelNum(c.x, c.y);
+                cells++;
+                if (i < 0 || !seen.Add(i) || s.At(c.x, c.y) != p) { Check(false, $"{label}: 駒の位置が壊れた {p.Describe()} ({p.x},{p.y})"); return; }
+            }
+            if (p.IsGiant && (p.hp < 1 || p.hp > GiantRules.MaxHp)) Check(false, $"{label}: 巨人の HP {p.hp}");
         }
         int inGrid = s.Grid.Count(q => q != null);
-        if (inGrid != s.pieces.Count) Check(false, $"{label}: grid {inGrid} / pieces {s.pieces.Count}");
+        if (inGrid != cells) Check(false, $"{label}: grid {inGrid} / pieces {s.pieces.Count}（{cells} マス）");
         if (s.players.Any(p => p.energy < 0 || p.hand.Any(h => h < 0))) Check(false, $"{label}: エナジー・持ち駒が負");
         BoardSnapshot clone = s.Clone();
         if (s.Diff(clone, true).Count != 0) Check(false, $"{label}: Clone が違う");

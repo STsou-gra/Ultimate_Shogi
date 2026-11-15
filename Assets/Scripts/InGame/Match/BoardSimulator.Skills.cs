@@ -151,7 +151,8 @@ public static partial class BoardSimulator
             {
                 if (dx == 0 && dy == 0) continue;
                 SnapshotPiece q = s.At(p.x + dx, p.y + dy);
-                if (q != null) result.Add(new Neighbor { Piece = q, DX = dx, DY = dy });
+                if (q == null || q == p || result.Exists(n => n.Piece == q)) continue; // 巨人は最初に見つかったマスで 1 回だけ
+                result.Add(new Neighbor { Piece = q, DX = dx, DY = dy });
             }
         }
         return result;
@@ -250,9 +251,11 @@ public static partial class BoardSimulator
     static void FireBeams(BoardSnapshot s, SnapshotPiece p, MatchSquare[] dirs)
     {
         PlayerType owner = p.Owner;
+        List<SnapshotPiece> hit = new List<SnapshotPiece>(); // 巨人は複数の光線に当たっても 1 回
         foreach (Beam b in BeamPlan(s, p, dirs))
         {
-            if (b.Hit == null || !s.Contains(b.Hit)) continue;
+            if (b.Hit == null || !s.Contains(b.Hit) || hit.Contains(b.Hit)) continue;
+            hit.Add(b.Hit);
             if (PieceRules.IsExplosive(b.Hit.type)) Explode(s, b.Hit.x, b.Hit.y, null);
             else Capture(s, b.Hit, owner, p);
         }
@@ -283,6 +286,11 @@ public static partial class BoardSimulator
     static void Push(BoardSnapshot s, SnapshotPiece by, SnapshotPiece q, int dx, int dy)
     {
         if (!s.Contains(q)) return;
+        if (q.IsGiant)
+        {
+            Capture(s, q, by.Owner, by); // 巨人は押せない：1 回の攻撃になる
+            return;
+        }
         int tx = q.x + dx, ty = q.y + dy;
         if (!BoardCells.InBounds(tx, ty))
         {
@@ -563,12 +571,7 @@ public static partial class BoardSimulator
             {
                 SnapshotPiece caster = s.At(t0.x, t0.y);
                 if (caster == null) break;
-                List<SnapshotPiece> inRange = new List<SnapshotPiece>();
-                foreach (MatchSquare sq in FrontSquares(s, caster))
-                {
-                    SnapshotPiece q = s.At(sq.x, sq.y);
-                    if (q != null) inRange.Add(q);
-                }
+                List<SnapshotPiece> inRange = PiecesIn(s, FrontSquares(s, caster)); // 巨人は 1 回だけ
                 foreach (SnapshotPiece q in inRange)
                 {
                     if (!s.Contains(q) || q.Owner == owner || PieceRules.IsExplosive(q.type)) continue;
@@ -612,23 +615,14 @@ public static partial class BoardSimulator
             case MagicKind.Meteor:
             {
                 List<MatchSquare> area = SquareArea(t0.x, t0.y, 1);
-                foreach (MatchSquare sq in area)
-                {
-                    SnapshotPiece q = s.At(sq.x, sq.y);
-                    if (q != null) Vanish(s, q);
-                }
+                foreach (SnapshotPiece q in PiecesIn(s, area)) Vanish(s, q); // 巨人は何マス重なっても 1 回
                 foreach (MatchSquare sq in area) SetBurning(s, sq.x, sq.y, MeteorBurnTurns);
                 break;
             }
             case MagicKind.Cannon:
             {
                 List<MatchSquare> cells = Band(t0.x, t0.y, false);
-                List<SnapshotPiece> victims = new List<SnapshotPiece>();
-                foreach (MatchSquare sq in cells)
-                {
-                    SnapshotPiece q = s.At(sq.x, sq.y);
-                    if (q != null) victims.Add(q);
-                }
+                List<SnapshotPiece> victims = PiecesIn(s, cells); // 巨人は 1 回（生き残れば、そのマスは壊れない：BreakCell）
                 foreach (SnapshotPiece q in victims) Vanish(s, q);
                 foreach (MatchSquare sq in cells) BreakCell(s, sq.x, sq.y);
                 break;
@@ -637,12 +631,7 @@ public static partial class BoardSimulator
             {
                 // BombEffect：狙ったマス a.to を中心に 3×3 の駒がすべて消失（盾は無効。火薬は MatchConfig.ChainExplosion のときだけ誘爆）
                 List<MatchSquare> area = SquareArea(a.to.x, a.to.y, 1);
-                List<SnapshotPiece> victims = new List<SnapshotPiece>();
-                foreach (MatchSquare sq in area)
-                {
-                    SnapshotPiece q = s.At(sq.x, sq.y);
-                    if (q != null) victims.Add(q);
-                }
+                List<SnapshotPiece> victims = PiecesIn(s, area); // 巨人は 1 回
                 List<MatchSquare> chain = new List<MatchSquare>();
                 foreach (SnapshotPiece q in victims)
                 {
@@ -691,7 +680,7 @@ public static partial class BoardSimulator
     // MagicKit.IsOwnPiece：自分の駒（アンデッドは選べない）
     static bool IsOwnPiece(PlayerType owner, SnapshotPiece p)
     {
-        return p != null && p.Owner == owner && !p.undead;
+        return p != null && p.Owner == owner && !p.undead && !p.IsGiant; // 巨人も選べない（盾・ファランクス・カウンター・魔法の起点にできない）
     }
 
     // MagicKit.IsEmptyNormal：駒がいない通常状態（破壊・炎上・落とし穴がない）のマス（時間停止中、予定の駒が残るマスは除く）
@@ -747,10 +736,9 @@ public static partial class BoardSimulator
     static List<SnapshotPiece> FrontEnemies(BoardSnapshot s, SnapshotPiece p)
     {
         List<SnapshotPiece> result = new List<SnapshotPiece>();
-        foreach (MatchSquare sq in FrontSquares(s, p))
+        foreach (SnapshotPiece q in PiecesIn(s, FrontSquares(s, p)))
         {
-            SnapshotPiece q = s.At(sq.x, sq.y);
-            if (q != null && q.owner != p.owner) result.Add(q);
+            if (q.owner != p.owner) result.Add(q); // 巨人は何マス重なっても 1 つ
         }
         return result;
     }
@@ -830,6 +818,7 @@ public static partial class BoardSimulator
         SnapshotCell c = s.Cell(x, y);
         if (c == null || c.IsBroken) return;
         SnapshotPiece q = s.At(x, y);
+        if (q != null && q.IsGiant) return; // 巨人のマスは壊れない（巨人への攻撃は呼び出し側で 1 回だけ当てる：破壊砲・世界の終わり）
         c.state = CellState.Broken;
         c.burnUntil = -1;
         c.trap = -1;
@@ -861,7 +850,8 @@ public static partial class BoardSimulator
         {
             for (int y = 0; y < BoardCells.Size; y++)
             {
-                if (!s.IsBroken(x, y)) squares.Add(new MatchSquare(x, y));
+                SnapshotPiece q = s.At(x, y);
+                if (!s.IsBroken(x, y) && !(q != null && q.IsGiant)) squares.Add(new MatchSquare(x, y)); // 巨人のマスも動かさない
             }
         }
         GameRng rng = RngOf(s);
@@ -899,7 +889,13 @@ public static partial class BoardSimulator
         GameRng rng = RngOf(s);
         List<MatchSquare> shuffled = rng.Shuffle(pool);
         s.rngState = rng.State;
-        for (int i = 0; i < System.Math.Min(n, shuffled.Count); i++) BreakCell(s, shuffled[i].x, shuffled[i].y);
+        List<MatchSquare> picked = shuffled.GetRange(0, System.Math.Min(n, shuffled.Count));
+        // 巨人は何マス崩れても 1 回の攻撃（生き残れば、そのマスは崩れない：BreakCell）
+        foreach (SnapshotPiece g in PiecesIn(s, picked))
+        {
+            if (g.IsGiant) Vanish(s, g);
+        }
+        foreach (MatchSquare c in picked) BreakCell(s, c.x, c.y);
     }
 
     // GameSystem.WorldEndCandidates：破壊されていない、王将がいないマス
@@ -1131,9 +1127,11 @@ public static partial class BoardSimulator
     // 王手を回避できる手（駒の移動・狙撃・持ち駒を打つ）が 1 つもないか（GameSystem.IsCheckmated。魔法・必殺技・錬成は含めない）
     public static bool IsCheckmated(BoardSnapshot s, PlayerType side)
     {
-        foreach (SnapshotPiece p in s.Grid)
+        SnapshotPiece[] grid = s.Grid;
+        for (int i = 0; i < grid.Length; i++)
         {
-            if (p == null || p.Owner != side || p.undead) continue;
+            SnapshotPiece p = grid[i];
+            if (p == null || p.Owner != side || p.undead || !BoardSnapshot.IsAnchor(p, i)) continue;
             for (int x = 0; x < BoardCells.Size; x++)
             {
                 for (int y = 0; y < BoardCells.Size; y++)

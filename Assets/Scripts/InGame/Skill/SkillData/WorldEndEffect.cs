@@ -45,16 +45,19 @@ public class WorldEndEffect : SkillEffect
     if (picked.Count == 0) return picked;
 
     List<string> victims = new List<string>();
-    foreach (Vector2Int c in picked)
+    List<GamePiece> giants = new List<GamePiece>();
+    foreach (GamePiece q in MagicKit.PiecesIn(system.Board, picked))
     {
-      GamePiece q = system.Board.GetPieceAt(c.x, c.y);
-      if (q != null && !PieceRules.HasMagicWing(q)) victims.Add($"{TurnEndAction.SideName(q.player)}の{HandUIManager.GetJapaneseName(q.type)}");
+      if (PieceRules.IsGiant(q)) giants.Add(q);
+      if (!PieceRules.HasMagicWing(q)) victims.Add($"{TurnEndAction.SideName(q.player)}の{HandUIManager.GetJapaneseName(q.type)}");
     }
     string where = string.Join("・", picked.ConvertAll(c => $"({c.x}, {c.y})"));
     string log = $"世界の終わり：{where} が崩れ落ちた" + (victims.Count > 0 ? $"（{string.Join("・", victims)}が消失）" : "");
 
+    // 巨人は何マス崩れても 1 回の攻撃（生き残れば、そのマスは崩れない：GameSystem.BreakCell。Prototype の play.js の worldEndCollapse）
     if (tl == null)
     {
+      foreach (GamePiece g in giants) system.VanishPiece(g, BoardCells.ReasonBroken);
       foreach (Vector2Int c in picked) system.BreakCell(c.x, c.y);
       Debug.Log(log);
       return picked;
@@ -63,6 +66,7 @@ public class WorldEndEffect : SkillEffect
     // 崩れるマスが赤く点滅する → 1 マスずつ崩れ落ちる（マスの板が抜け落ちる見た目は BoardCellView）
     if (fx != null) fx.CollapseWarning(picked, tl.Time);
     tl.Wait(MagicFx.CollapseWarningTime);
+    foreach (GamePiece g in giants) tl.Vanish(g, BoardCells.ReasonBroken, Vector2Int.zero);
     foreach (Vector2Int c in picked)
     {
       tl.ScheduleState(() => system.BreakCell(c.x, c.y));

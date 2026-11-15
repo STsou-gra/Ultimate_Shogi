@@ -4,7 +4,8 @@ using System.Collections.Generic;
 // 盤面のスナップショット（BoardSnapshot）だけを見る（GameObject・UnityEngine の API に依存しないので、別スレッドでも動く）。
 //
 // Prototype との違い：
-//  ・鳥・巨人・翼は Unity にないので入れていない
+//  ・鳥・翼は Prototype でも評価に入れていないので入れていない（巨人は Prototype と同じく価値 5・残りの HP で減らす・先頭の 1 列に届く・
+//    HP 1 のときだけ取られそうな駒として数える）
 //  ・王の安全（相手の駒が王に届くか）は、王将が 1 枚のときだけ見る（Unity は王将が 2 枚以上なら王手・詰みがない。R-1）
 //  ・超常魔法の「解放済み・未使用」は、超常魔法を編成しているときだけ数える
 public static class CpuEvaluate
@@ -25,6 +26,7 @@ public static class CpuEvaluate
             case PieceType.Rook: return promoted ? 9 : 7;
             case PieceType.Sniper: return 3;
             case PieceType.Gunpowder: return 1.5;
+            case PieceType.Giant: return 5;
             case PieceType.King: return 0;
             default: return 2;
         }
@@ -44,14 +46,16 @@ public static class CpuEvaluate
             case PieceType.Rook: return 7.2;
             case PieceType.Sniper: return 3;
             case PieceType.Gunpowder: return 1.5;
+            case PieceType.Giant: return 5;
             default: return 2;
         }
     }
 
-    // 盤上の駒 p の価値（アンデッドは自分では動かせないので 0.7 倍）
+    // 盤上の駒 p の価値（アンデッドは自分では動かせないので 0.7 倍。巨人は残りの HP で減らす）
     public static double PieceValue(SnapshotPiece p)
     {
         double v = BoardValue(p.type, p.promoted);
+        if (p.IsGiant) v *= 0.4 + 0.6 * ((p.hp > 0 ? p.hp : GiantRules.MaxHp) / (double)GiantRules.MaxHp);
         return p.undead ? v * 0.7 : v;
     }
 
@@ -85,9 +89,10 @@ public static class CpuEvaluate
         bool[][] attacks = { new bool[81], new bool[81] };
         int[] mobility = new int[2];
         SnapshotPiece[] grid = s.Grid;
-        foreach (SnapshotPiece p in grid)
+        for (int i = 0; i < grid.Length; i++)
         {
-            if (p == null) continue;
+            SnapshotPiece p = grid[i];
+            if (p == null || !BoardSnapshot.IsAnchor(p, i)) continue; // 巨人は中央のマスで 1 回だけ
             double sign = p.Owner == me ? 1 : -1;
             score += sign * PieceValue(p);
             if (p.shield) score += sign * WShield;
@@ -102,7 +107,13 @@ public static class CpuEvaluate
                 {
                     if (!BoardSimulator.CanMoveTo(s, p, x, y)) continue;
                     n++;
-                    map[GameHelper.CalcPanelNum(x, y)] = true;
+                    if (!p.IsGiant)
+                    {
+                        map[GameHelper.CalcPanelNum(x, y)] = true;
+                        continue;
+                    }
+                    // 巨人は先頭の 1 列に届く
+                    foreach (MatchSquare c in GiantRules.FrontRowAt(p.Owner, new MatchSquare(x, y))) map[GameHelper.CalcPanelNum(c.x, c.y)] = true;
                 }
             }
             mobility[p.owner] += n;
@@ -123,10 +134,17 @@ public static class CpuEvaluate
         // 次に動く側が取れる駒：動く側には得、動かれる側には損（いちばん高い 1 つだけ数える。盾・カウンターの駒は取られない）
         PlayerType toMove = s.Current, waiting = BoardZones.Opponent(toMove);
         double best = 0;
-        foreach (SnapshotPiece p in grid)
+        foreach (SnapshotPiece p in s.pieces)
         {
-            if (p == null || p.Owner != waiting || p.shield || p.counter) continue;
-            if (!attacks[(int)toMove][GameHelper.CalcPanelNum(p.x, p.y)]) continue;
+            if (p.Owner != waiting || p.shield || p.counter) continue;
+            if (p.IsGiant && p.hp > 1) continue; // 巨人は HP 1 のときだけ取られる
+            bool attacked = false;
+            foreach (MatchSquare c in p.Footprint())
+            {
+                int i = GameHelper.CalcPanelNum(c.x, c.y);
+                if (i >= 0 && attacks[(int)toMove][i]) attacked = true;
+            }
+            if (!attacked) continue;
             best = System.Math.Max(best, PieceValue(p));
         }
         score += (toMove == me ? WThreat : -WHanging) * best;

@@ -53,7 +53,7 @@ public class UndeadMarch : TurnEndAction
     public static List<GamePiece> Pieces(GameBoard board, PlayerType owner)
     {
         List<GamePiece> list = new List<GamePiece>();
-        foreach (GamePiece p in board.GetBoardData())
+        foreach (GamePiece p in board.Pieces())
         {
             if (p != null && p.player == owner && p.isUndead) list.Add(p);
         }
@@ -167,7 +167,7 @@ public class UndeadMarch : TurnEndAction
     static List<GamePiece> Kings(GameBoard board, PlayerType owner)
     {
         List<GamePiece> list = new List<GamePiece>();
-        foreach (GamePiece q in board.GetBoardData())
+        foreach (GamePiece q in board.Pieces())
         {
             if (q != null && q.player == owner && q.type == PieceType.King) list.Add(q);
         }

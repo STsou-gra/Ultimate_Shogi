@@ -98,7 +98,8 @@ public class SpecialContext
             {
                 if (dx == 0 && dy == 0) continue;
                 GamePiece q = PieceAt(p.X + dx, p.Y + dy);
-                if (q != null) result.Add(new Neighbor { Piece = q, DX = dx, DY = dy });
+                if (q == null || q == p || result.Exists(n => n.Piece == q)) continue; // 巨人は最初に見つかったマスで 1 回だけ
+                result.Add(new Neighbor { Piece = q, DX = dx, DY = dy });
             }
         }
         return result;
@@ -237,6 +238,13 @@ public class SpecialContext
         int tx = q.X + dx;
         int ty = q.Y + dy;
         Vector2Int dir = new Vector2Int(dx, dy);
+
+        if (PieceRules.IsGiant(q))
+        {
+            // 巨人は押せない：1 回の攻撃になる（Prototype の play.js の pushPiece）
+            if (!Capture(q, dir) && Fx != null && IsAlive(q)) Fx.Bump(q, dir, Time);
+            return;
+        }
 
         if (!InBounds(tx, ty))
         {

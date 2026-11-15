@@ -53,7 +53,7 @@ namespace UnityEngine
     }
 }
 
-public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn, Gunpowder, Sniper, Bird }
+public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn, Gunpowder, Sniper, Bird, Giant }
 public enum PlayerType { Player1, Player2 }
 // MatchSnapshot.cs が使う列挙（本体は Match/TimeStopState.cs。Unity の型に依存するので複製している。値を変えたらこちらも合わせる。DefeatKind は MatchState.cs をそのまま使う）
 
@@ -67,6 +67,7 @@ public class GamePiece
     public bool isPromoted, isUndead, hasShield, hasPhalanx, hasWing, IsInitial;
     public int cooldownUntilTick; // 合戦将棋型の連打の間隔（MatchPolicy が読む）
     public int moveCount;
+    public int hp; // 巨人の HP
     public BoardCells Cells { get; set; }
     public bool CanMove(int toX, int toY)
     {
@@ -103,8 +104,14 @@ public class GameBoard
 {
     readonly GamePiece[] boardData = new GamePiece[81];
     public BoardCells Cells { get; } = new BoardCells();
+    public TimeStopState TimeStop { get; set; }
     public GamePiece[] GetBoardData() => boardData;
     public GamePiece GetPieceAt(int x, int y) { int i = GameHelper.CalcPanelNum(x, y); return i < 0 ? null : boardData[i]; }
     public bool HasPieceAt(int x, int y) => GetPieceAt(x, y) != null;
-    public void Put(GamePiece p) { boardData[GameHelper.CalcPanelNum(p.X, p.Y)] = p; p.Cells = Cells; }
+    public void Put(GamePiece p)
+    {
+        p.Cells = Cells;
+        if (p.type != PieceType.Giant) { boardData[GameHelper.CalcPanelNum(p.X, p.Y)] = p; return; }
+        foreach (MatchSquare c in GiantRules.Cells(p.X, p.Y)) boardData[GameHelper.CalcPanelNum(c.x, c.y)] = p; // 巨人は 3×3（本体の GameBoard と同じ）
+    }
 }

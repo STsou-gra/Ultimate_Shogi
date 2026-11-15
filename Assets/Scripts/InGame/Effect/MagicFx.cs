@@ -77,6 +77,7 @@ public partial class MagicFx : MonoBehaviour
             gameSystem.CounterGiven += OnCounterGiven;
             gameSystem.CounterGuarded += OnCounterGuarded;
             gameSystem.CounterStruck += OnCounterStruck;
+            gameSystem.GiantHit += OnGiantHit;
             gameSystem.PieceDefeated += OnPieceDefeatedFx;
         }
     }
@@ -92,6 +93,7 @@ public partial class MagicFx : MonoBehaviour
             gameSystem.CounterGiven -= OnCounterGiven;
             gameSystem.CounterGuarded -= OnCounterGuarded;
             gameSystem.CounterStruck -= OnCounterStruck;
+            gameSystem.GiantHit -= OnGiantHit;
             gameSystem.PieceDefeated -= OnPieceDefeatedFx;
         }
     }

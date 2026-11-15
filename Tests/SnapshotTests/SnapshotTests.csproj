@@ -31,6 +31,7 @@
     <Compile Include="../../Assets/Scripts/InGame/Match/BattleRuleset.cs" Link="Game/BattleRuleset.cs" />
     <Compile Include="../../Assets/Scripts/InGame/Match/MatchAction.cs" Link="Game/MatchAction.cs" />
     <Compile Include="../../Assets/Scripts/InGame/Match/PieceMoves.cs" Link="Game/PieceMoves.cs" />
+    <Compile Include="../../Assets/Scripts/InGame/Match/GiantRules.cs" Link="Game/GiantRules.cs" />
     <Compile Include="../../Assets/Scripts/InGame/Match/BoardSnapshot.cs" Link="Game/BoardSnapshot.cs" />
     <Compile Include="../../Assets/Scripts/InGame/Match/BoardSimulator.cs" Link="Game/BoardSimulator.cs" />
     <Compile Include="../../Assets/Scripts/InGame/Match/BoardSimulator.Skills.cs" Link="Game/BoardSimulator.Skills.cs" />

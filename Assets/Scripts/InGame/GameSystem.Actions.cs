@@ -460,6 +460,7 @@ public partial class GameSystem
         {
             GamePiece p = board[i];
             if (p == null || p.player != player) continue;
+            if (GameHelper.CalcPanelNum(p.X, p.Y) != i) continue; // 巨人は 3×3 マスを占めるので、中央のマスで 1 回だけ
             AddPieceActions(res, p);
         }
 
