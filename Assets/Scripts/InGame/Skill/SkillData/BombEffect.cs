@@ -67,12 +67,7 @@ public class BombEffect : SkillEffect
     List<Vector2Int> area = MagicKit.SquareArea(at.x, at.y, 1);
 
     // 範囲の駒（消える前に集める）
-    List<GamePiece> victims = new List<GamePiece>();
-    foreach (Vector2Int s in area)
-    {
-      GamePiece q = context.PieceAt(s);
-      if (q != null) victims.Add(q);
-    }
+    List<GamePiece> victims = MagicKit.PiecesIn(context.GameBoard, area); // 巨人は 1 回だけ
 
     if (tl == null)
     {

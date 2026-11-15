@@ -6,10 +6,23 @@ using UnityEngine;
 public static class MagicKit
 {
     // 自分の魔法の対象・起点に選べる自分の駒か（Prototype の ownPieceSquares）。
-    // アンデッドは選べない（相手の魔法・駒の効果は通常どおり受ける）
+    // アンデッド・巨人は選べない（相手の魔法・駒の効果は通常どおり受ける。巨人は盾・ファランクス・カウンターにも魔法の起点にもできない）
     public static bool IsOwnPiece(SkillContext context, GamePiece piece)
     {
-        return piece != null && piece.player == context.Player && !piece.isUndead;
+        return piece != null && piece.player == context.Player && !piece.isUndead && !PieceRules.IsGiant(piece);
+    }
+
+    // マスの一覧にいる駒（巨人は 3×3 マスで引けるので、何マス重なっても 1 つ。先に出たほうの順。Prototype の piecesIn）。
+    // 範囲の効果（爆発・隕石・破壊砲・剣など）は、これで集めて 1 回の効果につき 1 回だけ当てる
+    public static List<GamePiece> PiecesIn(GameBoard board, IEnumerable<Vector2Int> cells)
+    {
+        List<GamePiece> result = new List<GamePiece>();
+        foreach (Vector2Int c in cells)
+        {
+            GamePiece q = board.GetPieceAt(c.x, c.y);
+            if (q != null && !result.Contains(q)) result.Add(q);
+        }
+        return result;
     }
 
     // 駒がいない通常状態（破壊・炎上・落とし穴・壁がない）のマスか（Prototype の emptyNormalSquares・kit.js の空きマス）
@@ -70,10 +83,9 @@ public static class MagicKit
     public static List<GamePiece> FrontEnemies(GameBoard board, GamePiece p)
     {
         List<GamePiece> result = new List<GamePiece>();
-        foreach (Vector2Int s in FrontSquares(board, p))
+        foreach (GamePiece q in PiecesIn(board, FrontSquares(board, p)))
         {
-            GamePiece q = board.GetPieceAt(s.x, s.y);
-            if (q != null && q.player != p.player) result.Add(q);
+            if (q.player != p.player) result.Add(q); // 巨人は何マス重なっても 1 つ
         }
         return result;
     }

@@ -33,7 +33,7 @@ public class PhalanxAdvance : TurnEndAction
     public static List<GamePiece> Pieces(GameBoard board, PlayerType owner)
     {
         List<GamePiece> list = new List<GamePiece>();
-        foreach (GamePiece p in board.GetBoardData())
+        foreach (GamePiece p in board.Pieces())
         {
             if (p != null && p.player == owner && p.hasPhalanx) list.Add(p);
         }
@@ -127,7 +127,7 @@ public class PhalanxAdvance : TurnEndAction
     static bool AnyKingLost(GameBoard board)
     {
         bool p1 = false, p2 = false;
-        foreach (GamePiece q in board.GetBoardData())
+        foreach (GamePiece q in board.Pieces())
         {
             if (q == null || q.type != PieceType.King) continue;
             if (q.player == PlayerType.Player1) p1 = true;

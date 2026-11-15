@@ -19,7 +19,9 @@ public class GameBoard : MonoBehaviour
 {
     private List<GameSelectPanel> selectPanelArray = new List<GameSelectPanel>();
 
-    private GamePiece[] boardData = new GamePiece[81]; // 9x9の盤面を想定
+    // 9x9の盤面を想定。巨人（3×3 マスを占める駒。GiantRules）は、占めるマス全部に同じ駒が入る（駒の X・Y は中央のマス）。
+    // 盤の全部を回すときは、巨人を 1 回だけ数えるように Pieces() を使うか、中央のマスかを確かめること
+    private GamePiece[] boardData = new GamePiece[81];
 
     // マスの状態（破壊・炎上・落とし穴）。駒の配列とは別のプレーンなクラスで持つ（添字は駒の配列と同じ）。
     // 書き換えは GameSystem.BreakCell / SetBurning / SetTrap / EnterCell を通すこと
@@ -123,6 +125,61 @@ public class GameBoard : MonoBehaviour
         return boardData;
     }
 
+    // 盤上の駒（盤の添字の順。巨人は中央のマスで 1 回だけ）
+    public List<GamePiece> Pieces()
+    {
+        List<GamePiece> res = new List<GamePiece>();
+        for (int i = 0; i < boardData.Length; i++)
+        {
+            GamePiece p = boardData[i];
+            if (p != null && GameHelper.CalcPanelNum(p.X, p.Y) == i) res.Add(p);
+        }
+        return res;
+    }
+
+    // 駒が占めるマス（ふつうの駒は 1 マス、巨人は中央 (x, y) の 3×3）
+    public static List<Vector2Int> Footprint(GamePiece piece, int x, int y)
+    {
+        List<Vector2Int> res = new List<Vector2Int>();
+        if (!PieceRules.IsGiant(piece))
+        {
+            res.Add(new Vector2Int(x, y));
+            return res;
+        }
+        foreach (MatchSquare c in GiantRules.Cells(x, y)) res.Add(c);
+        return res;
+    }
+
+    // 駒を占めるマス全部に書く（中央 (x, y)）
+    void PutCells(GamePiece piece, int x, int y)
+    {
+        foreach (Vector2Int c in Footprint(piece, x, y))
+        {
+            int i = GameHelper.CalcPanelNum(c.x, c.y);
+            if (i != -1) boardData[i] = piece;
+        }
+    }
+
+    // 駒がいるマスを空ける（piece がいるマスだけ）
+    void ClearCells(GamePiece piece)
+    {
+        foreach (Vector2Int c in Footprint(piece, piece.X, piece.Y))
+        {
+            int i = GameHelper.CalcPanelNum(c.x, c.y);
+            if (i != -1 && boardData[i] == piece) boardData[i] = null;
+        }
+    }
+
+    // 巨人を中央 (cx, cy) へ動かす（データだけ。移動先のマスは空いていること。火薬のマスに重なるときは、呼び出し側が先に火薬を外す）
+    public void MoveGiant(GamePiece giant, int cx, int cy)
+    {
+        if (giant == null) return;
+        ClearCells(giant);
+        giant.X = cx;
+        giant.Y = cy;
+        PutCells(giant, cx, cy);
+    }
+
     // 盤から駒を取り除いて破棄する（盤面の操作だけ）。
     // 対局中に駒を倒すときは、ここを直接呼ばずに GameSystem.CapturePiece（取り）/ VanishPiece（消失）を通すこと
     // （エナジー配分・持ち駒・初期配置の駒の記録・盾などの割り込みをそちらで行う）
@@ -131,12 +188,14 @@ public class GameBoard : MonoBehaviour
         int index = GameHelper.CalcPanelNum(x, y);
         if (index != -1 && boardData[index] != null)
         {
+            GamePiece piece = boardData[index];
             // 消される駒の種類をチェック
-            bool isKing = (boardData[index].type == PieceType.King);
-            // 見た目（GameObject）を削除
-            Destroy(boardData[index].gameObject);
-            // データ（配列）を空にする
+            bool isKing = (piece.type == PieceType.King);
+            // データ（配列）を空にする（巨人は占めるマス全部）
+            ClearCells(piece);
             boardData[index] = null;
+            // 見た目（GameObject）を削除
+            Destroy(piece.gameObject);
             return isKing; // 玉が取られたかどうかを返す
         }
         return false;
@@ -146,8 +205,7 @@ public class GameBoard : MonoBehaviour
     public void DetachPiece(GamePiece piece)
     {
         if (piece == null) return;
-        int index = GameHelper.CalcPanelNum(piece.X, piece.Y);
-        if (index != -1 && boardData[index] == piece) boardData[index] = null;
+        ClearCells(piece);
     }
 
     // 外していた駒を (x, y) に戻す（盾で取りが防がれたなど。そのマスは空いていること）
@@ -155,9 +213,9 @@ public class GameBoard : MonoBehaviour
     {
         int index = GameHelper.CalcPanelNum(x, y);
         if (piece == null || index == -1) return;
-        boardData[index] = piece;
         piece.X = x;
         piece.Y = y;
+        PutCells(piece, x, y);
     }
 
     // 盤のデータから外していた駒を破棄する（盤のデータは変えない。そのマスに今いる別の駒は消さない）
@@ -193,16 +251,18 @@ public class GameBoard : MonoBehaviour
         {
             piece.transform.localRotation = Quaternion.Euler(0, 0, 180);
         }
-        if (attach) boardData[index] = piece;
+        if (PieceRules.IsGiant(piece)) piece.hp = GiantRules.MaxHp; // 巨人は HP 3（局面の読み込みでは ApplyPiece が書き換える）
+        if (attach) PutCells(piece, x, y);
         return piece;
     }
 
     // 盤上の駒をすべて取り除いて破棄する（局面の読み込みで盤を作り直すとき。盤のデータから外している駒は呼び出し側が消す）
     public void RemoveAllPieces()
     {
+        HashSet<GamePiece> destroyed = new HashSet<GamePiece>(); // 巨人は 9 マスにいるので 1 回だけ
         for (int i = 0; i < boardData.Length; i++)
         {
-            if (boardData[i] != null) Destroy(boardData[i].gameObject);
+            if (boardData[i] != null && destroyed.Add(boardData[i])) Destroy(boardData[i].gameObject);
             boardData[i] = null;
         }
     }

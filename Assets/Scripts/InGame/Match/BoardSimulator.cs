@@ -66,7 +66,7 @@ public static partial class BoardSimulator
         for (int i = 0; i < grid.Length; i++)
         {
             SnapshotPiece p = grid[i];
-            if (p == null || p.Owner != player) continue;
+            if (p == null || p.Owner != player || !BoardSnapshot.IsAnchor(p, i)) continue; // 巨人は中央のマスで 1 回だけ
             MatchSquare from = new MatchSquare(p.x, p.y);
 
             if (!p.undead && !p.frozen)
@@ -228,6 +228,7 @@ public static partial class BoardSimulator
     public static bool CanMoveTo(BoardSnapshot s, SnapshotPiece p, int x, int y)
     {
         if (!BoardCells.InBounds(x, y)) return false;
+        if (p.IsGiant) return GiantMoves(s, p).Contains(new MatchSquare(x, y)); // 巨人：前へまっすぐ 1〜5 マス（移動先は先頭の 1 列の中央）
         // 駒の動き（GamePiece.CanMove：破壊マス・壁には行けない。翼状態の駒は破壊マスには行ける）
         if (s.IsBlockedFor(p, x, y)) return false;
         if (!PieceMoves.CanMoveByPattern(p.type, p.Owner, p.promoted, x - p.x, y - p.y)) return false;
@@ -237,6 +238,22 @@ public static partial class BoardSimulator
         SnapshotPiece target = s.At(x, y);
         if (target == p) return false;
         return target == null || target.owner != p.owner || BoardSnapshot.Detonates(p, target);
+    }
+
+    // 巨人 p の移動先（GameSystem.GiantMoves と同じ。GiantRules.Moves。時間停止中は動けない）
+    public static List<MatchSquare> GiantMoves(BoardSnapshot s, SnapshotPiece p)
+    {
+        if (s.timeStopped) return new List<MatchSquare>();
+        return GiantRules.Moves(p.Owner, p.x, p.y,
+            (x, y) =>
+            {
+                SnapshotPiece q = s.At(x, y);
+                if (q == null) return GiantRules.Occupant.Empty;
+                if (PieceRules.IsExplosive(q.type)) return GiantRules.Occupant.Bomb;
+                return q.owner == p.owner ? GiantRules.Occupant.Own : GiantRules.Occupant.Enemy;
+            },
+            (x, y) => s.IsBlockedFor(p, x, y),
+            (x, y) => s.IsHazard(x, y));
     }
 
     // 走り駒の通り道（GameHelper.IsPathBlocked と同じ）：移動先の手前までに駒・破壊マス・炎上・落とし穴があれば通れない。
@@ -277,6 +294,15 @@ public static partial class BoardSimulator
     public static bool CanDropTo(BoardSnapshot s, PlayerType owner, PieceType type, int x, int y)
     {
         if (!BoardCells.InBounds(x, y)) return false;
+        // 巨人：中央のマスを選ぶ（GiantRules.CanDropAt。9 マスとも空いた通常のマス）
+        if (PieceRules.IsGiant(type))
+        {
+            return GiantRules.CanDropAt(owner, x, y, (cx, cy) =>
+            {
+                SnapshotCell c = s.Cell(cx, cy);
+                return s.At(cx, cy) == null && c.state == CellState.Normal && !c.HasTrap && !s.heldSquares.Contains(new MatchSquare(cx, cy));
+            }, s.turnNumber <= MatchConfig.EnemyZoneDropLockTurns);
+        }
         // 時間停止中、予定の駒が残っているマス
         if (s.heldSquares.Contains(new MatchSquare(x, y))) return false;
         // EmptyCellDropRule
@@ -477,6 +503,11 @@ public static partial class BoardSimulator
     // 移動（GameSystem.ApplyMove と同じ）
     static void ApplyMove(BoardSnapshot s, SnapshotPiece p, int x, int y, bool promote)
     {
+        if (p.IsGiant)
+        {
+            ApplyGiantMove(s, p, x, y);
+            return;
+        }
         SnapshotPiece target = s.At(x, y);
         // 火薬のマスに入ったら爆発する（鳥は爆発させずに火薬を取る：下の取りの処理へ）
         if (target != null && target != p && BoardSnapshot.Detonates(p, target))
@@ -486,13 +517,97 @@ public static partial class BoardSimulator
         }
         if (target != null && target.owner != p.owner)
         {
-            // 取りが防がれた（盾・カウンター）：元のマスへ跳ね返る。移動回数は数えない（手番は使う）
-            if (!Capture(s, target, p.Owner, p)) return;
+            // 取りが防がれた（盾・カウンター）：元のマスへ跳ね返る。移動回数は数えない（手番は使う）。
+            // 巨人への攻撃（HP が残って跳ね返った）は移動として数え、攻撃したマスが敵陣なら成る（Prototype の play.js の movePiece）
+            if (!Capture(s, target, p.Owner, p))
+            {
+                if (target.IsGiant && s.Contains(p))
+                {
+                    if (promote) p.promoted = true;
+                    p.moveCount++;
+                }
+                return;
+            }
         }
         s.MovePiece(p, x, y);
         if (!EnterCell(s, p, x, y)) return; // 炎上・落とし穴のマスに入って消失した（成りも起きない）
         if (promote) p.promoted = true;
         p.moveCount++;
+    }
+
+    // 巨人の移動（GameSystem.MoveGiant と同じ。Prototype の play.js の moveGiant）：to は先頭の 1 列の中央のマス。
+    // 先頭の 1 列の相手の駒（火薬を除く）を全部取る。1 つでも取れなければ（巨人が残った）元の位置へ跳ね返る。
+    // 入れたら先頭の 1 列の火薬が爆発し、新しく入ったマスに落とし穴・炎上があれば 1 回の攻撃を受ける（落とし穴は閉じる）。
+    // 跳ね返っても移動として数える
+    static void ApplyGiantMove(BoardSnapshot s, SnapshotPiece p, int tx, int ty)
+    {
+        MatchSquare to = GiantRules.CenterAfter(p.Owner, new MatchSquare(tx, ty));
+        List<MatchSquare> row = GiantRules.FrontRow(p.Owner, to.x, to.y);
+        List<SnapshotPiece> occupants = PiecesIn(s, row);
+        bool bounced = false;
+        List<SnapshotPiece> enemies = occupants.FindAll(q => q.owner != p.owner && !PieceRules.IsExplosive(q.type));
+        if (enemies.Count > 0)
+        {
+            bool blocked = false;
+            foreach (SnapshotPiece q in enemies)
+            {
+                if (s.Contains(q) && !Capture(s, q, p.Owner, p)) blocked = true;
+            }
+            if (!s.Contains(p)) return;
+            if (!blocked)
+            {
+                foreach (MatchSquare c in row)
+                {
+                    SnapshotPiece q = s.At(c.x, c.y);
+                    if (q != null && !PieceRules.IsExplosive(q.type)) blocked = true;
+                }
+            }
+            bounced = blocked;
+        }
+        if (!bounced)
+        {
+            List<SnapshotPiece> bombs = occupants.FindAll(q => PieceRules.IsExplosive(q.type) && s.Contains(q));
+            List<MatchSquare> before = p.Footprint();
+            foreach (SnapshotPiece b in bombs) Kill(s, b); // 火薬のマスにも重なる（火薬は盤から外れ、すぐに爆発する）
+            s.MovePiece(p, to.x, to.y);
+            foreach (SnapshotPiece b in bombs) Explode(s, b.x, b.y, null);
+            if (!s.Contains(p)) return;
+            List<MatchSquare> entered = p.Footprint().FindAll(c => !before.Contains(c));
+            if (!EnterGiantCells(s, p, entered)) return;
+        }
+        p.moveCount++;
+    }
+
+    // 巨人 p が新しく入ったマスの効果（GameSystem.EnterGiantCells と同じ）：落とし穴・炎上のマスが 1 つでもあれば 1 回の攻撃を受ける
+    // （落とし穴は全部閉じる。炎上はそのまま）。残れたら true
+    static bool EnterGiantCells(BoardSnapshot s, SnapshotPiece p, List<MatchSquare> cells)
+    {
+        bool hit = false;
+        foreach (MatchSquare c in cells)
+        {
+            SnapshotCell cell = s.Cell(c.x, c.y);
+            if (cell == null) continue;
+            if (cell.HasTrap)
+            {
+                cell.trap = -1;
+                hit = true;
+            }
+            else if (cell.IsBurning) hit = true;
+        }
+        if (hit) Vanish(s, p);
+        return s.Contains(p);
+    }
+
+    // マスの一覧にいる駒（巨人は何マス重なっても 1 つ。先に出たほうの順）
+    static List<SnapshotPiece> PiecesIn(BoardSnapshot s, List<MatchSquare> cells)
+    {
+        List<SnapshotPiece> res = new List<SnapshotPiece>();
+        foreach (MatchSquare c in cells)
+        {
+            SnapshotPiece q = s.At(c.x, c.y);
+            if (q != null && !res.Contains(q)) res.Add(q);
+        }
+        return res;
     }
 
     // 火薬のマスに入る（GameSystem.EnterGunpowder と同じ）：爆発する。入った駒も吹き飛ぶ（王将は残ってそのマスへ進む）
@@ -516,8 +631,9 @@ public static partial class BoardSimulator
         int i = BoardSnapshot.HandIndex(type);
         if (i >= 0 && s.Player(owner).hand[i] > 0) s.Player(owner).hand[i]--;
         SnapshotPiece p = new SnapshotPiece { type = type, owner = (int)owner, x = x, y = y };
+        if (p.IsGiant) p.hp = GiantRules.MaxHp;
         s.Place(p);
-        EnterCell(s, p, x, y); // 炎上のマスに打ったら消失する
+        if (!p.IsGiant) EnterCell(s, p, x, y); // 炎上のマスに打ったら消失する（巨人は通常のマスにしか打てない）
     }
 
     // 狙撃（GameSystem.ExecuteSnipe と同じ）：火薬なら爆発、それ以外は取り（盾・カウンターなら防がれる）
@@ -532,6 +648,8 @@ public static partial class BoardSimulator
     // 取り（GameSystem.CapturePiece と同じ）。取れたら true（盾・カウンターで防がれたら false）。attacker は取ろうとした駒（なければ null）
     static bool Capture(BoardSnapshot s, SnapshotPiece target, PlayerType by, SnapshotPiece attacker)
     {
+        // 巨人：1 回の攻撃で HP -1。HP が残れば取れない（攻撃した駒は跳ね返る）。0 になったら取り（盾・カウンターは付かない）
+        if (target.IsGiant && !HitGiant(target)) return false;
         // カウンター：取りを 1 回だけ無効にし（盾より先。盾は残る）、攻撃した駒への反撃を予定する（行動の終わりの ResolveCounters）。
         // 時間停止中（CPU の先読みの近似）は、本当の対局では解除のときに取りになり、カウンターは効かないので無効にしない
         if (target.counter && target.Owner != by && !s.timeStopped)
@@ -555,7 +673,7 @@ public static partial class BoardSimulator
         }
         AddEnergy(s, target.Owner, PieceValues.CapturedSideGain(target.type));
         AddEnergy(s, by, PieceValues.CapturerGain(target.type));
-        Vanish(s, target);
+        Kill(s, target);
         AddToHand(s, by, target.type); // 成った駒も元の駒として持ち駒になる（王将・火薬はならない）
         return true;
     }
@@ -585,13 +703,29 @@ public static partial class BoardSimulator
         s.counters = null;
     }
 
-    // 盤から取り除く（取り・消失の共通。初期配置の駒なら記録する）
+    // 消失（爆発・隕石・炎上など）：盤から取り除く。巨人は 1 回の攻撃（HP -1。0 になったら消える）。消えたら true
     static bool Vanish(BoardSnapshot s, SnapshotPiece p)
+    {
+        if (!s.Contains(p)) return false;
+        if (p.IsGiant && !HitGiant(p)) return false;
+        return Kill(s, p);
+    }
+
+    // 盤から取り除く（取り・消失の共通。初期配置の駒なら記録する）
+    static bool Kill(BoardSnapshot s, SnapshotPiece p)
     {
         if (!s.Contains(p)) return false;
         if (p.initial) s.Player(p.Owner).fallenInitial.Add(p.type);
         s.Remove(p);
         return true;
+    }
+
+    // 巨人への 1 回の攻撃（GameSystem.HitGiant）：HP を 1 減らす。0 になったら true（倒れる）
+    static bool HitGiant(SnapshotPiece g)
+    {
+        if (g.hp <= 0) g.hp = GiantRules.MaxHp;
+        g.hp--;
+        return g.hp <= 0;
     }
 
     // 爆発（GameSystem.Explode と同じ）：中心の 3×3 の駒と、入った駒（entering）を消失させる。王将は残る
@@ -604,7 +738,7 @@ public static partial class BoardSimulator
             for (int y = cy - r; y <= cy + r; y++)
             {
                 SnapshotPiece q = s.At(x, y);
-                if (q != null) victims.Add(q);
+                if (q != null && !victims.Contains(q)) victims.Add(q); // 巨人は何マス重なっても 1 回
             }
         }
         if (entering != null && !victims.Contains(entering)) victims.Add(entering);
@@ -623,6 +757,7 @@ public static partial class BoardSimulator
     // 駒が (x, y) に入ったときのマスの効果（GameSystem.EnterCell と同じ）。そのマスに残れたら true
     static bool EnterCell(BoardSnapshot s, SnapshotPiece p, int x, int y)
     {
+        if (p.IsGiant) return EnterGiantCells(s, p, p.Footprint());
         SnapshotCell cell = s.Cell(x, y);
         if (cell == null) return true;
         if (p.HasWing) return true; // 翼状態の駒はマスの効果を受けない（落とし穴も残る）

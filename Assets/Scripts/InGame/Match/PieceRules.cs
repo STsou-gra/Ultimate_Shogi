@@ -7,7 +7,7 @@ public static class PieceRules
     {
         PieceType.Pawn, PieceType.Lance, PieceType.Knight, PieceType.SilverGeneral,
         PieceType.GoldGeneral, PieceType.Bishop, PieceType.Rook,
-        PieceType.Gunpowder, PieceType.Sniper, PieceType.Bird,
+        PieceType.Gunpowder, PieceType.Sniper, PieceType.Bird, PieceType.Giant,
     };
 
     // 他の駒が重なると爆発する（火薬）
@@ -22,7 +22,18 @@ public static class PieceRules
         return type == PieceType.Sniper;
     }
 
-    // 成れる駒か（王将・金将・火薬・狙撃手・鳥は成らない）
+    // 巨人（3×3 マスを占める駒。GiantRules）
+    public static bool IsGiant(PieceType type)
+    {
+        return type == PieceType.Giant;
+    }
+
+    public static bool IsGiant(GamePiece p)
+    {
+        return p != null && p.type == PieceType.Giant;
+    }
+
+    // 成れる駒か（王将・金将・火薬・狙撃手・鳥・巨人は成らない）
     public static bool CanPromote(PieceType type)
     {
         switch (type)
@@ -32,6 +43,7 @@ public static class PieceRules
             case PieceType.Gunpowder:
             case PieceType.Sniper:
             case PieceType.Bird:
+            case PieceType.Giant:
                 return false;
             default:
                 return true;

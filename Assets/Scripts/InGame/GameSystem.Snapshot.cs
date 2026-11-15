@@ -39,8 +39,14 @@ public partial class GameSystem
             if (p == null) continue;
             int x, y;
             GameHelper.CalcPanelPosition(out x, out y, i);
+            if (PieceRules.IsGiant(p))
+            {
+                // 巨人は 3×3 マスを占める（中央のマスで 1 回だけ入れる）
+                if (p.X != x || p.Y != y) continue;
+            }
             s.Place(new SnapshotPiece
             {
+                hp = PieceRules.IsGiant(p) ? p.hp : 0,
                 type = p.type,
                 owner = (int)p.player,
                 x = x,

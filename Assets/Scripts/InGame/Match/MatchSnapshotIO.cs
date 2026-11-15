@@ -121,6 +121,7 @@ public static class MatchSnapshotIO
             wing = piece.hasWing,
             counter = piece.hasCounter,
             held = held,
+            hp = PieceRules.IsGiant(piece.type) ? piece.hp : 0,
         };
     }
 
@@ -231,6 +232,7 @@ public static class MatchSnapshotIO
         piece.hasPhalanx = ps.phalanx;
         piece.hasWing = ps.wing;
         piece.hasCounter = ps.counter;
+        if (PieceRules.IsGiant(ps.type)) piece.hp = ps.hp > 0 ? System.Math.Min(ps.hp, GiantRules.MaxHp) : GiantRules.MaxHp;
         piece.UpdateVisual();
     }
 
@@ -349,6 +351,21 @@ public static class MatchSnapshotIO
             if (!IsPlayer(p.owner)) return "駒の持ち主が正しくありません";
             if (!BoardCells.InBounds(p.x, p.y)) return $"盤の外に駒があります（{p.x}, {p.y}）";
             if (p.held && !timeStopped) return "時間停止中でないのに、予定の駒があります";
+            if (PieceRules.IsGiant(p.type))
+            {
+                // 巨人は 3×3 マス（中央が x・y）。占めるマスが全部盤内で、ほかの駒と重ならないこと。予定の駒にはならない
+                if (p.held) return "巨人は時間停止の予定の駒になりません";
+                if (p.x < GiantRules.Radius || p.x >= BoardCells.Size - GiantRules.Radius || p.y < GiantRules.Radius || p.y >= BoardCells.Size - GiantRules.Radius)
+                {
+                    return $"巨人が盤からはみ出しています（{p.x}, {p.y}）";
+                }
+                if (p.hp < 0 || p.hp > GiantRules.MaxHp) return $"巨人の HP が正しくありません（{p.hp}）";
+                foreach (MatchSquare c in GiantRules.Cells(p.x, p.y))
+                {
+                    if (!squares.Add(GameHelper.CalcPanelNum(c.x, c.y))) return $"同じマスに駒が 2 つあります（{c.x}, {c.y}）";
+                }
+                continue;
+            }
             if (!p.held && !squares.Add(GameHelper.CalcPanelNum(p.x, p.y))) return $"同じマスに駒が 2 つあります（{p.x}, {p.y}）";
         }
 

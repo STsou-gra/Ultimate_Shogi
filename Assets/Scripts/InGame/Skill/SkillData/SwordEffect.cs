@@ -50,12 +50,7 @@ public class SwordEffect : SkillEffect
     if (caster == null || tl == null) return;
 
     // 範囲内の駒：相手の駒は取る（CapturePiece 経由。盾なら防がれる）、火薬は敵味方問わず爆発、それ以外の味方の駒は無視
-    List<GamePiece> inRange = new List<GamePiece>();
-    foreach (Vector2Int s in MagicKit.FrontSquares(context.GameBoard, caster))
-    {
-      GamePiece q = context.GameBoard.GetPieceAt(s.x, s.y);
-      if (q != null) inRange.Add(q);
-    }
+    List<GamePiece> inRange = MagicKit.PiecesIn(context.GameBoard, MagicKit.FrontSquares(context.GameBoard, caster)); // 巨人は 1 回だけ
 
     // 構え → 前方へ斬撃の弧
     int forward = SpecialContext.Forward(caster.player);

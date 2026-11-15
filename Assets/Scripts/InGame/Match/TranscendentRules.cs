@@ -22,7 +22,7 @@ public static class TranscendentRules
     {
         TranscendentProgress p = new TranscendentProgress();
         if (board == null) return p;
-        foreach (GamePiece piece in board.GetBoardData())
+        foreach (GamePiece piece in board.Pieces()) // 巨人は 1 回だけ数える
         {
             if (piece == null) continue;
             if (piece.player != owner && BoardZones.IsOwnZone(owner, piece.X)) p.Invaded = true;

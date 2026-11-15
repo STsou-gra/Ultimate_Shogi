@@ -127,9 +127,11 @@ public static class SpecialKit
         if (ctx.Fx != null) ctx.Fx.Beams(new Vector2Int(p.X, p.Y), ends, color, ctx.Time);
         ctx.Wait(0.3f);
 
+        List<GamePiece> hit = new List<GamePiece>(); // 巨人は複数の光線に当たっても 1 回
         foreach (Beam b in plan)
         {
-            if (!ctx.IsAlive(b.Hit)) continue; // 先の爆発で消えた
+            if (!ctx.IsAlive(b.Hit) || hit.Contains(b.Hit)) continue; // 先の爆発で消えた
+            hit.Add(b.Hit);
             if (SpecialContext.IsExplosive(b.Hit)) ctx.Explode(b.Hit.X, b.Hit.Y);
             else ctx.Capture(b.Hit, b.Direction);
         }

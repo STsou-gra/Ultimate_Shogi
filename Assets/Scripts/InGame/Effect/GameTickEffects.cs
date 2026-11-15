@@ -204,7 +204,7 @@ public class GameTickEffects : MonoBehaviour
     {
         if (gameBoard == null) return;
 
-        foreach (GamePiece piece in gameBoard.GetBoardData())
+        foreach (GamePiece piece in gameBoard.Pieces())
         {
             if (piece == null) continue;
             bool shielded = piece.hasShield || Time.time < piece.barrierHoldUntil;
@@ -437,7 +437,7 @@ public class GameTickEffects : MonoBehaviour
     void UpdateSideGlows(bool frozen, float dt)
     {
         if (gameBoard == null) return;
-        foreach (GamePiece piece in gameBoard.GetBoardData())
+        foreach (GamePiece piece in gameBoard.Pieces())
         {
             if (piece == null) continue;
             PieceFx fx;

@@ -204,6 +204,8 @@ public partial class GameSystem : MonoBehaviour
     public event System.Action<GamePiece> CounterGiven;
     public event System.Action<CounterGuard> CounterGuarded;
     public event System.Action<CounterStrike> CounterStruck;
+    // 巨人が攻撃を 1 回受けた（HP が減った。MagicFx が演出を出す）
+    public event System.Action<GiantHitInfo> GiantHit;
 
     // ------------------------------------------------------------
     //  超常魔法（Prototype の turn.js の checkTranscendentUnlock・skills.js の magicStatus）
@@ -989,6 +991,7 @@ public partial class GameSystem : MonoBehaviour
 
     bool MovePieceCore(GamePiece piece, int targetX, int targetY, bool promote)
     {
+        if (PieceRules.IsGiant(piece)) return MoveGiant(piece, targetX, targetY); // 巨人：前へまっすぐ（移動先は先頭の 1 列の中央）
         GamePiece targetPiece = gameBoard.GetPieceAt(targetX, targetY);
         RecordTimeStopMove(piece, targetX, targetY); // 時間停止中は 1 マスごとの移動を記録する（盾で押し戻すときに使う）
         // 火薬のマスに入ったら爆発する（鳥は爆発させずに火薬を取る：下の取りの処理へ）
@@ -1006,6 +1009,12 @@ public partial class GameSystem : MonoBehaviour
             {
                 // 取りが防がれた（盾・カウンターなど）：バリアにぶつかって元のマスへ跳ね返る。移動回数は数えず、手番は消費する
                 if (magicFx != null) magicFx.Bounce(piece, targetX, targetY, reach);
+                // 巨人への攻撃（HP が残って跳ね返った）は移動として数え、攻撃したマスが敵陣なら成る（Prototype の play.js の movePiece）
+                if (PieceRules.IsGiant(targetPiece) && IsOnBoard(piece))
+                {
+                    if (promote) PromotePiece(piece);
+                    CountMove(piece);
+                }
                 return ResolveKingLoss();
             }
         }
@@ -1028,6 +1037,122 @@ public partial class GameSystem : MonoBehaviour
         CountMove(piece);
 
         return ResolveKingLoss();
+    }
+
+    // ------------------------------------------------------------
+    //  巨人（Prototype の play.js の moveGiant・effects.js の hitGiant・enterGiantCells）
+    // ------------------------------------------------------------
+
+    // 巨人 p を前へ動かす（移動先 (tx, ty) は先頭の 1 列の中央のマス）。先頭の 1 列の相手の駒（火薬を除く）を全部取る。
+    // 1 つでも取れなければ（盾・HP が残る巨人）元の位置へ跳ね返る。入れたら先頭の 1 列の火薬が爆発し（巨人も 1 回の攻撃を受ける）、
+    // 新しく入ったマスの落とし穴・炎上で 1 回の攻撃を受ける（落とし穴は閉じる）。跳ね返っても移動として数える。対局が終わったら true
+    bool MoveGiant(GamePiece p, int tx, int ty)
+    {
+        Vector2Int to = GiantRules.CenterAfter(p.player, new MatchSquare(tx, ty));
+        List<MatchSquare> row = GiantRules.FrontRow(p.player, to.x, to.y);
+        List<GamePiece> occupants = PiecesIn(row);
+        float reach = MoveArrivalDelay(p) * 0.55f;
+        bool bounced = false;
+        List<GamePiece> enemies = occupants.FindAll(q => q.player != p.player && !PieceRules.IsExplosive(q.type));
+        if (enemies.Count > 0)
+        {
+            bool blocked = false;
+            captureFxDelay = reach;
+            foreach (GamePiece q in enemies)
+            {
+                if (IsOnBoard(q) && !CapturePiece(q, p.player, p)) blocked = true;
+            }
+            captureFxDelay = 0f;
+            if (!IsOnBoard(p)) return ResolveKingLoss();
+            if (!blocked)
+            {
+                foreach (MatchSquare c in row)
+                {
+                    GamePiece q = gameBoard.GetPieceAt(c.x, c.y);
+                    if (q != null && !PieceRules.IsExplosive(q.type)) blocked = true;
+                }
+            }
+            bounced = blocked;
+            if (bounced && magicFx != null) magicFx.Bounce(p, tx, ty, reach); // 盾・巨人に防がれた：元の位置へ跳ね返る
+        }
+        if (!bounced)
+        {
+            List<GamePiece> bombs = occupants.FindAll(q => PieceRules.IsExplosive(q.type) && IsOnBoard(q));
+            List<Vector2Int> before = GameBoard.Footprint(p, p.X, p.Y);
+            List<Vector2Int> bombAt = bombs.ConvertAll(b => new Vector2Int(b.X, b.Y));
+            // 火薬のマスにも重なる（火薬は盤から外れ、すぐに爆発する）
+            foreach (GamePiece b in bombs)
+            {
+                gameBoard.DetachPiece(b);
+                RemoveDefeatedPiece(new PieceDefeat(b, DefeatKind.Vanish, null, ReasonExplosion));
+            }
+            gameBoard.MoveGiant(p, to.x, to.y);
+            AnimatePieceMove(p, GameHelper.CalcPanelLocation(to.x, to.y));
+            foreach (Vector2Int b in bombAt) Explode(b.x, b.y, MoveArrivalDelay(p));
+            if (!IsOnBoard(p)) return ResolveKingLoss();
+            List<Vector2Int> entered = GameBoard.Footprint(p, p.X, p.Y).FindAll(c => !before.Contains(c));
+            enterCellFxDelay = 0.2f;
+            bool alive = EnterGiantCells(p, entered);
+            enterCellFxDelay = 0f;
+            if (!alive) return ResolveKingLoss();
+        }
+        CountMove(p);
+        return ResolveKingLoss();
+    }
+
+    // マスの一覧にいる駒（巨人は何マス重なっても 1 つ。先に出たほうの順）
+    public List<GamePiece> PiecesIn(IEnumerable<MatchSquare> cells)
+    {
+        List<GamePiece> res = new List<GamePiece>();
+        foreach (MatchSquare c in cells)
+        {
+            GamePiece q = gameBoard.GetPieceAt(c.x, c.y);
+            if (q != null && !res.Contains(q)) res.Add(q);
+        }
+        return res;
+    }
+
+    public List<GamePiece> PiecesIn(IEnumerable<Vector2Int> cells)
+    {
+        List<MatchSquare> list = new List<MatchSquare>();
+        foreach (Vector2Int c in cells) list.Add(c);
+        return PiecesIn(list);
+    }
+
+    // 巨人 q への 1 回の攻撃：HP を 1 減らす（by は攻撃の名前。演出・ログ用）。0 になったら true（呼び出し側が倒す）
+    bool HitGiant(GamePiece q, string by)
+    {
+        q.hp = Mathf.Max(0, (q.hp > 0 ? q.hp : GiantRules.MaxHp) - 1);
+        float delay = ActiveSpecial != null ? Mathf.Max(0f, ActiveSpecial.HitTime) : Mathf.Max(captureFxDelay, enterCellFxDelay);
+        pendingActionFxTime = Mathf.Max(pendingActionFxTime, delay + 0.5f);
+        string by2 = string.IsNullOrEmpty(by) ? "" : $"{by}の";
+        Debug.Log($"({q.X}, {q.Y})：{TurnEndAction.SideName(q.player)}の巨人が{by2}攻撃を受けた（HP {q.hp} / {GiantRules.MaxHp}）{(q.hp > 0 ? "" : " 倒れた！")}");
+        GiantHit?.Invoke(new GiantHitInfo(q, q.hp, by, delay));
+        return q.hp <= 0;
+    }
+
+    // 巨人 p が新しく入ったマス cells の効果：落とし穴・炎上のマスが 1 つでもあれば 1 回の攻撃を受ける（落とし穴は全部閉じる。炎上はそのまま）。
+    // HP が 0 になったら消失する。残れたら true
+    bool EnterGiantCells(GamePiece p, List<Vector2Int> cells)
+    {
+        BoardCells board = Cells;
+        if (board == null) return true;
+        bool hit = false, trap = false;
+        foreach (Vector2Int c in cells)
+        {
+            BoardCell cell = board.At(c.x, c.y);
+            if (cell == null) continue;
+            if (cell.HasTrap)
+            {
+                board.SpringTrap(c.x, c.y);
+                trap = true;
+                hit = true;
+            }
+            else if (cell.IsBurning) hit = true;
+        }
+        if (!hit) return true;
+        VanishPiece(p, trap ? BoardCells.ReasonTrap : BoardCells.ReasonBurning);
+        return IsOnBoard(p);
     }
 
     // 火薬のマスに入る（Prototype の play.js の stepPiece）：重なった瞬間に爆発する。
@@ -1089,7 +1214,7 @@ public partial class GameSystem : MonoBehaviour
             for (int y = cy - r; y <= cy + r; y++)
             {
                 GamePiece piece = gameBoard.GetPieceAt(x, y);
-                if (piece != null) victims.Add(piece);
+                if (piece != null && !victims.Contains(piece)) victims.Add(piece); // 巨人は何マス重なっても 1 回
             }
         }
         if (entering != null && !victims.Contains(entering)) victims.Add(entering);
@@ -1275,6 +1400,7 @@ public partial class GameSystem : MonoBehaviour
             HandUIManager.Instance.SetStatusText(timeStop != null ? (explosive ? "【狙撃】 火薬を撃ち抜いた！（時間が動き出すと爆発する）" : $"【狙撃】 {targetName}を撃ち抜いた！（時間が動き出すと取れる）")
                 : explosive ? "【狙撃】 火薬を撃ち抜いた！ 大爆発！"
                 : captured ? $"【狙撃】 {targetName}を撃ち抜いた！"
+                : PieceRules.IsGiant(target) ? $"【狙撃】 {targetName}に命中！（残り HP {target.hp}）"
                 : countered ? $"【狙撃】 {targetName}のカウンターが弾を無効にした！"
                 : $"【狙撃】 {targetName}の盾が弾を防いだ！（盾は割れた）");
         }
@@ -1730,6 +1856,18 @@ public partial class GameSystem : MonoBehaviour
     {
         if (!IsOnBoard(piece)) return false;
 
+        // 巨人（Prototype の effects.js の tryCapture）：1 回の攻撃で HP -1。HP が残れば取れない（取ろうとした駒は跳ね返る）。
+        // 0 になったら下の取りになる（盾・カウンターは付かない）。時間停止中は攻撃の予定にして跳ね返る
+        if (PieceRules.IsGiant(piece))
+        {
+            if (timeStop != null)
+            {
+                DeferGiantHit(piece, by, attacker, null);
+                return false;
+            }
+            if (!HitGiant(piece, attacker != null ? HandUIManager.GetJapaneseName(attacker.type) : null)) return false;
+        }
+
         // 時間停止中：取りの予定にして、取れたことにする（盾の判定・エナジー・持ち駒化は時間が動き出してから）
         if (timeStop != null)
         {
@@ -1942,6 +2080,17 @@ public partial class GameSystem : MonoBehaviour
     {
         if (!IsOnBoard(piece)) return false;
 
+        // 巨人：1 回の攻撃で HP -1（0 になったら消失）。時間停止中は攻撃の予定にする（駒は盤に残す）
+        if (PieceRules.IsGiant(piece))
+        {
+            if (timeStop != null)
+            {
+                DeferGiantHit(piece, PlayerType.Player1, null, reason ?? "");
+                return false;
+            }
+            if (!HitGiant(piece, reason)) return false;
+        }
+
         // 時間停止中：消失の予定にする（駒は灰色でその場に残り、以降はないものとして扱う）
         if (timeStop != null)
         {
@@ -2018,6 +2167,8 @@ public partial class GameSystem : MonoBehaviour
             return true;
         }
         GamePiece piece = gameBoard.GetPieceAt(x, y);
+        // 巨人のマスは壊れない（巨人への攻撃は呼び出し側で 1 回だけ当てる：破壊砲・世界の終わり。Prototype の effects.js の breakCell）
+        if (PieceRules.IsGiant(piece)) return false;
         if (!cells.Break(x, y)) return false;
         if (piece != null && !PieceRules.HasMagicWing(piece)) VanishPiece(piece, BoardCells.ReasonBroken);
         return true;
@@ -2091,6 +2242,7 @@ public partial class GameSystem : MonoBehaviour
         BoardCell cell = cells != null ? cells.At(x, y) : null;
         if (piece == null || cell == null) return true;
         if (PieceRules.HasWing(piece)) return true;
+        if (PieceRules.IsGiant(piece)) return EnterGiantCells(piece, GameBoard.Footprint(piece, piece.X, piece.Y)); // 巨人は占めるマス全部を見る
 
         // 時間停止中は消失の予定にする（駒はそのマスに残るが、もう動かせない）
         if (timeStop != null && cell.IsHazard)
@@ -2565,6 +2717,7 @@ public partial class GameSystem : MonoBehaviour
         {
             GamePiece piece = cells[i];
             if (piece == null || piece.player != side || piece.isUndead) continue; // アンデッドは持ち主が動かせない
+            if (GameHelper.CalcPanelNum(piece.X, piece.Y) != i) continue;          // 巨人は中央のマスで 1 回だけ
 
             for (int x = 0; x < 9; x++)
             {
@@ -2668,6 +2821,7 @@ public partial class GameSystem : MonoBehaviour
             if (piece.isUndead) sb.Append('u');   // アンデッド（〃）
             if (piece.hasWing) sb.Append('w');    // 翼状態（魔法「翼」。〃。鳥は駒の種類でわかる）
             if (piece.hasCounter) sb.Append('c'); // カウンター状態（〃）
+            if (PieceRules.IsGiant(piece)) sb.Append('h').Append(piece.hp); // 巨人の HP（〃。巨人は占める 9 マス全部に入る）
         }
         foreach (Player p in new[] { player1, player2 })
         {
@@ -2824,7 +2978,8 @@ public partial class GameSystem : MonoBehaviour
         {
             for (int y = 0; y < BoardCells.Size; y++)
             {
-                if (!Cells.IsBroken(x, y)) squares.Add(new Vector2Int(x, y));
+                // 巨人のいるマスも動かさない（Prototype の effects.js の shuffleCells）
+                if (!Cells.IsBroken(x, y) && !PieceRules.IsGiant(gameBoard.GetPieceAt(x, y))) squares.Add(new Vector2Int(x, y));
             }
         }
         // squares[i] には、シャッフルした from[i] にあった駒・マスの状態が入る

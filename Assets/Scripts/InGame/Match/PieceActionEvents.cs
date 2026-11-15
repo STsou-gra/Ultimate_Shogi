@@ -96,3 +96,20 @@ public class CounterStrike
         Time = time;
     }
 }
+
+// 巨人が攻撃を 1 回受けた（Prototype の effects.js の hitGiant の giantHit）。HP が 0 なら、続けて取り・消失の通知が来る
+public class GiantHitInfo
+{
+    public GamePiece Piece { get; }     // 巨人
+    public int Hp { get; }              // 攻撃を受けたあとの HP
+    public string By { get; }           // 攻撃の名前（駒の名前・「爆発」「隕石」など。わからなければ null）
+    public float Delay { get; }         // 見た目を始めるまでの秒数（攻撃が届くまで）
+
+    public GiantHitInfo(GamePiece piece, int hp, string by, float delay)
+    {
+        Piece = piece;
+        Hp = hp;
+        By = by;
+        Delay = delay;
+    }
+}

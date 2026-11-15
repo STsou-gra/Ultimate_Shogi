@@ -54,12 +54,8 @@ public class CannonEffect : SkillEffect
     List<Vector2Int> cells = MagicKit.Band(at.x, at.y, false);
     int f = SpecialContext.Forward(owner); // 光線の進む向き（術者の側から相手の側へ）
 
-    List<GamePiece> victims = new List<GamePiece>();
-    foreach (Vector2Int c in cells)
-    {
-      GamePiece q = context.PieceAt(c);
-      if (q != null) victims.Add(q);
-    }
+    // 巨人は何マス重なっても 1 回の攻撃（生き残れば、そのマスは壊れない：GameSystem.BreakCell）
+    List<GamePiece> victims = MagicKit.PiecesIn(context.GameBoard, cells);
 
     if (tl == null)
     {

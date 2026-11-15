@@ -334,6 +334,10 @@ public class TimeStopView : MonoBehaviour
                 case TimeStopKind.Vanish:
                     Badge(e.At, 2, "消", VanishColor(e.Reason));
                     break;
+                case TimeStopKind.Giant:
+                    // 巨人への攻撃（時間が動き出したら HP が 1 減る）。取りは「撃」、消失はその理由の色
+                    Badge(e.At, 0, "撃", string.IsNullOrEmpty(e.Reason) ? Hex(0xff1744) : VanishColor(e.Reason));
+                    break;
                 case TimeStopKind.Promote:
                     if (e.Piece != null) Badge(new Vector2Int(e.Piece.X, e.Piece.Y), 3, "成", Hex(0xc62828));
                     break;

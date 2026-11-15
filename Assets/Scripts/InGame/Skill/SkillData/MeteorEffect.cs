@@ -55,23 +55,18 @@ public class MeteorEffect : SkillEffect
     if (context.Fx != null) context.Fx.MeteorFall(center, area, context.Player, context.Time);
     if (tl == null)
     {
-      foreach (Vector2Int s in area)
-      {
-        GamePiece q = context.PieceAt(s);
-        if (q != null) system.VanishPiece(q, Reason);
-      }
+      foreach (GamePiece q in MagicKit.PiecesIn(context.GameBoard, area)) system.VanishPiece(q, Reason); // 巨人は何マス重なっても 1 回
       foreach (Vector2Int s in area) system.SetBurning(s.x, s.y, BurnTurns);
       return;
     }
     tl.Wait(MagicFx.MeteorFallTime);
 
-    // 範囲の駒はすべて消失（火薬も誘爆せず、そのまま消える）。駒は中心から外へ吹き飛ぶ
+    // 範囲の駒はすべて消失（火薬も誘爆せず、そのまま消える）。駒は中心から外へ吹き飛ぶ。
+    // 巨人は何マス重なっても 1 回の攻撃（生き残った巨人は数えない）
     int n = 0;
-    foreach (Vector2Int s in area)
+    foreach (GamePiece q in MagicKit.PiecesIn(context.GameBoard, area))
     {
-      GamePiece q = context.PieceAt(s);
-      if (q == null) continue;
-      Vector2Int dir = new Vector2Int(System.Math.Sign(s.x - center.x), System.Math.Sign(s.y - center.y));
+      Vector2Int dir = new Vector2Int(System.Math.Sign(q.X - center.x), System.Math.Sign(q.Y - center.y));
       if (tl.Vanish(q, Reason, dir)) n++;
     }
     tl.Wait(0.5f);

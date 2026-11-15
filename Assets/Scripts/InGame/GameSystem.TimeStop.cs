@@ -169,6 +169,8 @@ public partial class GameSystem
     {
         if (timeStop == null || piece == null) return;
         GamePiece target = gameBoard.GetPieceAt(toX, toY);
+        // 相手の巨人への攻撃は、その場で跳ね返る（攻撃は予定になる。Prototype の play.js の attackGiant は移動を記録しない）
+        if (target != null && target != piece && target.player != piece.player && PieceRules.IsGiant(target)) return;
         timeStop.Moves.Add(new TimeStopMove
         {
             Piece = piece,
@@ -278,6 +280,26 @@ public partial class GameSystem
             Move = timeStop.LastMove(entering, at),
             At = at,
         }, "爆発");
+    }
+
+    // 巨人への攻撃の予定（Prototype の effects.js の deferGiantHit）：巨人は盤に残したまま（灰色にしない・動けないのは時間停止中ずっと）。
+    // reason が null なら取り（by が取った側）、そうでなければその理由の消失。時間が動き出したら HitGiant で HP を減らす
+    void DeferGiantHit(GamePiece giant, PlayerType by, GamePiece attacker, string reason)
+    {
+        Vector2Int at = new Vector2Int(giant.X, giant.Y);
+        Vector2Int dir = ActiveSpecial != null ? ActiveSpecial.HitDirection
+            : attacker != null ? new Vector2Int(System.Math.Sign(at.x - attacker.X), System.Math.Sign(at.y - attacker.Y)) : Vector2Int.zero;
+        AddPending(new TimeStopPending
+        {
+            Kind = TimeStopKind.Giant,
+            Target = giant,
+            TargetType = giant.type,
+            ByOwner = by,
+            Piece = attacker,
+            Reason = reason ?? "",
+            At = at,
+            HitDirection = dir,
+        }, reason == null ? $"{HandUIManager.GetJapaneseName(giant.type)}に攻撃" : $"{HandUIManager.GetJapaneseName(giant.type)}に{reason}");
     }
 
     // 成りの予定（1 つの駒につき 1 回。時間停止中は成る前の動きのまま）
@@ -506,6 +528,24 @@ public partial class GameSystem
                 EnterCell(p, e.At.x, e.At.y);
                 tl.Wait(0.45f);
                 return;
+
+            case TimeStopKind.Giant:
+            {
+                // 巨人への攻撃（先に倒れていれば何もしない）
+                GamePiece g = e.Target;
+                if (!IsOnBoard(g)) return;
+                tl.MarkHit(e.HitDirection);
+                if (string.IsNullOrEmpty(e.Reason))
+                {
+                    if (CapturePiece(g, e.ByOwner, e.Piece)) Debug.Log($"({e.At.x}, {e.At.y})：{TurnEndAction.SideName(g.player)}の巨人を倒して取った！");
+                }
+                else
+                {
+                    VanishPiece(g, e.Reason);
+                }
+                tl.Wait(0.12f);
+                return;
+            }
 
             case TimeStopKind.Promote:
                 if (p == null || !IsOnBoard(p) || p.isPromoted) return;
