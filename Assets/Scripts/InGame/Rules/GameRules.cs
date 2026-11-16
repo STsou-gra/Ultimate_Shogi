@@ -158,7 +158,8 @@ public class NifuDropRule : IGameRule
             for (int x = 0; x < 9; x++)
             {
                 GamePiece piece = board.GetPieceAt(x, toY);
-                if (piece != null && piece.player == player && piece.type == PieceType.Pawn)
+                // 成った歩（と金）は数えない（本将棋・Prototype の moves.js の getDropSquares と同じ。2026-11-15 まで数えていた）
+                if (piece != null && piece.player == player && piece.type == PieceType.Pawn && !piece.isPromoted)
                 {
                     return false;
                 }

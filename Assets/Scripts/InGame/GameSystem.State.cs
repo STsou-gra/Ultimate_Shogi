@@ -75,7 +75,6 @@ public partial class GameSystem
             if (!IsInTurn) return "対局中の手番ではありません";
             if (IsBusy || isRunningTurnEnd) return "演出中です";
             if (IsOnlineMatch) return "オンライン対戦中は読み込めません";
-            if (IsRealtime) return "合戦将棋型ではまだ読み込めません（対局の時間・連打の間隔を局面に入れていないため）";
             return null;
         }
     }
@@ -88,7 +87,7 @@ public partial class GameSystem
     // 局面を読み込む。読み込めなければ何も変えずに false と理由
     public bool ImportState(MatchSnapshot snapshot, out string reason)
     {
-        reason = ImportBlockReason ?? MatchSnapshotIO.Validate(snapshot);
+        reason = ImportBlockReason ?? MatchSnapshotIO.Validate(snapshot) ?? MatchSnapshotIO.RulesetMismatch(snapshot, match);
         if (reason != null)
         {
             Debug.LogWarning($"局面を読み込めません：{reason}");
@@ -96,7 +95,8 @@ public partial class GameSystem
         }
         snapshot = snapshot.Clone(); // 渡された局面は書き換えない
 
-        // 操作の途中をやめる
+        // 操作の途中をやめる（合戦将棋型は両方の席。まだ実行していない行動のキューも捨てる）
+        if (IsRealtime) ResetRealtimeForImport();
         if (isWaitingForPromoteChoice) CancelPromotionChoice();
         if (targetSelection != null) EndTargetSelection();
         ResetSelectionState();
@@ -148,14 +148,15 @@ public partial class GameSystem
         simulationPrediction = null;
         simulationAction = null;
 
-        // 手番・表示
+        // 手番・表示（合戦将棋型は操作中の席にする）
         PlayerType side = match.Turn.Current;
         currentState = side == PlayerType.Player1 ? GameState.Player1Turn : GameState.Player2Turn;
+        if (IsRealtime) UseSeat(focusSide);
         if (gameCamera != null) gameCamera.RotateToPlayer(CameraSideFor(side));
         isActivePlayerInCheck = CheckRules.IsInCheck(gameBoard, side);
         if (HandUIManager.Instance != null)
         {
-            HandUIManager.Instance.SetTurnInfo(match.Turn.Label);
+            HandUIManager.Instance.SetTurnInfo(Policy.ProgressLabel);
             HandUIManager.Instance.UpdateActiveHandDisplay(side, CurrentPlayer.Hand);
         }
         UpdateActivePlayerSkillUI();
@@ -166,7 +167,8 @@ public partial class GameSystem
             TimeStopUpdated?.Invoke(ts, false);
         }
         if (HandUIManager.Instance != null) HandUIManager.Instance.SetStatusText(IdleStatusText);
-        Debug.Log($"局面を読み込みました（{match.Turn.Label}・{TurnEndAction.SideName(side)}の手番・盤面のハッシュ {StateHash()}）");
+        string when = IsRealtime ? $"{Policy.ProgressLabel}・tick {match.Clock.Tick}" : $"{match.Turn.Label}・{TurnEndAction.SideName(side)}の手番";
+        Debug.Log($"局面を読み込みました（{when}・盤面のハッシュ {StateHash()}）");
 
         // 勝敗が決まった局面なら、結果画面へ
         if (snapshot.gameOver)

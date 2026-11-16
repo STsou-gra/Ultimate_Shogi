@@ -11,7 +11,12 @@ using UnityEngine;
 //   3. MinThinkSeconds 秒たって（すぐ指すと何が起きたか分かりにくいので）考え終わったら、CanDispatch で確かめて DispatchFromCpu
 //  2回行動・手番を使わない魔法・停止世界で手番が続くときは、操作できるようになったらまた考える。
 //  考えている間に局面が変わったら（ありえないはずだが）、その答えは捨てて考え直す
-public class CpuPlayer : MonoBehaviour
+//
+//  合戦将棋型（手番がない）では Update で手番を待たず、GameSystem が CPU の席に付けた RealtimeCpuPacer から呼ばれる（IRealtimeCpuBrain）：
+//   BeginThinking … その席の合法手（GameSystem.LegalActions）と、その席を手番（current）にした写しの局面を作って考え始める
+//                   （Prototype の CpuController.realtimeActions の view.current = owner）
+//   PollThinking  … 考え終わったら行動を返す（最低限かける秒数はない。間隔は RealtimeCpuPacer が数える）。行動はその tick の局面で判定される
+public class CpuPlayer : MonoBehaviour, IRealtimeCpuBrain
 {
     public PlayerType Side { get; private set; }
     public int Level { get; private set; }
@@ -55,7 +60,7 @@ public class CpuPlayer : MonoBehaviour
 
     void Update()
     {
-        if (game == null) return;
+        if (game == null || game.IsRealtime) return; // 合戦将棋型は RealtimeCpuPacer から呼ばれる
         if (settleFrames > 0)
         {
             settleFrames--;
@@ -74,6 +79,47 @@ public class CpuPlayer : MonoBehaviour
         Poll();
     }
 
+    // 合戦将棋型：その席の次の一手を考え始める（RealtimeCpuPacer から）
+    public bool BeginThinking(GameSystem system, PlayerType seat)
+    {
+        if (thinking) CancelThinking();
+        legal = system.LegalActions(seat);
+        if (!legal.Exists(a => a.type != MatchActionType.Forge)) return false;
+        BoardSnapshot snapshot = system.CaptureSnapshot(false);
+        snapshot.current = (int)seat; // 考える席を手番にする（BoardSimulator・CpuSearch は current を CPU の席として読む）
+        StartSearch(snapshot, SeedFromHash(system.StateHash()), legal.ConvertAll(a => a.Clone()));
+        system.ShowSeatStatus(seat, $"【CPU】 {CpuLevels.Label(Level)}が考えています……");
+        return true;
+    }
+
+    // 合戦将棋型：考え終わったか（スレッドが使えないときは、1 フレームに 1 回だけ少し考える）
+    public bool PollThinking(GameSystem system, out MatchAction result)
+    {
+        result = null;
+        if (!thinking) return true;
+        if (sliced != null && slicedFrame == Time.frameCount) return false;
+        slicedFrame = Time.frameCount;
+        if (!TryFinish(out result)) return false;
+        task = null;
+        sliced = null;
+        thinking = false;
+        if (result != null)
+        {
+            result = result.Clone();
+            result.Owner = Side;
+            Debug.Log($"[CPU] {SideName}（{CpuLevels.Label(Level)}）：{result}");
+            system.ShowSeatStatus(Side, $"【CPU】 {result}");
+        }
+        return true;
+    }
+
+    public void CancelThinking()
+    {
+        Abandon();
+    }
+
+    int slicedFrame = -1;
+
     void Begin()
     {
         legal = game.LegalActions(Side);
@@ -86,13 +132,18 @@ public class CpuPlayer : MonoBehaviour
         reportedStuck = false;
 
         BoardSnapshot snapshot = game.CaptureSnapshot(false);
-        CpuSearch.Options options = new CpuSearch.Options { Level = Level, TimeLimitMs = TimeLimitMs, Seed = SeedFromHash(game.StateHash()) };
-        List<MatchAction> rootLegal = legal.ConvertAll(a => a.Clone());
-        thinking = true;
-        startedAt = Time.unscaledTime;
+        StartSearch(snapshot, SeedFromHash(game.StateHash()), legal.ConvertAll(a => a.Clone()));
         startedMove = game.CurrentMoveNumber;
         startedHistory = game.ActionHistory.Count;
         if (HandUIManager.Instance != null) HandUIManager.Instance.SetStatusText($"【CPU】 {SideName}（{CpuLevels.Label(Level)}）が考えています……");
+    }
+
+    // 写しの局面 snapshot で考え始める（別スレッド、またはフレームごとに区切る）
+    void StartSearch(BoardSnapshot snapshot, uint? seed, List<MatchAction> rootLegal)
+    {
+        CpuSearch.Options options = new CpuSearch.Options { Level = Level, TimeLimitMs = TimeLimitMs, Seed = seed };
+        thinking = true;
+        startedAt = Time.unscaledTime;
 
         if (CanUseThreads)
         {
@@ -110,11 +161,29 @@ public class CpuPlayer : MonoBehaviour
 
     void Poll()
     {
-        MatchAction result = null;
+        if (!TryFinish(out MatchAction result)) return;
+        if (Time.unscaledTime - startedAt < MinThinkSeconds) return; // 答えは出ているが、少し待つ
+
+        task = null;
+        sliced = null;
+        thinking = false;
+
+        if (game.CurrentMoveNumber != startedMove || game.ActionHistory.Count != startedHistory)
+        {
+            Debug.LogWarning("[CPU] 考えている間に局面が変わったので、考え直します");
+            return;
+        }
+        Play(result);
+    }
+
+    // 考え終わっていれば true と結果（スレッドが使えないときは、ここで FrameBudgetMs ミリ秒だけ考える）
+    bool TryFinish(out MatchAction result)
+    {
+        result = null;
         bool done = false;
         if (task != null)
         {
-            if (!task.IsCompleted) return;
+            if (!task.IsCompleted) return false;
             if (task.IsFaulted) Debug.LogException(task.Exception);
             else result = task.Result;
             done = true;
@@ -144,19 +213,7 @@ public class CpuPlayer : MonoBehaviour
         {
             done = true;
         }
-        if (!done) return;
-        if (Time.unscaledTime - startedAt < MinThinkSeconds) return; // 答えは出ているが、少し待つ
-
-        task = null;
-        sliced = null;
-        thinking = false;
-
-        if (game.CurrentMoveNumber != startedMove || game.ActionHistory.Count != startedHistory)
-        {
-            Debug.LogWarning("[CPU] 考えている間に局面が変わったので、考え直します");
-            return;
-        }
-        Play(result);
+        return done;
     }
 
     void Play(MatchAction action)

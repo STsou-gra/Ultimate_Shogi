@@ -32,6 +32,7 @@ static partial class Program
         TestCounter();
         TestGiant();
         TestCpu();
+        TestKassen();
         Console.WriteLine($"checks={checks} fails={fails}");
         return fails == 0 ? 0 : 1;
     }

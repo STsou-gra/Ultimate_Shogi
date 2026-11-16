@@ -73,8 +73,8 @@ public class DeckSelectController : MonoBehaviour
             if (start != null) playButton = start.GetComponent<Button>();
         }
         // 戦闘型（本将棋型・合戦将棋型）の選択（画面の右上。シーンに置かれていなければ自動で追加する）。
-        // CPU と対戦は本将棋型だけなので出さない（GameSystem も本将棋型にする）
-        if (!MatchSetup.IsVsCpu && FindAnyObjectByType<BattleRulesetPicker>() == null) gameObject.AddComponent<BattleRulesetPicker>();
+        // CPU と対戦でも出す（合戦将棋型の CPU は RealtimeCpuPacer で一定の間隔ごとに動く。GameSystem.Cpu.cs）
+        if (FindAnyObjectByType<BattleRulesetPicker>() == null) gameObject.AddComponent<BattleRulesetPicker>();
         InitializeSelectionPanel();
         RegisterSlotButtons();
         AutoFillLockedRanks(player1SelectedSkills);

@@ -30,6 +30,13 @@ public partial class GameSystem
         s.turnNumber = match.Turn.TurnNumber;
         s.moveNumber = match.Turn.MoveNumber;
         s.extraTurn = hasExtraTurn;
+        // 戦闘型と合戦将棋型の時間（BoardSimulator.Realtime.cs）
+        s.ruleset = match.Ruleset.Id;
+        if (match.Clock != null)
+        {
+            s.clockTick = match.Clock.Tick;
+            s.clockTime = match.Clock.Time;
+        }
 
         // 盤上の駒（時間停止の予定で盤のデータから外している駒は入れない。合法手の判定と同じく「ないもの」として扱う）
         GamePiece[] board = gameBoard.GetBoardData();
@@ -61,6 +68,7 @@ public partial class GameSystem
                 initial = p.IsInitial,
                 frozen = IsFrozenInTimeStop(p),
                 pendingPromote = timeStop != null && timeStop.HasPendingPromote(p),
+                cooldownUntil = p.cooldownUntilTick,
             });
         }
 
@@ -144,6 +152,7 @@ public partial class GameSystem
             s.timeStopReleasable = !timeStop.JustStarted && !timeStop.Ending;
             s.timeStopRemaining = timeStop.Remaining;
             s.timeStopJustStarted = timeStop.JustStarted;
+            s.timeStopElapsed = timeStop.Elapsed;
             for (int x = 0; x < BoardCells.Size; x++)
             {
                 for (int y = 0; y < BoardCells.Size; y++)
@@ -209,6 +218,7 @@ public partial class GameSystem
             case TimeStopEffect _: return MagicKind.TimeStop;
             case BombEffect _: return MagicKind.Bomb;
             case CounterEffect _: return MagicKind.Counter;
+            case SparkEffect _: return MagicKind.Spark;
             default: return MagicKind.Unknown;
         }
     }
@@ -224,8 +234,8 @@ public partial class GameSystem
         try
         {
             if (simulationPrediction != null) CompleteSimulationCheck(); // 前の行動の照合がまだなら先に済ませる（錬成を続けたときなど）
-            // 合戦将棋型は照合しない（シミュレーションは手番のある本将棋型だけ。毎秒のエナジー・時刻の炎上などは入れていない）
-            if (IsOnlineMatch || IsRealtime || timeStop != null || a.type == MatchActionType.ReleaseTimeStop) return;
+            // 合戦将棋型も照合する（BoardSimulator.Realtime.cs。行動の処理の直後、次の tick の前に RunRealtimeAction が比べる）
+            if (IsOnlineMatch || timeStop != null || a.type == MatchActionType.ReleaseTimeStop) return;
 
             BoardSnapshot before = CaptureSnapshot(false);
             if (!BoardSimulator.CanSimulate(before, a.type) || BoardSimulator.HasUnsimulatedTurnEnd(before, CurrentSide)) return;
@@ -251,6 +261,12 @@ public partial class GameSystem
     {
         if (simulationPrediction == null || IsBusy) return;
         CompleteSimulationCheck();
+    }
+
+    // 合戦将棋型：行動の処理の直後に照合する（次の tick の前。RunRealtimeAction から）
+    void UpdateSimulationCheckNow()
+    {
+        if (simulationPrediction != null) CompleteSimulationCheck();
     }
 
     void CompleteSimulationCheck()

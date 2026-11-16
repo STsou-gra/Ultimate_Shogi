@@ -28,6 +28,8 @@ public class SnapshotPiece
     public bool frozen;            // 時間停止中：消失・爆発の予定があり、もう動かせない
     public bool pendingPromote;    // 時間停止中：成りの予定がある（もう成れない）
     public int hp;                 // 巨人の残りの HP（巨人以外は 0）。巨人の x・y は 3×3 の中央のマス（盤の Grid には占めるマス全部に入る）
+    public int cooldownUntil;      // 合戦将棋型：連打の間隔が終わる tick（clockTick がこれより小さい間は行動できない。0 = 動いたことがない。
+                                   // Prototype の p.cd と同じく、一度付いたら残る。GamePiece.cooldownUntilTick）
 
     public PlayerType Owner => (PlayerType)owner;
 
@@ -61,6 +63,7 @@ public class SnapshotPiece
         if (wing) sb.Append(" 翼");
         if (counter) sb.Append(" カウンター");
         if (IsGiant) sb.Append(" HP").Append(hp);
+        if (cooldownUntil > 0) sb.Append(" 連打の間隔 t").Append(cooldownUntil);
         if (!initial) sb.Append(" (初期配置でない)");
         return sb.ToString();
     }
@@ -70,7 +73,7 @@ public class SnapshotPiece
 public class SnapshotCell
 {
     public CellState state = CellState.Normal;
-    public int burnUntil = -1;     // 炎上が終わるターン（炎上中でなければ -1）
+    public int burnUntil = -1;     // 炎上が終わるターン（合戦将棋型は対局の時間 clockTime の tick。炎上中でなければ -1）
     public int trap = -1;          // 落とし穴の持ち主（(int)PlayerType。なければ -1）
     public int wall = -1;          // 壁を建てた側（(int)PlayerType。壁でなければ -1）
 
@@ -102,7 +105,7 @@ public class SnapshotPlayer
     public List<PieceType> fallenInitial = new List<PieceType>(); // 倒された初期配置の駒（倒された順）
     public bool transcendentUnlocked;                             // 超常魔法を解放した（シミュレーションでは変えない）
     public bool transcendentUsed;                                 // 超常魔法を使った（〃）
-    public int worldEndSince = -1;                                // 世界の終わりを発動したターン（未発動なら -1）
+    public int worldEndSince = -1;                                // 世界の終わりを発動したターン（合戦将棋型は clockTime。未発動なら -1）
     public List<SnapshotSkill> skills = new List<SnapshotSkill>();   // 編成した魔法（編成の枠の順。空の枠は入れない）
 
     public SnapshotPlayer Clone()
@@ -133,9 +136,17 @@ public class BoardSnapshot
 
     public int version = CurrentVersion;
 
+    // 戦闘型（BattleRuleset.Id）。合戦将棋型（Realtime）は手番がなく、どちらの席も行動でき、時間で進む（BoardSimulator.Realtime.cs）
+    public string ruleset = "honshogi";
+    // 合戦将棋型の時間（MatchClock。本将棋型は 0 のまま）：clockTick … tick を進めた回数（行動の t。停止世界の間も進む）／
+    // clockTime … 対局の時間（停止世界の間は止まる。エナジー・炎上・世界の終わり・自動行動はこちら）
+    public int clockTick;
+    public int clockTime;
+    public int timeStopElapsed;    // 合戦将棋型：時間停止してからの tick（TimeStopSec 秒で解除）
+
     // 手番
     public int firstPlayer;        // 先手（(int)PlayerType）
-    public int current;            // 手番のプレイヤー
+    public int current;            // 手番のプレイヤー（合戦将棋型は先手のまま。CPU の先読みでは、考える席・次に動く席）
     public int turnNumber;         // 第Nターン
     public int moveNumber;         // 第M手
     public bool extraTurn;         // 2回行動：次に手番を使う行動のあとも手番が続く
@@ -195,6 +206,10 @@ public class BoardSnapshot
     // ------------------------------------------------------------
 
     public PlayerType Current => (PlayerType)current;
+
+    // 戦闘型（知らない Id なら本将棋型）
+    public BattleRuleset Ruleset => BattleRulesets.ById(ruleset) ?? BattleRulesets.Honshogi;
+    public bool IsRealtime => Ruleset.Realtime;
     public PlayerType FirstPlayer => (PlayerType)firstPlayer;
     public PlayerType SecondPlayer => BoardZones.Opponent(FirstPlayer);
 
@@ -458,6 +473,8 @@ public class BoardSnapshot
         Same(d, "ターン数", turnNumber, other.turnNumber);
         Same(d, "手数", moveNumber, other.moveNumber);
         Same(d, "2回行動", extraTurn, other.extraTurn);
+        Same(d, "戦闘型", ruleset, other.ruleset);
+        Same(d, "時間（tick / 対局の時間）", $"{clockTick}/{clockTime}", $"{other.clockTick}/{other.clockTime}");
         Same(d, "終局", gameOver, other.gameOver);
         Same(d, "勝者", winner, other.winner);
 
@@ -500,7 +517,7 @@ public class BoardSnapshot
             Same(d, "必殺技に必要な移動回数", string.Join(",", specialMoves), string.Join(",", other.specialMoves));
             Same(d, "錬成のレシピ", RecipesKey(), other.RecipesKey());
             Same(d, "オンライン", online, other.online);
-            Same(d, "時間停止", $"{timeStopped}/{timeStopOwner}/{timeStopReleasable}", $"{other.timeStopped}/{other.timeStopOwner}/{other.timeStopReleasable}");
+            Same(d, "時間停止", $"{timeStopped}/{timeStopOwner}/{timeStopReleasable}/{timeStopElapsed}", $"{other.timeStopped}/{other.timeStopOwner}/{other.timeStopReleasable}/{other.timeStopElapsed}");
             Same(d, "予定の駒が残るマス", string.Join(" ", heldSquares), string.Join(" ", other.heldSquares));
             Same(d, "必殺技・魔法の合法手", SkillActionsKey(), other.SkillActionsKey());
         }
@@ -515,7 +532,7 @@ public class BoardSnapshot
     static string PieceKey(SnapshotPiece p, bool all)
     {
         if (p == null) return "";
-        string key = $"{p.type}|{p.owner}|{p.promoted}|{p.moveCount}|{p.shield}|{p.phalanx}|{p.undead}|{p.wing}|{p.counter}|{p.initial}|{p.hp}";
+        string key = $"{p.type}|{p.owner}|{p.promoted}|{p.moveCount}|{p.shield}|{p.phalanx}|{p.undead}|{p.wing}|{p.counter}|{p.initial}|{p.hp}|{p.cooldownUntil}";
         return all ? $"{key}|{p.frozen}|{p.pendingPromote}" : key;
     }
 

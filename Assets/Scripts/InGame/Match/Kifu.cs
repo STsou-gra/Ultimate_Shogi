@@ -10,8 +10,12 @@ using UnityEngine;
 //    "seed": 123456789,
 //    "config": { "mode": "versus", "ruleset": "honshogi", "firstPlayer": 0 },
 //    "loadouts": [{ "skills": ["Shield", "Sword", "Pitfall", "Meteor", "TimeStop"] }, { ... }],   … 枠の順（空き枠は ""）
-//    "actions": [{ "type": 0, "owner": 0, "from": { "x": 2, "y": 6 }, "to": { "x": 3, "y": 6 }, ..., "hash": "1a2b3c4d" }, ...]
+//    "endTick": -1,                                                  … 合戦将棋型：保存した時点の tick（本将棋型は -1）
+//    "actions": [{ "type": 0, "owner": 0, "t": -1, "from": { "x": 2, "y": 6 }, "to": { "x": 3, "y": 6 }, ..., "hash": "1a2b3c4d" }, ...]
 //  }
+//
+// 合戦将棋型（config.ruleset = "kassen"）の行動には、行動したプレイヤー owner と、行動を実行した tick の t が付く（Prototype の棋譜の版 2 と同じ）。
+// 再生は同じシードで始めた対局の両方の席に RealtimeReplayController を付け、記録した tick に記録した順で入れる（GameSystem.Kifu.cs）。
 //
 // Prototype の棋譜（format "ultimate-shogi-kifu"）とは互換性がない：座標の x と y が逆（MatchAction の説明）・
 // 魔法の Id（SkillDefinition.Id。"Shield" など）・行動の type が数値・ハッシュに入れる項目が違うため、別の format 名にしている。
@@ -19,9 +23,11 @@ using UnityEngine;
 [System.Serializable]
 public class KifuConfig
 {
-    // Unity 側は今のところ 基本対戦 × 本将棋型 だけ（Prototype の config。合戦将棋型・討伐任務を入れたら値を足す）
+    // 基本対戦（versus）× 戦闘型（BattleRuleset.Id：本将棋型 honshogi・合戦将棋型 kassen）。Prototype の config（討伐任務は Unity にない）
     public string mode = "versus";
     public string ruleset = "honshogi";
+
+    public BattleRuleset Ruleset => BattleRulesets.ById(ruleset);
     public int firstPlayer = (int)MatchConfig.FirstPlayer;
 }
 
@@ -56,6 +62,7 @@ public class KifuEntry : MatchAction
         {
             type = a.type,
             owner = a.owner,
+            t = a.t,
             from = a.from,
             to = a.to,
             promote = a.promote,
@@ -67,6 +74,14 @@ public class KifuEntry : MatchAction
         return e;
     }
 
+    // 合戦将棋型の再生（RealtimeReplayController）に渡す記録（owner・t・hash つき）
+    public MatchAction ToRecorded()
+    {
+        MatchAction a = ToAction();
+        a.hash = hash ?? "";
+        return a;
+    }
+
     // 再生に渡す行動（hash を除く。Prototype の actionOf）
     public MatchAction ToAction()
     {
@@ -74,6 +89,7 @@ public class KifuEntry : MatchAction
         {
             type = type,
             owner = owner,
+            t = t,
             from = from,
             to = to,
             promote = promote,
@@ -100,13 +116,16 @@ public class KifuFile
     public List<KifuLoadout> loadouts = new List<KifuLoadout>();   // [先手, 後手]
     // デバッグキー（CellDebugTool）でマスを変えた対局（再生しても同じ盤面にならない）
     public bool debugEdited;
+    // 合戦将棋型：保存した時点の tick（Prototype の endTick。本将棋型は -1）
+    public int endTick = -1;
     public List<KifuEntry> actions = new List<KifuEntry>();
 
     // 新しい対局の棋譜（行動はまだない。Prototype の createKifu）
-    public static KifuFile Create(uint seed, SkillDeck deck1, SkillDeck deck2)
+    public static KifuFile Create(uint seed, SkillDeck deck1, SkillDeck deck2, BattleRuleset ruleset = null)
     {
         return new KifuFile
         {
+            config = new KifuConfig { ruleset = (ruleset ?? BattleRulesets.Honshogi).Id },
             createdAt = System.DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture),
             app = Application.version,
             seed = seed,
@@ -147,7 +166,8 @@ public class KifuFile
             throw new KifuFormatException("棋譜の中身が壊れています");
         }
         if (k.config == null) k.config = new KifuConfig();
-        if (k.config.mode != "versus" || k.config.ruleset != "honshogi")
+        if (string.IsNullOrEmpty(k.config.ruleset)) k.config.ruleset = BattleRulesets.Honshogi.Id;
+        if (k.config.mode != "versus" || k.config.Ruleset == null)
         {
             throw new KifuFormatException($"Unity 版にはまだない対局の設定です（{k.config.mode} × {k.config.ruleset}）");
         }
@@ -161,6 +181,8 @@ public class KifuFile
             if (e.targets == null) e.targets = new List<MatchSquare>();
             if (e.skill == null) e.skill = "";
             if (e.hash == null) e.hash = "";
+            // 合戦将棋型は、どの行動にも行動したプレイヤーと tick がある
+            if (k.config.Ruleset.Realtime && (!e.Owner.HasValue || e.t < 0)) throw new KifuFormatException("合戦将棋型の棋譜の行動に、行動したプレイヤー（owner）か時刻（t）がありません");
         }
         return k;
     }

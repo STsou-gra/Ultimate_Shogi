@@ -32,7 +32,7 @@ public class KifuGameOverPanel : MonoBehaviour
         RuntimeUi.Place(box.rectTransform, new Vector2(1f, 0f), new Vector2(24f, 24f), new Vector2(w, 330f));
 
         KifuFile k = KifuSession.Current;
-        string head = k != null ? $"棋譜：{k.Count} 手" : (KifuSession.NoKifuReason ?? "この対局は棋譜を記録していません");
+        string head = k != null ? $"棋譜：{k.Count} 手{KifuMenuView.KifuRulesetNote(k)}" : (KifuSession.NoKifuReason ?? "この対局は棋譜を記録していません");
         TextMeshProUGUI title = RuntimeUi.CreateText("Title", box.transform, head, 26f, RuntimeUi.GoldColor, TextAlignmentOptions.Center, font);
         RuntimeUi.Place(title.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, pad), new Vector2(w - pad * 2f, 40f));
 

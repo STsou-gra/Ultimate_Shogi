@@ -38,6 +38,7 @@ public enum MagicKind
     TimeStop,       // 停止世界（TimeStopEffect）
     Bomb,           // ボム（BombEffect。2 段階で選ぶ：駒 → 狙うマス。スナップショットの JSON に数で入るので、足すときは末尾に）
     Counter,        // カウンター（CounterEffect）
+    Spark,          // 魔力の火花（SparkEffect。動作確認用：自分の駒を 1 つ選ぶ・盤面への効果はない。編成では選べない）
 }
 
 // 編成した魔法 1 つ分（SkillDefinition のうち、判定・効果に使う値）
@@ -71,6 +72,7 @@ public class SnapshotSkill
                 case MagicKind.Meteor:
                 case MagicKind.Cannon:
                 case MagicKind.Bomb:
+                case MagicKind.Spark:
                     return 1;
                 case MagicKind.Swap:
                     return 2;

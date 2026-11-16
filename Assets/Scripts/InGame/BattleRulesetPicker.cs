@@ -10,6 +10,7 @@ using TMPro;
 //  ・選択肢は BattleRulesets.All の順に並ぶ（戦闘型を足すと自動で増える）。選んだものは MatchSetup.RulesetId に入り、対局画面（GameSystem）が読む
 //  ・選んだ戦闘型の説明（BattleRuleset.Description）を下に出す
 //  ・オンライン対戦は本将棋型だけ（GameSystem がオンラインなら本将棋型にする）
+//  ・CPU と対戦でも出す。合戦将棋型なら、CPU が動く間隔（BattleRuleset.CpuIntervalSec）も説明に出す
 // DeckSelectController が自動で追加する（シーンに置かなくてよい）
 public class BattleRulesetPicker : MonoBehaviour
 {
@@ -43,7 +44,15 @@ public class BattleRulesetPicker : MonoBehaviour
     {
         BattleRuleset current = MatchSetup.Ruleset;
         foreach (var o in options) o.image.color = o.ruleset == current ? SelectedColor : ButtonColor;
-        if (description != null) description.text = current.Description;
+        if (description == null) return;
+        string text = current.Description;
+        if (MatchSetup.IsVsCpu && current.Realtime && current.CpuIntervalSec != null && current.CpuIntervalSec.Length > 0)
+        {
+            int level = CpuLevels.Clamp(MatchSetup.CpuLevel);
+            float sec = current.CpuIntervalSec[System.Math.Min(level, current.CpuIntervalSec.Length - 1)];
+            text += $"\nCPU（{CpuLevels.Label(level)}）は {sec:0.0} 秒ごとに動く。あなたはキーボード全体で操作する。";
+        }
+        description.text = text;
     }
 
     void Build()

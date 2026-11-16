@@ -15,6 +15,13 @@ using TMPro;
 // 中身の処理は GameSystem.Kifu.cs。シーンに置かなくても GameSystem が自動で追加する
 public class KifuMenuView : MonoBehaviour
 {
+    // 棋譜の戦闘型の注記（合戦将棋型なら「（合戦将棋型）」。本将棋型は ""）
+    public static string KifuRulesetNote(KifuFile k)
+    {
+        BattleRuleset r = k != null && k.config != null ? k.config.Ruleset : null;
+        return r != null && r.Realtime ? $"（{r.Name}）" : "";
+    }
+
     [SerializeField] private GameSystem gameSystem;
     [SerializeField] private Key toggleKey = Key.K;
 
@@ -145,7 +152,7 @@ public class KifuMenuView : MonoBehaviour
         string saveReason;
         bool canSave = gameSystem.CanSaveKifu(out saveReason);
         KifuFile k = gameSystem.Kifu;
-        string head = k != null ? $"この対局：{k.Count} 手" : (KifuSession.NoKifuReason ?? "この対局は棋譜を記録していません");
+        string head = k != null ? $"この対局：{k.Count} 手{KifuRulesetNote(k)}" : (KifuSession.NoKifuReason ?? "この対局は棋譜を記録していません");
         if (k != null && !canSave && saveReason != null) head += $"（{saveReason}）";
         if (k != null && k.debugEdited) head += "\n<color=#ff8a80>デバッグキーでマスを変えたので、この棋譜は再生しても同じ盤面になりません</color>";
 

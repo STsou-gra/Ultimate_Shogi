@@ -102,6 +102,21 @@ public class SeatKeys
         Skills = K(Key.Digit6, Key.Digit7, Key.Digit8, Key.Digit9, Key.Digit0),
     };
 
+    // 合戦将棋型の CPU と対戦：人の席は 1 つなので、キーボード全体を使う（name は「先手」「後手」）。
+    // カーソル WASD・矢印、決定 F・Enter、取消 Space・BackSpace、H 持ち駒、E 必殺技、G 狙撃、Q 解除、R 向き、Z・X・C・V 錬成、1〜5 魔法
+    public static SeatKeys KassenSolo(string name)
+    {
+        return new SeatKeys
+        {
+            Name = name,
+            Up = K(Key.W, Key.UpArrow), Down = K(Key.S, Key.DownArrow), Left = K(Key.A, Key.LeftArrow), Right = K(Key.D, Key.RightArrow),
+            Ok = K(Key.F, Key.Enter, Key.NumpadEnter), Cancel = K(Key.Space, Key.Backspace),
+            Hand = K(Key.H), Special = K(Key.E), Snipe = K(Key.G), Release = K(Key.Q), Orient = K(Key.R), NoPromote = K(),
+            Forge = K(Key.Z, Key.X, Key.C, Key.V),
+            Skills = K(Key.Digit1, Key.Digit2, Key.Digit3, Key.Digit4, Key.Digit5),
+        };
+    }
+
     // keys のどれかがこのフレームに押されたか
     public static bool Pressed(Key[] keys)
     {
