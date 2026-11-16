@@ -41,7 +41,13 @@ public class UndeadMarch : TurnEndAction
     public override bool HasWork(GameSystem system, PlayerType owner)
     {
         GameBoard board = system != null ? system.Board : null;
-        if (board == null || Kings(board, BoardZones.Opponent(owner)).Count == 0) return false;
+        if (board == null) return false;
+        if (system.IsRaid)
+        {
+            // 討伐任務：相手の王将の代わりにボス（倒れたあとは残っている相手の駒）へ進む
+            if (RaidGoals(system, board, owner).Count == 0) return false;
+        }
+        else if (Kings(board, BoardZones.Opponent(owner)).Count == 0) return false;
         foreach (GamePiece p in Pieces(board, owner))
         {
             if (Moves(board, p).Count > 0) return true;
@@ -80,6 +86,11 @@ public class UndeadMarch : TurnEndAction
         GameBoard board = context.Board;
         SpecialContext tl = context.Timeline;
         PlayerType enemy = BoardZones.Opponent(context.Owner);
+        if (context.GameSystem.IsRaid)
+        {
+            RunRaid(context);
+            return;
+        }
 
         // 相手の王将に近い駒から順に（同じ距離なら盤の順）
         List<GamePiece> order = Pieces(board, context.Owner);
@@ -100,6 +111,100 @@ public class UndeadMarch : TurnEndAction
             if (!m.HasValue) continue; // 動ける手がなければ動かない
             Move(context, p, m.Value.x, m.Value.y);
             context.GameSystem.ResolveCounters(tl); // 取りがカウンターに無効にされたら反撃される（Prototype の move の resolveCounters）
+            tl.Wait(StepGap);
+        }
+        tl.Wait(0.2f);
+    }
+
+    // ------------------------------------------------------------
+    //  討伐任務（Prototype の undeadGoals・runUndeadPhase。BoardSimulator.Boss.cs の RunUndeadRaid と同じ）
+    // ------------------------------------------------------------
+
+    // 盤上の駒（Prototype の allPieces の順：段の大きい方から、各段は筋の小さい方から。巨人は 1 回だけ）
+    static List<GamePiece> PiecesInPrototypeOrder(GameBoard board)
+    {
+        List<GamePiece> res = new List<GamePiece>();
+        for (int x = BoardCells.Size - 1; x >= 0; x--)
+        {
+            for (int y = 0; y < BoardCells.Size; y++)
+            {
+                GamePiece q = board.GetPieceAt(x, y);
+                if (q != null && !res.Contains(q)) res.Add(q);
+            }
+        }
+        return res;
+    }
+
+    // owner のアンデッドが目指すマス：ボスの占めるマス（ボスが倒れたあとは、残っている相手の駒のマス）
+    static List<Vector2Int> RaidGoals(GameSystem system, GameBoard board, PlayerType owner)
+    {
+        List<Vector2Int> res = new List<Vector2Int>();
+        BossState boss = system.Boss;
+        if (boss != null && boss.hp > 0)
+        {
+            foreach (MatchSquare c in BossEngine<GamePiece>.BossCells(boss)) res.Add(new Vector2Int(c.x, c.y));
+            return res;
+        }
+        foreach (GamePiece q in PiecesInPrototypeOrder(board))
+        {
+            if (q.player != owner) res.Add(new Vector2Int(q.X, q.Y));
+        }
+        return res;
+    }
+
+    static int GoalDistance(int x, int y, List<Vector2Int> goals)
+    {
+        int best = int.MaxValue;
+        foreach (Vector2Int g in goals) best = Mathf.Min(best, Chebyshev(x, y, g.x, g.y));
+        return best;
+    }
+
+    // 討伐任務の進軍：ボスに近い駒から順に 1 手ずつ。ボスのマスに入る手（＝ボスへの攻撃。駒は跳ね返る）が最優先。
+    // なければいちばん近づく手（同じなら相手の駒を取る手 → 対局の乱数）
+    void RunRaid(TurnEndContext context)
+    {
+        GameBoard board = context.Board;
+        GameSystem system = context.GameSystem;
+        SpecialContext tl = context.Timeline;
+        List<Vector2Int> goals = RaidGoals(system, board, context.Owner);
+        if (goals.Count == 0) return;
+        List<GamePiece> order = PiecesInPrototypeOrder(board).FindAll(p => p.player == context.Owner && p.isUndead);
+        if (order.Count == 0) return;
+
+        List<int> dist = order.ConvertAll(p => GoalDistance(p.X, p.Y, goals));
+        List<int> index = new List<int>();
+        for (int i = 0; i < order.Count; i++) index.Add(i);
+        index.Sort((a, b) => dist[a] != dist[b] ? dist[a] - dist[b] : a - b);
+        List<GamePiece> sorted = index.ConvertAll(i => order[i]);
+        if (context.Fx != null) context.Fx.UndeadMarchStart(sorted, tl.Time);
+        tl.Wait(StartPause);
+
+        foreach (GamePiece p in sorted)
+        {
+            if (system.IsMatchDecided()) break;
+            if (!tl.IsAlive(p)) continue;
+            List<Vector2Int> now = RaidGoals(system, board, context.Owner);
+            List<Vector2Int> moves = Moves(board, p);
+            if (moves.Count == 0 || now.Count == 0) continue;
+            Vector2Int pick;
+            int kill = moves.FindIndex(m => now.Contains(m));
+            if (kill >= 0) pick = moves[kill];
+            else
+            {
+                int best = int.MaxValue;
+                foreach (Vector2Int m in moves) best = Mathf.Min(best, GoalDistance(m.x, m.y, now));
+                List<Vector2Int> closest = moves.FindAll(m => GoalDistance(m.x, m.y, now) == best);
+                List<Vector2Int> takes = closest.FindAll(m =>
+                {
+                    GamePiece q = board.GetPieceAt(m.x, m.y);
+                    return q != null && q.player != p.player && !PieceRules.Detonates(p, q);
+                });
+                List<Vector2Int> pool = takes.Count > 0 ? takes : closest;
+                GameRng rng = system.Match != null ? system.Match.Rng : null;
+                pick = rng != null ? rng.Pick(pool) : pool[0];
+            }
+            Move(context, p, pick.x, pick.y);
+            system.ResolveCounters(tl);
             tl.Wait(StepGap);
         }
         tl.Wait(0.2f);
@@ -152,7 +257,18 @@ public class UndeadMarch : TurnEndAction
 
         PieceMoveStyle style = PieceMoveAnimator.StyleFor(p);
         float duration = style == PieceMoveStyle.Jump ? 0.35f : 0.28f;
-        bool? alive = tl.Step(p, tx, ty, style, duration);
+        bool boss = tl.BossAt(tx, ty); // 討伐任務：ボスへの攻撃（駒の種類のダメージ。跳ね返る）も移動として数え、攻撃したマスが敵陣なら成る
+        bool? alive = tl.Step(p, tx, ty, style, duration, false);
+        if (alive == null && boss && tl.IsAlive(p))
+        {
+            p.moveCount++;
+            if (system.CanPromote(p, fromX, tx))
+            {
+                p.isPromoted = true;
+                tl.Schedule(p.UpdateVisual);
+            }
+            return;
+        }
         if (alive != true) return; // 爆発で消えた・取りが防がれて元のマスに残った
         tl.Landed(p, 2);
         p.moveCount++;

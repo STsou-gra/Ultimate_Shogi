@@ -28,7 +28,7 @@ public static class MagicKit
     // 駒がいない通常状態（破壊・炎上・落とし穴・壁がない）のマスか（Prototype の emptyNormalSquares・kit.js の空きマス）
     public static bool IsEmptyNormal(GameBoard board, Vector2Int pos)
     {
-        if (!BoardCells.InBounds(pos.x, pos.y) || board.HasPieceAt(pos.x, pos.y)) return false;
+        if (!BoardCells.InBounds(pos.x, pos.y) || board.HasPieceAt(pos.x, pos.y) || board.BossAt(pos.x, pos.y)) return false; // ボスのマスも除く
         // 時間停止中、予定の駒が残っているマス・マスの変化の予定があるマスは空きマスにしない
         TimeStopState ts = board.TimeStop;
         if (ts != null && (ts.IsHeldSquare(pos.x, pos.y) || ts.HasPendingCell(pos.x, pos.y))) return false;
@@ -88,6 +88,12 @@ public static class MagicKit
             if (q.player != p.player) result.Add(q); // 巨人は何マス重なっても 1 つ
         }
         return result;
+    }
+
+    // 駒 p の前方 1×3 マスにボスがいるか（討伐任務。Prototype の frontHasBoss）
+    public static bool FrontHasBoss(GameBoard board, GamePiece p)
+    {
+        return p != null && board.BossOverlap(FrontSquares(board, p)).HasValue;
     }
 
     // 帯状の範囲（Prototype の band。範囲を選ぶ魔法用）：

@@ -105,6 +105,23 @@ public class GameBoard
     readonly GamePiece[] boardData = new GamePiece[81];
     public BoardCells Cells { get; } = new BoardCells();
     public TimeStopState TimeStop { get; set; }
+    public BossState Boss { get; set; }
+    public bool BossAt(int x, int y) => Boss != null && Boss.Covers(x, y);
+    public bool PathCrossesBoss(int fromX, int fromY, int toX, int toY)
+    {
+        if (Boss == null || !Boss.IsAlive) return false;
+        int dx = toX - fromX, dy = toY - fromY;
+        if (System.Math.Abs(dx) <= 1 && System.Math.Abs(dy) <= 1) return false;
+        int stepX = System.Math.Sign(dx), stepY = System.Math.Sign(dy);
+        int x = fromX + stepX, y = fromY + stepY;
+        for (int n = 0; n < 10 && (x != toX || y != toY); n++)
+        {
+            if (Boss.Covers(x, y)) return true;
+            x += stepX;
+            y += stepY;
+        }
+        return false;
+    }
     public GamePiece[] GetBoardData() => boardData;
     public GamePiece GetPieceAt(int x, int y) { int i = GameHelper.CalcPanelNum(x, y); return i < 0 ? null : boardData[i]; }
     public bool HasPieceAt(int x, int y) => GetPieceAt(x, y) != null;

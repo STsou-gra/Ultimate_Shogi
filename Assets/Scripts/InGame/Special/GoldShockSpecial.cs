@@ -18,7 +18,26 @@ public class GoldShockSpecial : SpecialMove
         {
             if (n.Piece.player != context.Owner) return true;
         }
+        // 討伐任務：周囲にボスがいれば使える
+        foreach (Vector2Int c in Around(context.Caster))
+        {
+            if (context.BossAt(c.x, c.y)) return true;
+        }
         return false;
+    }
+
+    // 周囲 8 マス（盤の外も含む）
+    static List<Vector2Int> Around(GamePiece p)
+    {
+        List<Vector2Int> res = new List<Vector2Int>(8);
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                if (dx != 0 || dy != 0) res.Add(new Vector2Int(p.X + dx, p.Y + dy));
+            }
+        }
+        return res;
     }
 
     public override void Apply(SpecialContext context)
@@ -26,7 +45,7 @@ public class GoldShockSpecial : SpecialMove
         GamePiece p = context.Caster;
         if (context.Fx != null) context.Fx.Shock(new Vector2Int(p.X, p.Y), context.Time);
         context.Wait(0.15f);
-
+        context.HitBoss(Around(p)); // 討伐任務：周囲にボスがいれば攻撃（ボスは押せない）
         // 周りの駒は同時に吹き飛ぶ（盤面は 1 つずつ処理し、見た目の時刻だけそろえる）
         List<SpecialContext.Neighbor> targets = context.Neighbors(p).FindAll(n => n.Piece.player != p.player);
         float start = context.Time;

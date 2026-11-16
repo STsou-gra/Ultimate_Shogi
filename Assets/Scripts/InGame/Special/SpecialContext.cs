@@ -85,7 +85,17 @@ public class SpecialContext
     public bool CanLandOn(GamePiece p, int x, int y)
     {
         if (!InBounds(x, y) || IsBlockedFor(p, x, y)) return false;
+        if (BossAt(x, y)) return true; // 討伐任務：ボスのマスにも入れる（入ると攻撃して跳ね返る）
         return PieceRules.CanLandOn(p, PieceAt(x, y));
+    }
+
+    // 討伐任務：(x, y) がボスのマスか
+    public bool BossAt(int x, int y) => GameSystem != null && GameSystem.BossAt(x, y);
+
+    // 討伐任務：範囲 cells がボスに重なれば、この必殺技・魔法で 1 回だけダメージを与える（Prototype の ctx.hitBoss）。当てたら true
+    public bool HitBoss(IEnumerable<Vector2Int> cells)
+    {
+        return GameSystem != null && GameSystem.EffectHitBoss(cells);
     }
 
     // 周囲 8 マスの駒
@@ -160,14 +170,24 @@ public class SpecialContext
     //  ・移動先の相手の駒は取る（CapturePiece）
     //  ・移動先が火薬なら重なった瞬間に爆発する（王将以外の p も吹き飛ぶ。鳥は爆発させずに火薬を取る：PieceRules.Detonates）
     //  ・炎上・落とし穴のマスなら消失する（EnterCell。翼状態の駒は消失しない）
+    //  ・討伐任務：ボスのマスなら、攻撃して元のマスに残る（null）。必殺技・魔法の効果の途中（viaEffect）ならその技のダメージで 1 回だけ、
+    //    それ以外（押し出された駒・アンデッドの移動など）は駒の種類のダメージ
     // 戻り値: 移動先に入れたら true / 消失したら false / 取りが防がれて元のマスに残ったら null
-    public bool? Step(GamePiece p, int tx, int ty, PieceMoveStyle style, float duration)
+    public bool? Step(GamePiece p, int tx, int ty, PieceMoveStyle style, float duration, bool viaEffect = true)
     {
         if (!IsAlive(p) || !InBounds(tx, ty)) return false;
-
         GamePiece target = PieceAt(tx, ty);
         Vector2Int dir = new Vector2Int(System.Math.Sign(tx - p.X), System.Math.Sign(ty - p.Y));
         float arrive = Time + duration;
+        if (BossAt(tx, ty))
+        {
+            if (Fx != null) Fx.Bump(p, dir, Time);
+            Time = arrive;
+            HitTime = arrive;
+            HitDirection = dir;
+            GameSystem.AttackBossByStep(p, tx, ty, viaEffect);
+            return null;
+        }
         GameSystem.RecordTimeStopMove(p, tx, ty); // 時間停止中は 1 マスごとの移動を記録する（盾で押し戻すときに使う）
 
         if (target != null && target != p)
@@ -257,7 +277,7 @@ public class SpecialContext
         if (!IsBlockedFor(q, tx, ty) && (d == null || PieceRules.Detonates(q, d)))
         {
             Afterimage(q, SpecialMove.Hex(0xffd54a));
-            Step(q, tx, ty, PieceMoveStyle.Dash, 0.14f);
+            Step(q, tx, ty, PieceMoveStyle.Dash, 0.14f, false); // ボスのマスへ押されたら、押された駒の種類のダメージ
             return;
         }
 

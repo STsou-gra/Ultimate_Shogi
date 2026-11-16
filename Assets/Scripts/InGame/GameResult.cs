@@ -3,4 +3,6 @@ public static class GameResult
 {
     public static PlayerType? Winner { get; set; }
     public static bool IsDraw { get; set; } // 千日手などによる引き分け
+    // 討伐任務の結果（討伐成功のクリアタイム・討伐失敗。討伐任務でなければ null。GameSystem.Boss.cs の ResolveRaid が入れる）
+    public static RaidResultInfo Raid { get; set; }
 }

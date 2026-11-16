@@ -93,6 +93,7 @@ public class BombEffect : SkillEffect
       PlayerType owner = q.player;
       if (tl.Vanish(q, Reason, new Vector2Int(System.Math.Sign(pos.x - at.x), System.Math.Sign(pos.y - at.y)))) lost[(int)owner]++;
     }
+    tl.HitBoss(area); // 討伐任務：3×3 がボスに重なれば当たる
     tl.Wait(0.5f);
     foreach (Vector2Int c in chain) system.Explode(c.x, c.y, tl.Time);
 

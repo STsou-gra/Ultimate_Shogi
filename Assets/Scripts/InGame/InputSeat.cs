@@ -117,6 +117,15 @@ public class SeatKeys
         };
     }
 
+    // 討伐任務：プレイヤーは 1 人なので、キーボード全体を使う（KassenSolo と同じ）。錬成できる駒が多い（初期配置の駒の種類 ＋ 錬成駒）ので、
+    // 錬成のキーを Z・X・C・V・B・N・M・,・.・/・; まで使う
+    public static SeatKeys RaidSolo(string name)
+    {
+        SeatKeys k = KassenSolo(name);
+        k.Forge = K(Key.Z, Key.X, Key.C, Key.V, Key.B, Key.N, Key.M, Key.Comma, Key.Period, Key.Slash, Key.Semicolon);
+        return k;
+    }
+
     // keys のどれかがこのフレームに押されたか
     public static bool Pressed(Key[] keys)
     {
@@ -189,6 +198,10 @@ public class SeatKeys
             case Key.Digit7: return "7";
             case Key.Digit8: return "8";
             case Key.Digit9: return "9";
+            case Key.Comma: return ",";
+            case Key.Period: return ".";
+            case Key.Slash: return "/";
+            case Key.Semicolon: return ";";
             default: return k.ToString();
         }
     }

@@ -17,6 +17,8 @@ public class TimeStopState
     public PlayerType Owner { get; }
     public int Total { get; }
     public int Remaining { get; set; }
+    // 行動回数の上限がない（討伐任務。Remaining = -1。秒数だけで解除する）
+    public bool IsUnlimited => Remaining < 0;
     public bool Ending { get; set; }
     // 停止世界を発動した行動のあと（その行動は回数に数えない）
     public bool JustStarted { get; set; } = true;
