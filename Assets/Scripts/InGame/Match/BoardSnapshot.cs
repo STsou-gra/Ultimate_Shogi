@@ -31,7 +31,31 @@ public class SnapshotPiece
     public int cooldownUntil;      // 合戦将棋型：連打の間隔が終わる tick（clockTick がこれより小さい間は行動できない。0 = 動いたことがない。
                                    // Prototype の p.cd と同じく、一度付いたら残る。GamePiece.cooldownUntilTick）
 
+    // 討伐任務：ボスの手下（小赤鬼）の状態（MinionData。手下でない駒は minion = false のまま。BossEngine が進める）
+    public bool minion;            // 手下の状態を持つか
+    public int minionSerial;       // 現れた順の番号（手下を動かす順）
+    public int minionNext;         // 次に動く対局の時間（tick）
+    public bool minionPlanned;     // 行き先を決めたか
+    public bool minionHasTo;       // 行き先があるか
+    public int minionToX = -1;     // 行き先のマス
+    public int minionToY = -1;
+
     public PlayerType Owner => (PlayerType)owner;
+
+    public MinionData Minion
+    {
+        get => new MinionData { Active = minion, Serial = minionSerial, Next = minionNext, Planned = minionPlanned, HasTo = minionHasTo, ToX = minionToX, ToY = minionToY };
+        set
+        {
+            minion = value.Active;
+            minionSerial = value.Serial;
+            minionNext = value.Next;
+            minionPlanned = value.Planned;
+            minionHasTo = value.HasTo;
+            minionToX = value.ToX;
+            minionToY = value.ToY;
+        }
+    }
 
     // 巨人か（3×3 マスを占める。GiantRules）
     public bool IsGiant => PieceRules.IsGiant(type);
@@ -64,6 +88,7 @@ public class SnapshotPiece
         if (counter) sb.Append(" カウンター");
         if (IsGiant) sb.Append(" HP").Append(hp);
         if (cooldownUntil > 0) sb.Append(" 連打の間隔 t").Append(cooldownUntil);
+        if (minion) sb.Append(" 手下#").Append(minionSerial).Append(" 次 t").Append(minionNext).Append(minionPlanned ? (minionHasTo ? $" →({minionToX}, {minionToY})" : " →なし") : "");
         if (!initial) sb.Append(" (初期配置でない)");
         return sb.ToString();
     }
@@ -144,6 +169,12 @@ public class BoardSnapshot
     public int clockTime;
     public int timeStopElapsed;    // 合戦将棋型：時間停止してからの tick（TimeStopSec 秒で解除）
 
+    // モード（GameModeDef.Id。"versus" = 基本対戦 ／ "bossRaid" = 討伐任務：後手の席はボスで行動できない。BoardSimulator.Boss.cs）
+    public string mode = "versus";
+    // 討伐任務：ボス（盤の駒には入れない。BossAt で引く）と、王将の被弾の数など（討伐任務でなければ active = false のまま）
+    public BossState boss = new BossState();
+    public RaidState raid = new RaidState();
+
     // 手番
     public int firstPlayer;        // 先手（(int)PlayerType）
     public int current;            // 手番のプレイヤー（合戦将棋型は先手のまま。CPU の先読みでは、考える席・次に動く席）
@@ -194,6 +225,14 @@ public class BoardSnapshot
     // BoardSimulator が 1 つの行動の中で積んで処理し、空にする（JSON・写しには入れない）
     [System.NonSerialized] public List<SnapshotPiece[]> counters;
 
+    // 討伐任務：今の必殺技・魔法のボスへのダメージの種類と、もう当てたか（1 回の効果につき 1 回だけ。Prototype の ctx.source・ctx.bossHit）。
+    // BoardSimulator が 1 つの行動の中だけ使う（JSON・写しには入れない）
+    [System.NonSerialized] public bool bossEffectActive;
+    [System.NonSerialized] public BossHit bossEffectHit;
+    [System.NonSerialized] public bool bossEffectDone;
+    // ボスの動きの通知を集める先（テスト用。null なら集めない。JSON・写しには入れない）
+    [System.NonSerialized] public List<BossEvent> bossEvents;
+
     static SnapshotCell[] NewCells()
     {
         SnapshotCell[] c = new SnapshotCell[BoardCells.Size * BoardCells.Size];
@@ -210,6 +249,16 @@ public class BoardSnapshot
     // 戦闘型（知らない Id なら本将棋型）
     public BattleRuleset Ruleset => BattleRulesets.ById(ruleset) ?? BattleRulesets.Honshogi;
     public bool IsRealtime => Ruleset.Realtime;
+
+    // モード（知らない Id なら基本対戦）
+    public GameModeDef Mode => GameModes.ById(mode);
+    // owner の席がプレイヤーの席か（討伐任務の後手の席はボス）
+    public bool IsPlayerSeat(PlayerType owner) => Mode.IsPlayerSeat(owner);
+    // ボスがいるか（討伐任務）
+    public bool HasBoss => boss != null && boss.active;
+    public bool IsRaid => raid != null && raid.active;
+    // (x, y) がボスのマスか（倒れたボスはどのマスも占めない）
+    public bool BossAt(int x, int y) => boss != null && boss.Covers(x, y);
     public PlayerType FirstPlayer => (PlayerType)firstPlayer;
     public PlayerType SecondPlayer => BoardZones.Opponent(FirstPlayer);
 
@@ -429,6 +478,11 @@ public class BoardSnapshot
         foreach (MatchAction a in skillActions) s.skillActions.Add(a.Clone());
         s.grid = null;
         s.counters = null; // 反撃の予定は 1 つの行動の中だけ（行動と行動のあいだには残らない）
+        s.boss = boss != null ? boss.Clone() : new BossState();
+        s.raid = raid != null ? raid.Clone() : new RaidState();
+        s.bossEffectActive = false;
+        s.bossEffectDone = false;
+        s.bossEvents = null;
         return s;
     }
 
@@ -446,6 +500,11 @@ public class BoardSnapshot
             BoardSnapshot s = JsonUtility.FromJson<BoardSnapshot>(json);
             if (s == null || s.version > CurrentVersion) return null;
             s.grid = null;
+            if (s.boss == null) s.boss = new BossState();
+            if (s.boss.ai == null) s.boss.ai = new BossAiState();
+            if (s.boss.ai.cells == null) s.boss.ai.cells = new List<MatchSquare>();
+            if (s.raid == null) s.raid = new RaidState();
+            if (string.IsNullOrEmpty(s.mode)) s.mode = GameModes.Versus.Id;
             return s;
         }
         catch (System.ArgumentException)
@@ -477,6 +536,9 @@ public class BoardSnapshot
         Same(d, "時間（tick / 対局の時間）", $"{clockTick}/{clockTime}", $"{other.clockTick}/{other.clockTime}");
         Same(d, "終局", gameOver, other.gameOver);
         Same(d, "勝者", winner, other.winner);
+        Same(d, "モード", mode, other.mode);
+        Same(d, "ボス", BossKey(boss), BossKey(other.boss));
+        Same(d, "討伐任務", RaidKey(raid), RaidKey(other.raid));
 
         for (int x = 0; x < BoardCells.Size; x++)
         {
@@ -533,12 +595,36 @@ public class BoardSnapshot
     {
         if (p == null) return "";
         string key = $"{p.type}|{p.owner}|{p.promoted}|{p.moveCount}|{p.shield}|{p.phalanx}|{p.undead}|{p.wing}|{p.counter}|{p.initial}|{p.hp}|{p.cooldownUntil}";
+        if (p.minion) key += $"|m{p.minionSerial}|{p.minionNext}|{p.minionPlanned}|{p.minionHasTo}|{p.minionToX}|{p.minionToY}";
         return all ? $"{key}|{p.frozen}|{p.pendingPromote}" : key;
     }
 
     static string Describe(SnapshotPiece p)
     {
         return p == null ? "なし" : p.Describe();
+    }
+
+    // ボスの状態を比べる・ログ用の文字列（いなければ "なし"）
+    public static string BossKey(BossState b)
+    {
+        if (b == null || !b.active) return "なし";
+        BossAiState ai = b.ai ?? new BossAiState();
+        StringBuilder sb = new StringBuilder();
+        sb.Append(b.id).Append(" (").Append(b.x).Append(", ").Append(b.y).Append(") ").Append(b.w).Append('×').Append(b.h)
+          .Append(" HP").Append(b.hp).Append('/').Append(b.maxHp).Append(" 向き(").Append(b.facingX).Append(", ").Append(b.facingY).Append(") ")
+          .Append(ai.phase).Append(" 〜t").Append(ai.until).Append(" 攻撃[").Append(ai.attack).Append("] 前回[").Append(ai.last).Append(']');
+        if (ai.hasCells)
+        {
+            sb.Append(" 範囲");
+            foreach (MatchSquare c in ai.cells) sb.Append(c);
+        }
+        if (ai.hasData) sb.Append(" 次の1歩 t").Append(ai.nextAt).Append(ai.hasNext ? ai.next.ToString() : "(なし)");
+        return sb.ToString();
+    }
+
+    public static string RaidKey(RaidState r)
+    {
+        return r == null || !r.active ? "なし" : $"王将の被弾 {r.kingHits}・手下の番号 {r.minionSerial}";
     }
 
     string RecipesKey()

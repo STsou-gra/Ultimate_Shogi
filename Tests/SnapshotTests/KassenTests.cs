@@ -470,6 +470,7 @@ static partial class Program
         ["OU"] = PieceType.King, ["HI"] = PieceType.Rook, ["KA"] = PieceType.Bishop, ["KI"] = PieceType.GoldGeneral,
         ["GI"] = PieceType.SilverGeneral, ["KE"] = PieceType.Knight, ["KY"] = PieceType.Lance, ["FU"] = PieceType.Pawn,
         ["KAYAKU"] = PieceType.Gunpowder, ["SNIPER"] = PieceType.Sniper, ["TORI"] = PieceType.Bird, ["KYOJIN"] = PieceType.Giant,
+        ["KOONI"] = PieceType.Kooni,
     };
 
     static string ProtoName(PieceType t) => ProtoPieces.First(kv => kv.Value == t).Key;
@@ -609,11 +610,30 @@ static partial class Program
         else sb.Append("null");
         if (s.IsRealtime)
         {
-            sb.Append(",[\"versus\",\"").Append(s.ruleset).Append("\",null],[").Append(s.clockTick).Append(',').Append(s.clockTime).Append("],[");
+            // 基本対戦 × 本将棋型 以外で足す項目（hash.js の extraParts）：設定・時間・連打の間隔・ボス・討伐任務・手下の動き
+            string Q(string v) => string.IsNullOrEmpty(v) ? "null" : $"\"{v}\"";
+            sb.Append(",[\"").Append(s.mode).Append("\",\"").Append(s.ruleset).Append("\",").Append(s.HasBoss ? Q(s.boss.id) : "null")
+              .Append("],[").Append(s.clockTick).Append(',').Append(s.clockTime).Append("],[");
             List<int[]> cds = s.pieces.Where(p => p.cooldownUntil > 0).Select(p => new[] { p.y, 8 - p.x, p.cooldownUntil })
                 .OrderBy(c => c[1]).ThenBy(c => c[0]).ToList();
             sb.Append(string.Join(",", cds.Select(c => $"[{c[0]},{c[1]},{c[2]}]")));
-            sb.Append("],null,null");
+            sb.Append("],");
+            if (s.HasBoss)
+            {
+                // ボスの位置は Prototype の左上のマス（x = 筋のいちばん小さいマス・y = 9 − 段 − 奥行き）。向きは dx = 筋の向き・dy = −段の向き
+                BossState b = s.boss;
+                sb.Append('[').Append(Q(b.id)).Append(',').Append(b.y).Append(',').Append(9 - b.x - b.h).Append(',').Append(b.hp).Append(',')
+                  .Append(b.facingY).Append(',').Append(-b.facingX).Append(',').Append(Q(b.ai.phase)).Append(',').Append(b.ai.until).Append(',')
+                  .Append(Q(b.ai.attack)).Append(',').Append(Q(b.ai.last)).Append(']');
+            }
+            else sb.Append("null");
+            sb.Append(',').Append(s.IsRaid ? $"[{s.raid.kingHits}]" : "null");
+            List<SnapshotPiece> mins = s.pieces.Where(p => p.minion).OrderBy(p => 8 - p.x).ThenBy(p => p.y).ToList();
+            if (mins.Count > 0)
+            {
+                sb.Append(",[").Append(string.Join(",", mins.Select(p =>
+                    $"[{p.y},{8 - p.x},{p.minionNext},{(p.minionHasTo ? $"[{p.minionToY},{8 - p.minionToX}]" : "null")}]"))).Append(']');
+            }
         }
         sb.Append(']');
         return sb.ToString();

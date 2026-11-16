@@ -33,7 +33,14 @@ public static class PieceRules
         return p != null && p.type == PieceType.Giant;
     }
 
-    // 成れる駒か（王将・金将・火薬・狙撃手・鳥・巨人は成らない）
+    // ボスの手下（討伐任務。ボスの席＝後手の駒。Prototype の駒の定義の minion）：ボスの攻撃は当たらず、ボスの AI と一緒に時間で動く。
+    // プレイヤーの駒で取れる・魔法や爆発で倒せる（持ち駒にもエナジーにもならない）。自分では動けない・成らない
+    public static bool IsMinion(PieceType type)
+    {
+        return type == PieceType.Kooni;
+    }
+
+    // 成れる駒か（王将・金将・火薬・狙撃手・鳥・巨人・小赤鬼は成らない）
     public static bool CanPromote(PieceType type)
     {
         switch (type)
@@ -44,16 +51,17 @@ public static class PieceRules
             case PieceType.Sniper:
             case PieceType.Bird:
             case PieceType.Giant:
+            case PieceType.Kooni:
                 return false;
             default:
                 return true;
         }
     }
 
-    // 取ったときに持ち駒になるか（王将は持ち駒の枠がない。火薬は Prototype の capturable: false）
+    // 取ったときに持ち駒になるか（王将は持ち駒の枠がない。火薬・小赤鬼は Prototype の capturable: false）
     public static bool GoesToHand(PieceType type)
     {
-        return type != PieceType.King && type != PieceType.Gunpowder;
+        return type != PieceType.King && type != PieceType.Gunpowder && !IsMinion(type);
     }
 
     // 駒 mover が target のいるマスに入れるか（駒だけを見る。マスの状態は IsBlockedFor）：空き・相手の駒・火薬（敵味方問わず）。

@@ -1,0 +1,772 @@
+{
+ "format": "ultimate-shogi-kifu",
+ "version": 2,
+ "createdAt": "2026-11-06T17:49:03.571Z",
+ "seed": 3,
+ "config": {
+  "mode": "bossRaid",
+  "ruleset": "kassen",
+  "bossId": "akaoni"
+ },
+ "setup": {
+  "formation": [
+   {
+    "type": "OU",
+    "x": 4,
+    "y": 8
+   },
+   {
+    "type": "FU",
+    "x": 0,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 1,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 2,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 3,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 4,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 5,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 6,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 7,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 8,
+    "y": 6
+   },
+   {
+    "type": "KI",
+    "x": 3,
+    "y": 8
+   },
+   {
+    "type": "KI",
+    "x": 5,
+    "y": 8
+   },
+   {
+    "type": "GI",
+    "x": 2,
+    "y": 8
+   },
+   {
+    "type": "GI",
+    "x": 6,
+    "y": 8
+   },
+   {
+    "type": "HI",
+    "x": 7,
+    "y": 7
+   },
+   {
+    "type": "KE",
+    "x": 1,
+    "y": 8
+   }
+  ],
+  "forgePicks": [
+   "KAYAKU",
+   "SNIPER"
+  ]
+ },
+ "loadouts": [
+  {
+   "normal": [
+    "shield",
+    "sword",
+    "test_spark"
+   ],
+   "ultimate": "meteor",
+   "transcendent": null
+  },
+  null
+ ],
+ "actions": [
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 8
+   },
+   "to": {
+    "x": 4,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 5,
+   "hash": "a0d8302e"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 6
+   },
+   "to": {
+    "x": 6,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 13,
+   "hash": "c8182463"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 6
+   },
+   "to": {
+    "x": 2,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 18,
+   "hash": "353bdfac"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 6
+   },
+   "to": {
+    "x": 3,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 23,
+   "hash": "2768666e"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 8
+   },
+   "to": {
+    "x": 6,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 26,
+   "hash": "690004a7"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 3,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 29,
+   "hash": "55185b31"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 0,
+    "y": 6
+   },
+   "to": {
+    "x": 0,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 40,
+   "hash": "df7298cc"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 4,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 43,
+   "hash": "5c04a44c"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 4,
+    "y": 7
+   },
+   "to": {
+    "x": 3,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 50,
+   "hash": "f8a69d55"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 8
+   },
+   "to": {
+    "x": 3,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 53,
+   "hash": "a08fa4f5"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 6,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 56,
+   "hash": "613801f9"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 6
+   },
+   "to": {
+    "x": 5,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 66,
+   "hash": "9ba4ab90"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 7
+   },
+   "to": {
+    "x": 4,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 68,
+   "hash": "e9580308"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 7,
+    "y": 6
+   },
+   "to": {
+    "x": 7,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 81,
+   "hash": "10c2c70e"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 6
+   },
+   "to": {
+    "x": 4,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 86,
+   "hash": "4fe9b15e"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 4,
+    "y": 7
+   },
+   "to": {
+    "x": 3,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 108,
+   "hash": "711b44f8"
+  },
+  {
+   "type": "magic",
+   "skill": "meteor",
+   "target": {
+    "x": 4,
+    "y": 6
+   },
+   "orient": null,
+   "owner": 0,
+   "t": 118,
+   "hash": "2cbef579"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 7
+   },
+   "to": {
+    "x": 6,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 132,
+   "hash": "f9a7b4f0"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 0,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 133,
+   "hash": "d45bf6ba"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 4,
+    "y": 8
+   },
+   "to": {
+    "x": 5,
+    "y": 8
+   },
+   "owner": 0,
+   "t": 136,
+   "hash": "80fc9a8e"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 8
+   },
+   "to": {
+    "x": 1,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 141,
+   "hash": "e4969833"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 7,
+    "y": 7
+   },
+   "to": {
+    "x": 5,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 143,
+   "hash": "cfd33077"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 8
+   },
+   "to": {
+    "x": 0,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 144,
+   "hash": "da8452f8"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 1,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 178,
+   "hash": "0537c70d"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 0,
+    "y": 6
+   },
+   "to": {
+    "x": 1,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 188,
+   "hash": "77736116"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 4
+   },
+   "to": {
+    "x": 2,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 194,
+   "hash": "d70d6ce6"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 2
+   },
+   "to": {
+    "x": 3,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 200,
+   "hash": "18042edf"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 2
+   },
+   "to": {
+    "x": 3,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 211,
+   "hash": "d3ce7ab8"
+  },
+  {
+   "type": "magic",
+   "skill": "meteor",
+   "target": {
+    "x": 2,
+    "y": 7
+   },
+   "orient": null,
+   "owner": 0,
+   "t": 215,
+   "hash": "161fd2e6"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 2
+   },
+   "to": {
+    "x": 3,
+    "y": 1
+   },
+   "owner": 0,
+   "t": 225,
+   "hash": "fe97e365"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 2
+   },
+   "to": {
+    "x": 3,
+    "y": 1
+   },
+   "owner": 0,
+   "t": 234,
+   "hash": "d82520d1"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 2
+   },
+   "to": {
+    "x": 3,
+    "y": 1
+   },
+   "owner": 0,
+   "t": 243,
+   "hash": "e1332ef4"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 2
+   },
+   "to": {
+    "x": 3,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 256,
+   "hash": "9501a814"
+  },
+  {
+   "type": "special",
+   "from": {
+    "x": 2,
+    "y": 2
+   },
+   "target": {
+    "x": 4,
+    "y": 3
+   },
+   "owner": 0,
+   "t": 268,
+   "hash": "8be2a5da"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 6,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 270,
+   "hash": "57e3727e"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 8
+   },
+   "to": {
+    "x": 6,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 271,
+   "hash": "ad5efd3e"
+  },
+  {
+   "type": "magic",
+   "skill": "meteor",
+   "target": {
+    "x": 2,
+    "y": 6
+   },
+   "orient": null,
+   "owner": 0,
+   "t": 276,
+   "hash": "91f61872"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 6,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 277,
+   "hash": "dd0be18e"
+  },
+  {
+   "type": "magic",
+   "skill": "sword",
+   "target": {
+    "x": 4,
+    "y": 3
+   },
+   "owner": 0,
+   "t": 279,
+   "hash": "41fb52f8"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 4,
+    "y": 3
+   },
+   "to": {
+    "x": 3,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 280,
+   "hash": "0c269abf"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 6
+   },
+   "to": {
+    "x": 5,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 285,
+   "hash": "1fa7bf74"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 4,
+    "y": 3
+   },
+   "owner": 0,
+   "t": 312,
+   "hash": "4ab3673d"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 4,
+    "y": 3
+   },
+   "to": {
+    "x": 3,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 325,
+   "hash": "9f8ddd1b"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 4,
+    "y": 3
+   },
+   "to": {
+    "x": 3,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 353,
+   "hash": "f4bef4ff"
+  },
+  {
+   "type": "magic",
+   "skill": "meteor",
+   "target": {
+    "x": 6,
+    "y": 4
+   },
+   "orient": null,
+   "owner": 0,
+   "t": 357,
+   "hash": "5f365816"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 8,
+    "y": 6
+   },
+   "to": {
+    "x": 8,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 372,
+   "hash": "11f55dd9"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 8,
+    "y": 5
+   },
+   "to": {
+    "x": 8,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 386,
+   "hash": "5d621797"
+  },
+  {
+   "type": "special",
+   "from": {
+    "x": 8,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 400,
+   "hash": "90e72ebe"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 8,
+    "y": 0
+   },
+   "owner": 0,
+   "t": 407,
+   "hash": "e19209aa"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 7
+   },
+   "to": {
+    "x": 5,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 412,
+   "hash": "5d11af41"
+  }
+ ],
+ "endTick": 412
+}

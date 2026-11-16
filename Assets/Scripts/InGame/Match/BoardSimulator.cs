@@ -64,6 +64,7 @@ public static partial class BoardSimulator
     {
         List<MatchAction> res = new List<MatchAction>();
         if (s.gameOver) return res;
+        if (!s.IsPlayerSeat(player)) return res; // 討伐任務：後手の席はボス（行動できない）
         if (s.IsRealtime)
         {
             if (s.timeStopped && s.timeStopOwner != (int)player) return res;
@@ -173,6 +174,7 @@ public static partial class BoardSimulator
         PlayerType? actor = ActorOf(s, a);
         if (!actor.HasValue) { reason = "手番のプレイヤーの行動ではありません"; return false; }
         PlayerType me = actor.Value;
+        if (!s.IsPlayerSeat(me)) { reason = "ボスの席は行動できません"; return false; }
         if (s.timeStopped && s.timeStopOwner != (int)me) { reason = "相手の時間停止中は動けません"; return false; }
 
         switch (a.type)
@@ -254,6 +256,8 @@ public static partial class BoardSimulator
         if (!PieceMoves.CanMoveByPattern(p.type, p.Owner, p.promoted, x - p.x, y - p.y)) return false;
         // 通り道（桂馬以外）：途中の駒・破壊マス・壁・炎上・落とし穴（翼の駒は壁以外と火薬を通り抜ける）
         if (p.type != PieceType.Knight && IsPathBlocked(s.Grid, s, p, p.x, p.y, x, y)) return false;
+        // 討伐任務：ボスのマスには入れる（入ると攻撃して跳ね返る）
+        if (s.BossAt(x, y)) return true;
         // 移動先：空き・相手の駒・火薬（自分の火薬にも入れる。鳥は味方の火薬には入れない。PieceRules.CanLandOn）
         SnapshotPiece target = s.At(x, y);
         if (target == p) return false;
@@ -267,6 +271,7 @@ public static partial class BoardSimulator
         return GiantRules.Moves(p.Owner, p.x, p.y,
             (x, y) =>
             {
+                if (s.BossAt(x, y)) return GiantRules.Occupant.Enemy; // 討伐任務：先頭の 1 列にボスがいれば、そこまで（攻撃して跳ね返る）
                 SnapshotPiece q = s.At(x, y);
                 if (q == null) return GiantRules.Occupant.Empty;
                 if (PieceRules.IsExplosive(q.type)) return GiantRules.Occupant.Bomb;
@@ -304,6 +309,7 @@ public static partial class BoardSimulator
             SnapshotPiece q = index != -1 ? grid[index] : null;
             if (q != null && !(wing && PieceRules.IsExplosive(q.type))) return true;
             if (s.IsBlockedFor(mover, checkX, checkY) || s.IsHazardFor(mover, checkX, checkY)) return true;
+            if (s.BossAt(checkX, checkY)) return true; // 討伐任務：走り駒はボスで止まる
             checkX += stepX;
             checkY += stepY;
         }
@@ -320,13 +326,13 @@ public static partial class BoardSimulator
             return GiantRules.CanDropAt(owner, x, y, (cx, cy) =>
             {
                 SnapshotCell c = s.Cell(cx, cy);
-                return s.At(cx, cy) == null && c.state == CellState.Normal && !c.HasTrap && !s.heldSquares.Contains(new MatchSquare(cx, cy));
+                return s.At(cx, cy) == null && c.state == CellState.Normal && !c.HasTrap && !s.BossAt(cx, cy) && !s.heldSquares.Contains(new MatchSquare(cx, cy));
             }, IsDropLocked(s));
         }
         // 時間停止中、予定の駒が残っているマス
         if (s.heldSquares.Contains(new MatchSquare(x, y))) return false;
-        // EmptyCellDropRule
-        if (s.At(x, y) != null) return false;
+        // EmptyCellDropRule（討伐任務：ボスのマスにも打てない）
+        if (s.At(x, y) != null || s.BossAt(x, y)) return false;
         // CellStateDropRule：破壊マス・落とし穴・壁には打てない（炎上には打てる。鳥は破壊マス・落とし穴にも打てる）
         SnapshotCell cell = s.Cell(x, y);
         if (s.IsBlockedForType(type, x, y)) return false;
@@ -411,6 +417,17 @@ public static partial class BoardSimulator
             {
                 SnapshotPiece q = s.At(x, y);
                 if (q != null && q.owner != p.owner && q.type != PieceType.King) targets.Add(new MatchSquare(x, y));
+            }
+        }
+        // 討伐任務：ボスのマスも撃てる
+        if (s.HasBoss && s.boss.hp > 0)
+        {
+            for (int x = 0; x < BoardCells.Size; x++)
+            {
+                for (int y = 0; y < BoardCells.Size; y++)
+                {
+                    if (s.BossAt(x, y)) targets.Add(new MatchSquare(x, y));
+                }
             }
         }
         return targets;
@@ -563,7 +580,7 @@ public static partial class BoardSimulator
                 ClearTimeStop(s);
                 break;
         }
-        AfterRealtimeAction(s, piece, a.type == MatchActionType.Forge);
+        AfterRealtimeAction(s, piece, a.type, me);
     }
 
     // 移動（GameSystem.ApplyMove と同じ）
@@ -572,6 +589,15 @@ public static partial class BoardSimulator
         if (p.IsGiant)
         {
             ApplyGiantMove(s, p, x, y);
+            return;
+        }
+        if (s.BossAt(x, y))
+        {
+            // 討伐任務：ボスのマスへの移動は攻撃。駒の種類のダメージを与えて、元のマスへ跳ね返る。
+            // 移動として数え（必殺技のチャージ）、攻撃したマスが敵陣なら成る（Prototype の play.js の attackBoss・movePiece）
+            DamageBoss(s, BossHit.OfPiece(p.type, p.promoted), new MatchSquare(x, y));
+            if (promote) p.promoted = true;
+            p.moveCount++;
             return;
         }
         SnapshotPiece target = s.At(x, y);
@@ -609,6 +635,14 @@ public static partial class BoardSimulator
     {
         MatchSquare to = GiantRules.CenterAfter(p.Owner, new MatchSquare(tx, ty));
         List<MatchSquare> row = GiantRules.FrontRow(p.Owner, to.x, to.y);
+        // 討伐任務：先頭の 1 列にボスがいれば、攻撃して跳ね返る（移動として数える）
+        foreach (MatchSquare c in row)
+        {
+            if (!s.BossAt(c.x, c.y)) continue;
+            DamageBoss(s, BossHit.OfPiece(p.type, false), c);
+            p.moveCount++;
+            return;
+        }
         List<SnapshotPiece> occupants = PiecesIn(s, row);
         bool bounced = false;
         List<SnapshotPiece> enemies = occupants.FindAll(q => q.owner != p.owner && !PieceRules.IsExplosive(q.type));
@@ -705,6 +739,11 @@ public static partial class BoardSimulator
     // 狙撃（GameSystem.ExecuteSnipe と同じ）：火薬なら爆発、それ以外は取り（盾・カウンターなら防がれる）
     static void ApplySnipe(BoardSnapshot s, SnapshotPiece sniper, int x, int y)
     {
+        if (s.BossAt(x, y))
+        {
+            DamageBoss(s, BossHit.Snipe, new MatchSquare(x, y)); // 討伐任務：ボスを撃つ
+            return;
+        }
         SnapshotPiece target = s.At(x, y);
         if (target == null) return;
         if (PieceRules.IsExplosive(target.type)) Explode(s, x, y, null);
@@ -816,6 +855,8 @@ public static partial class BoardSimulator
             MatchSquare at = new MatchSquare(q.x, q.y);
             if (Vanish(s, q) && MatchConfig.ChainExplosion && isOtherBomb) chain.Add(at);
         }
+        // 討伐任務：範囲がボスに重なれば、1 回の爆発につき 1 回ダメージ
+        if (s.HasBoss) HitBossCells(s, SquareArea(cx, cy, r), BossHit.Explosion);
         foreach (MatchSquare c in chain) Explode(s, c.x, c.y, null);
     }
 
@@ -929,6 +970,7 @@ public static partial class BoardSimulator
     // 王将が全部いなくなったプレイヤーがいれば終局（両方なら引き分け）。終わったら true
     static bool ResolveKingLoss(BoardSnapshot s)
     {
+        if (s.IsRaid) return ResolveRaid(s); // 討伐任務：ボスの HP 0・王将が倒れた・王将の被弾の上限（BoardSimulator.Boss.cs）
         bool p1 = s.KingCount(PlayerType.Player1) > 0;
         bool p2 = s.KingCount(PlayerType.Player2) > 0;
         if (p1 && p2) return false;

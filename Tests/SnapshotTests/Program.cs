@@ -21,6 +21,13 @@ static partial class Program
 
     static int Main()
     {
+        // 環境変数 TEST_ONLY=boss なら討伐任務のテストだけ（開発中の確認用）
+        if (Environment.GetEnvironmentVariable("TEST_ONLY") == "boss")
+        {
+            TestBoss();
+            Console.WriteLine($"checks={checks} fails={fails}");
+            return fails == 0 ? 0 : 1;
+        }
         TestPatterns();
         TestRandomRules(6000, new System.Random(1));
         TestUchifuzumeCrafted();
@@ -33,6 +40,7 @@ static partial class Program
         TestGiant();
         TestCpu();
         TestKassen();
+        TestBoss();
         Console.WriteLine($"checks={checks} fails={fails}");
         return fails == 0 ? 0 : 1;
     }

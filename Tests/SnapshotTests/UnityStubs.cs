@@ -53,7 +53,7 @@ namespace UnityEngine
     }
 }
 
-public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn, Gunpowder, Sniper, Bird, Giant }
+public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn, Gunpowder, Sniper, Bird, Giant, Kooni }
 public enum PlayerType { Player1, Player2 }
 // MatchSnapshot.cs が使う列挙（本体は Match/TimeStopState.cs。Unity の型に依存するので複製している。値を変えたらこちらも合わせる。DefeatKind は MatchState.cs をそのまま使う）
 

@@ -67,7 +67,7 @@ public static partial class BoardSimulator
                 {
                     if (n.Piece.owner != p.owner) return true;
                 }
-                return false;
+                return AroundHasBoss(s, p); // 討伐任務：周囲にボスがいれば使える
             case SpecialKind.BishopBeam: return AnyBeamHits(s, p, Diagonal);
             case SpecialKind.RookBeam: return AnyBeamHits(s, p, Orthogonal);
             default: return false;
@@ -111,12 +111,15 @@ public static partial class BoardSimulator
     static void ApplySpecial(BoardSnapshot s, SnapshotPiece p, MatchSquare target)
     {
         int fromX = p.x;
+        // 討伐任務：必殺技は 1 回の発動で 1 回だけボスに当たる（必殺技のダメージ）
+        BeginBossEffect(s, BossHit.OfSpecial(p.type));
         switch (SpecialOf(s, p))
         {
             case SpecialKind.PawnCharge: Charge(s, p, false); break;
             case SpecialKind.LancePierce: Charge(s, p, true); break;
             case SpecialKind.KnightLeap: Step(s, p, target.x, target.y); break;
             case SpecialKind.GoldShock:
+                EffectHitBoss(s, Around(p)); // 周囲にボスがいれば攻撃（ボスは押せない）
                 foreach (Neighbor n in Neighbors(s, p))
                 {
                     if (n.Piece.owner == p.owner || !s.Contains(n.Piece)) continue;
@@ -126,6 +129,7 @@ public static partial class BoardSimulator
             case SpecialKind.BishopBeam: FireBeams(s, p, Diagonal); break;
             case SpecialKind.RookBeam: FireBeams(s, p, Orthogonal); break;
         }
+        EndBossEffect(s);
         if (s.Contains(p))
         {
             p.moveCount = 0;
@@ -163,6 +167,7 @@ public static partial class BoardSimulator
     static bool CanLandOn(BoardSnapshot s, SnapshotPiece p, int x, int y)
     {
         if (!BoardCells.InBounds(x, y) || s.IsBroken(x, y)) return false;
+        if (s.BossAt(x, y)) return true; // 討伐任務：ボスのマスにも跳べる（攻撃して跳ね返る）
         SnapshotPiece t = s.At(x, y);
         return t == null || t.owner != p.owner || PieceRules.IsExplosive(t.type);
     }
@@ -176,6 +181,11 @@ public static partial class BoardSimulator
         for (int x = p.x + f; BoardCells.InBounds(x, y); x += f)
         {
             if (s.IsBroken(x, y)) break;
+            if (s.BossAt(x, y))
+            {
+                path.Add(new MatchSquare(x, y)); // ボスに突っ込む → 攻撃して跳ね返る（討伐任務）
+                break;
+            }
             SnapshotPiece q = s.At(x, y);
             if (q == null)
             {
@@ -212,6 +222,8 @@ public static partial class BoardSimulator
     {
         public SnapshotPiece Hit;
         public MatchSquare Direction;
+        public bool HitsBoss;       // 討伐任務：ボスに当たって止まった
+        public MatchSquare End;     // ボスに当たったマス
     }
 
     // SpecialKit.BeamPlan（当たる駒だけ）
@@ -225,6 +237,12 @@ public static partial class BoardSimulator
             while (BoardCells.InBounds(x, y))
             {
                 if (s.IsBroken(x, y)) break;
+                if (s.BossAt(x, y))
+                {
+                    beam.HitsBoss = true;
+                    beam.End = new MatchSquare(x, y);
+                    break;
+                }
                 SnapshotPiece q = s.At(x, y);
                 if (q != null)
                 {
@@ -243,7 +261,7 @@ public static partial class BoardSimulator
     {
         foreach (Beam b in BeamPlan(s, p, dirs))
         {
-            if (b.Hit != null) return true;
+            if (b.Hit != null || b.HitsBoss) return true;
         }
         return false;
     }
@@ -255,6 +273,11 @@ public static partial class BoardSimulator
         List<SnapshotPiece> hit = new List<SnapshotPiece>(); // 巨人は複数の光線に当たっても 1 回
         foreach (Beam b in BeamPlan(s, p, dirs))
         {
+            if (b.HitsBoss)
+            {
+                EffectHitBoss(s, new List<MatchSquare> { b.End }); // 討伐任務：ボスに当たった光線（何本当たっても 1 回）
+                continue;
+            }
             if (b.Hit == null || !s.Contains(b.Hit) || hit.Contains(b.Hit)) continue;
             hit.Add(b.Hit);
             if (PieceRules.IsExplosive(b.Hit.type)) Explode(s, b.Hit.x, b.Hit.y, null);
@@ -263,9 +286,17 @@ public static partial class BoardSimulator
     }
 
     // SpecialContext.Step：駒 p を (tx, ty) へ動かす。入れたら true / 消失したら false / 取りが防がれて元のマスに残ったら null
-    static bool? Step(BoardSnapshot s, SnapshotPiece p, int tx, int ty)
+    // 討伐任務：ボスのマスへ入ろうとしたら、攻撃して元のマスに残る（null）。必殺技・魔法の中（viaEffect）なら、その技のダメージで 1 回だけ。
+    // それ以外（押し出された駒・アンデッドの移動など）は駒の種類のダメージ
+    static bool? Step(BoardSnapshot s, SnapshotPiece p, int tx, int ty, bool viaEffect = true)
     {
         if (!s.Contains(p) || !BoardCells.InBounds(tx, ty)) return false;
+        if (s.BossAt(tx, ty))
+        {
+            if (viaEffect && s.bossEffectActive) EffectHitBoss(s, new List<MatchSquare> { new MatchSquare(tx, ty) });
+            else DamageBoss(s, BossHit.OfPiece(p.type, p.promoted), new MatchSquare(tx, ty));
+            return null;
+        }
         SnapshotPiece target = s.At(tx, ty);
         if (target != null && target != p)
         {
@@ -299,7 +330,7 @@ public static partial class BoardSimulator
             return;
         }
         SnapshotPiece d = s.At(tx, ty);
-        if (!s.IsBroken(tx, ty) && (d == null || PieceRules.IsExplosive(d.type))) Step(s, q, tx, ty);
+        if (!s.IsBroken(tx, ty) && (d == null || PieceRules.IsExplosive(d.type))) Step(s, q, tx, ty, false); // ボスのマスへ押されたら、押された駒の種類のダメージ
     }
 
     // ------------------------------------------------------------
@@ -327,6 +358,7 @@ public static partial class BoardSimulator
     static string SkillBlockReason(BoardSnapshot s, PlayerType owner, SnapshotSkill skill)
     {
         if (skill == null || skill.kind == MagicKind.Unknown) return "シミュレーションできない魔法です";
+        if (s.Mode.BossSeat && !RaidRules.IsMagicUsable(skill.id)) return RaidRules.MagicBlockedText;
         SnapshotPlayer p = s.Player(owner);
         if (skill.transcendent)
         {
@@ -381,7 +413,7 @@ public static partial class BoardSimulator
             case MagicKind.Shield: return IsOwnPiece(owner, p) && !p.shield;
             case MagicKind.Counter: return IsOwnPiece(owner, p) && !p.counter;
             case MagicKind.Spark: return IsOwnPiece(owner, p);
-            case MagicKind.Sword: return IsOwnPiece(owner, p) && FrontEnemies(s, p).Count > 0;
+            case MagicKind.Sword: return IsOwnPiece(owner, p) && (FrontEnemies(s, p).Count > 0 || FrontHasBoss(s, p));
             case MagicKind.Pitfall: return IsEmptyNormal(s, x, y);
             case MagicKind.Swap: return !chosen.Contains(new MatchSquare(x, y)) && IsOwnPiece(owner, p);
             case MagicKind.Explosion: return true;
@@ -447,12 +479,13 @@ public static partial class BoardSimulator
             case MagicKind.Sword:
             {
                 SnapshotPiece p = s.At(x, y);
-                if (!(p != null && FrontEnemies(s, p).Count > 0)) blockers.AddRange(area);
+                if (!(p != null && (FrontEnemies(s, p).Count > 0 || FrontHasBoss(s, p)))) blockers.AddRange(area);
                 break;
             }
             case MagicKind.Meteor:
             {
-                bool centerOk = (BoardZones.IsOwnZone(owner, x) || BoardZones.ZoneOf(x) == BoardZone.Neutral) && !s.IsBroken(x, y);
+                // 討伐任務（ボスがいる）は敵陣も中心にできる
+                bool centerOk = (s.HasBoss || BoardZones.IsOwnZone(owner, x) || BoardZones.ZoneOf(x) == BoardZone.Neutral) && !s.IsBroken(x, y);
                 if (!centerOk) blockers.Add(new MatchSquare(x, y));
                 blockers.AddRange(KingSquares(s, area));
                 break;
@@ -550,6 +583,14 @@ public static partial class BoardSimulator
         if (skill.transcendent) sp.transcendentUsed = true;
         MatchSquare t0 = a.TargetCount > 0 ? a.targets[0] : MatchSquare.None;
 
+        // 討伐任務：魔法は 1 回の発動で 1 回だけボスに当たる（魔法ごとのダメージ。RaidRules.MagicBossDamage）
+        BeginBossEffect(s, BossHit.OfMagic(skill.id));
+        ApplyMagicEffect(s, owner, skill, a, sp, t0);
+        EndBossEffect(s);
+    }
+
+    static void ApplyMagicEffect(BoardSnapshot s, PlayerType owner, SnapshotSkill skill, MatchAction a, SnapshotPlayer sp, MatchSquare t0)
+    {
         switch (skill.kind)
         {
             case MagicKind.Shield:
@@ -575,6 +616,7 @@ public static partial class BoardSimulator
                 SnapshotPiece caster = s.At(t0.x, t0.y);
                 if (caster == null) break;
                 List<SnapshotPiece> inRange = PiecesIn(s, FrontSquares(s, caster)); // 巨人は 1 回だけ
+                EffectHitBoss(s, FrontSquares(s, caster)); // 討伐任務：前方 1×3 がボスに重なれば斬る
                 foreach (SnapshotPiece q in inRange)
                 {
                     if (!s.Contains(q) || q.Owner == owner || PieceRules.IsExplosive(q.type)) continue;
@@ -619,6 +661,7 @@ public static partial class BoardSimulator
             {
                 List<MatchSquare> area = SquareArea(t0.x, t0.y, 1);
                 foreach (SnapshotPiece q in PiecesIn(s, area)) Vanish(s, q); // 巨人は何マス重なっても 1 回
+                EffectHitBoss(s, area); // 討伐任務：3×3 がボスに重なれば当たる（炎上はボスに効かない）
                 foreach (MatchSquare sq in area) SetBurning(s, sq.x, sq.y, MeteorBurnTurns);
                 break;
             }
@@ -627,7 +670,11 @@ public static partial class BoardSimulator
                 List<MatchSquare> cells = Band(t0.x, t0.y, false);
                 List<SnapshotPiece> victims = PiecesIn(s, cells); // 巨人は 1 回（生き残れば、そのマスは壊れない：BreakCell）
                 foreach (SnapshotPiece q in victims) Vanish(s, q);
-                foreach (MatchSquare sq in cells) BreakCell(s, sq.x, sq.y);
+                EffectHitBoss(s, cells); // 討伐任務：帯がボスに重なれば当たる
+                foreach (MatchSquare sq in cells)
+                {
+                    if (!s.BossAt(sq.x, sq.y)) BreakCell(s, sq.x, sq.y); // ボスのいるマスは壊さない
+                }
                 break;
             }
             case MagicKind.Bomb:
@@ -642,6 +689,7 @@ public static partial class BoardSimulator
                     bool explosive = PieceRules.IsExplosive(q.type);
                     if (Vanish(s, q) && MatchConfig.ChainExplosion && explosive) chain.Add(at);
                 }
+                EffectHitBoss(s, area); // 討伐任務：3×3 がボスに重なれば当たる
                 foreach (MatchSquare c in chain) Explode(s, c.x, c.y, null);
                 break;
             }
@@ -670,7 +718,7 @@ public static partial class BoardSimulator
             case MagicKind.TimeStop:
                 s.timeStopped = true;
                 s.timeStopOwner = (int)owner;
-                s.timeStopRemaining = MatchConfig.TimeStopMoves;
+                s.timeStopRemaining = s.Mode.TimeStopLimitsMoves ? MatchConfig.TimeStopMoves : -1; // 討伐任務は回数の上限なし（-1）
                 s.timeStopJustStarted = true;
                 s.timeStopReleasable = false;
                 s.timeStopElapsed = 0; // 合戦将棋型：止まっている tick（TimeStopSec 秒で解除）
@@ -692,7 +740,7 @@ public static partial class BoardSimulator
     // MagicKit.IsEmptyNormal：駒がいない通常状態（破壊・炎上・落とし穴がない）のマス（時間停止中、予定の駒が残るマスは除く）
     static bool IsEmptyNormal(BoardSnapshot s, int x, int y)
     {
-        if (!BoardCells.InBounds(x, y) || s.At(x, y) != null) return false;
+        if (!BoardCells.InBounds(x, y) || s.At(x, y) != null || s.BossAt(x, y)) return false; // ボスのマスも除く
         if (s.timeStopped && s.heldSquares.Contains(new MatchSquare(x, y))) return false;
         SnapshotCell c = s.Cell(x, y);
         return c.state == CellState.Normal && !c.HasTrap;
@@ -969,7 +1017,7 @@ public static partial class BoardSimulator
             if (!s.Contains(p)) continue;
             PhalanxAct(s, p);
             ResolveCounters(s); // 槍の取りがカウンターに無効にされたら反撃される（1 体ごと。PhalanxAdvance.Run）
-            if (s.KingCount(PlayerType.Player1) == 0 || s.KingCount(PlayerType.Player2) == 0) return;
+            if (IsDecided(s)) return;
         }
     }
 
@@ -978,11 +1026,13 @@ public static partial class BoardSimulator
         int f = Forward(p.Owner);
         int fromX = p.x, tx = p.x + f, ty = p.y;
         SnapshotPiece q = BoardCells.InBounds(tx, ty) ? s.At(tx, ty) : null;
-        if (BoardCells.InBounds(tx, ty) && !s.IsBroken(tx, ty) && (q == null || PieceRules.IsExplosive(q.type)))
+        if (BoardCells.InBounds(tx, ty) && !s.IsBroken(tx, ty) && !s.BossAt(tx, ty) && (q == null || PieceRules.IsExplosive(q.type)))
         {
-            if (Step(s, p, tx, ty) != true) return;
+            if (Step(s, p, tx, ty, false) != true) return;
             if (CanPromote(p, fromX, p.x)) p.promoted = true;
         }
+        // 討伐任務：前方 1×3 にボスがいれば槍のダメージ（ボスの前では前進しない）
+        if (FrontHasBoss(s, p)) HitBossCells(s, FrontSquares(s, p), BossHit.Phalanx);
         // 前方 1×3 の相手の駒を取る（盾は有効。火薬は爆発）
         List<SnapshotPiece> targets = FrontEnemies(s, p);
         foreach (SnapshotPiece t in targets)
@@ -1000,6 +1050,11 @@ public static partial class BoardSimulator
     static void RunUndead(BoardSnapshot s, PlayerType owner)
     {
         PlayerType enemy = BoardZones.Opponent(owner);
+        if (s.HasBoss && !s.IsPlayerSeat(enemy))
+        {
+            RunUndeadRaid(s, owner); // 討伐任務：相手の王将の代わりにボスへ進む（BoardSimulator.Boss.cs）
+            return;
+        }
         if (s.KingCount(enemy) == 0) return;
         List<SnapshotPiece> order = new List<SnapshotPiece>();
         foreach (SnapshotPiece p in s.Grid)
@@ -1114,6 +1169,7 @@ public static partial class BoardSimulator
     // 両プレイヤー分：相手の駒が自陣にいて、盤上の駒数（火薬を除く）が相手のほうが多ければ解放（一度解放したらそのまま）
     public static void CheckTranscendentUnlock(BoardSnapshot s)
     {
+        if (s.Mode.TranscendentUnlockedFromStart) return; // 討伐任務：最初から解放済み（判定しない）
         foreach (PlayerType owner in new[] { PlayerType.Player1, PlayerType.Player2 })
         {
             SnapshotPlayer sp = s.Player(owner);

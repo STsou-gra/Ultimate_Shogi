@@ -2,7 +2,8 @@ using UnityEngine;
 
 // 末尾に足していく（シーン・プレハブ・通信では数値で保存しているため、途中に入れると既存の値がずれる）
 // Gunpowder（火薬）・Sniper（狙撃手）・Bird（鳥）・Giant（巨人）は錬成で作るオリジナル駒（Prototype の src/defs/pieces.js の KAYAKU・SNIPER・TORI・KYOJIN）
-public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn, Gunpowder, Sniper, Bird, Giant }
+// Kooni（小赤鬼）は討伐任務のボスの手下（Prototype の KOONI。ボスの席＝後手の駒。編成・錬成・持ち駒にはならない。PieceRules.IsMinion）
+public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn, Gunpowder, Sniper, Bird, Giant, Kooni }
 public enum PlayerType { Player1, Player2 }
 public abstract class GamePiece : MonoBehaviour
 {
