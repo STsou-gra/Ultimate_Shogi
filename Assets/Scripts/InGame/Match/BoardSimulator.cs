@@ -21,7 +21,10 @@ using System.Collections.Generic;
 //    超常魔法の解放、手番の始まりの詰み。乱数（天変地異・世界の終わり・アンデッド）はスナップショットの rngSeed・rngState の GameRng
 //
 // シミュレーションしないこと：千日手（局面の記録がないので）。
-// 時間停止中の行動は、Apply では当てはめない。CPU の先読み（ApplyForSearch）だけ、効果を予定にせずすぐ起こす近似で当てはめる
+// 時間停止中の行動は、Apply では当てはめない。CPU の先読み（ApplyForSearch）だけ、効果を予定にせずすぐ起こす近似で当てはめる。
+//
+// 合戦将棋型（BoardSnapshot.IsRealtime）は手番がない：行動は MatchAction.owner のプレイヤーのもの（どちらの席も行動でき、手番は交代しない）。
+// 時間は Tick で進める（BoardSimulator.Realtime.cs）
 public static partial class BoardSimulator
 {
     // 当てはめられる行動の種類か（必殺技・魔法・解除は skillsKnown のスナップショットだけ）
@@ -55,11 +58,17 @@ public static partial class BoardSimulator
     //  合法手
     // ------------------------------------------------------------
 
-    // player が選べる行動をすべて返す（GameSystem.LegalActions と同じ並び。手番でない・終局なら空）
+    // player が選べる行動をすべて返す（GameSystem.LegalActions と同じ並び。手番でない・終局なら空）。
+    // 合戦将棋型はどちらの席でも返し（相手の時間停止中は空）、どの行動にも owner が付く（Prototype の legalActions）
     public static List<MatchAction> LegalActions(BoardSnapshot s, PlayerType player)
     {
         List<MatchAction> res = new List<MatchAction>();
-        if (s.gameOver || player != s.Current) return res;
+        if (s.gameOver) return res;
+        if (s.IsRealtime)
+        {
+            if (s.timeStopped && s.timeStopOwner != (int)player) return res;
+        }
+        else if (player != s.Current) return res;
 
         // 盤上の駒（盤の添字の順）
         SnapshotPiece[] grid = s.Grid;
@@ -67,6 +76,7 @@ public static partial class BoardSimulator
         {
             SnapshotPiece p = grid[i];
             if (p == null || p.Owner != player || !BoardSnapshot.IsAnchor(p, i)) continue; // 巨人は中央のマスで 1 回だけ
+            if (IsCoolingDown(s, p)) continue; // 合戦将棋型：動いたばかりの駒は移動・狙撃・必殺技ができない
             MatchSquare from = new MatchSquare(p.x, p.y);
 
             if (!p.undead && !p.frozen)
@@ -128,6 +138,12 @@ public static partial class BoardSimulator
 
         // 停止世界の解除
         if (CanRelease(s, player)) res.Add(MatchAction.ReleaseTimeStop());
+
+        // 合戦将棋型：行動するプレイヤーを付ける
+        if (s.IsRealtime)
+        {
+            foreach (MatchAction a in res) a.owner = (int)player;
+        }
         return res;
     }
 
@@ -154,8 +170,10 @@ public static partial class BoardSimulator
         reason = null;
         if (a == null) { reason = "行動がありません"; return false; }
         if (s.gameOver) { reason = "対局は終わっています"; return false; }
-        PlayerType me = s.Current;
-        if (a.owner >= 0 && a.owner != (int)me) { reason = "手番のプレイヤーの行動ではありません"; return false; }
+        PlayerType? actor = ActorOf(s, a);
+        if (!actor.HasValue) { reason = "手番のプレイヤーの行動ではありません"; return false; }
+        PlayerType me = actor.Value;
+        if (s.timeStopped && s.timeStopOwner != (int)me) { reason = "相手の時間停止中は動けません"; return false; }
 
         switch (a.type)
         {
@@ -165,6 +183,7 @@ public static partial class BoardSimulator
                 if (p == null) reason = "動かす自分の駒がありません";
                 else if (p.undead) reason = "アンデッドは操作できません";
                 else if (p.frozen) reason = "消失・爆発の予定がある駒は動かせません";
+                else if (IsCoolingDown(s, p)) reason = "動いたばかりの駒です";
                 else if (!a.to.IsOnBoard || !CanMoveTo(s, p, a.to.x, a.to.y)) reason = "そこには移動できません";
                 else if (!IsPromoteChoiceAllowed(s, p, a.to.x, a.to.y, a.promote)) reason = a.promote ? "成れません" : "成らないと行き所がなくなります";
                 break;
@@ -177,6 +196,7 @@ public static partial class BoardSimulator
             {
                 SnapshotPiece p = OwnPieceAt(s, a.from, me);
                 if (p == null || !PieceRules.IsSniper(p.type)) reason = "狙撃する自分の狙撃手がありません";
+                else if (IsCoolingDown(s, p)) reason = "動いたばかりの駒です";
                 else if (!CanSnipeWith(s, p)) reason = "今は狙撃できません";
                 else if (a.TargetCount != 1 || !SnipeTargets(s, p).Contains(a.Target)) reason = "そこは狙撃できません";
                 break;
@@ -301,7 +321,7 @@ public static partial class BoardSimulator
             {
                 SnapshotCell c = s.Cell(cx, cy);
                 return s.At(cx, cy) == null && c.state == CellState.Normal && !c.HasTrap && !s.heldSquares.Contains(new MatchSquare(cx, cy));
-            }, s.turnNumber <= MatchConfig.EnemyZoneDropLockTurns);
+            }, IsDropLocked(s));
         }
         // 時間停止中、予定の駒が残っているマス
         if (s.heldSquares.Contains(new MatchSquare(x, y))) return false;
@@ -322,19 +342,19 @@ public static partial class BoardSimulator
             if (owner == PlayerType.Player1 && x >= 7) return false;
             if (owner == PlayerType.Player2 && x <= 1) return false;
         }
-        // NifuDropRule：同じ筋に自分の歩（NifuDropRule と同じく、成った歩も数える）
+        // NifuDropRule：同じ筋に自分の成っていない歩（成った歩は数えない。Prototype の getDropSquares と同じ）
         if (type == PieceType.Pawn)
         {
             for (int rank = 0; rank < BoardCells.Size; rank++)
             {
                 SnapshotPiece q = s.At(rank, y);
-                if (q != null && q.Owner == owner && q.type == PieceType.Pawn) return false;
+                if (q != null && q.Owner == owner && q.type == PieceType.Pawn && !q.promoted) return false;
             }
         }
-        // EnemyZoneDropLockRule：序盤は敵陣に打てない
-        if (s.turnNumber <= MatchConfig.EnemyZoneDropLockTurns && BoardZones.IsEnemyZone(owner, x)) return false;
-        // UchifuzumeRule：打ち歩詰め
-        if (type == PieceType.Pawn && SnapshotRules.IsUchifuzume(s, owner, x, y)) return false;
+        // EnemyZoneDropLockRule：序盤は敵陣に打てない（本将棋型：第10ターンまで ／ 合戦将棋型：開始から DropLockSec 秒）
+        if (IsDropLocked(s) && BoardZones.IsEnemyZone(owner, x)) return false;
+        // UchifuzumeRule：打ち歩詰め（合戦将棋型は詰みがないので禁止しない）
+        if (type == PieceType.Pawn && !s.IsRealtime && SnapshotRules.IsUchifuzume(s, owner, x, y)) return false;
         return true;
     }
 
@@ -451,8 +471,12 @@ public static partial class BoardSimulator
             return false;
         }
 
-        PlayerType me = s.Current;
-        switch (a.type)
+        PlayerType me = ActorOf(s, a).Value;
+        if (s.IsRealtime)
+        {
+            ApplyRealtime(s, a, me);
+        }
+        else switch (a.type)
         {
             case MatchActionType.Move:
                 ApplyMove(s, s.At(a.from.x, a.from.y), a.to.x, a.to.y, a.promote);
@@ -498,6 +522,48 @@ public static partial class BoardSimulator
         s.skillActionsKnown = false;
         s.skillActions.Clear();
         return true;
+    }
+
+    // 合戦将棋型の行動（GameSystem.RunRealtimeAction：実行 → AfterRealtimeAction。手番は交代しない）
+    static void ApplyRealtime(BoardSnapshot s, MatchAction a, PlayerType me)
+    {
+        SnapshotPiece piece = null;
+        switch (a.type)
+        {
+            case MatchActionType.Move:
+                piece = s.At(a.from.x, a.from.y);
+                ApplyMove(s, piece, a.to.x, a.to.y, a.promote);
+                ResolveCounters(s);
+                break;
+            case MatchActionType.Drop:
+                ApplyDrop(s, me, a.piece, a.to.x, a.to.y);
+                break;
+            case MatchActionType.Snipe:
+                piece = s.At(a.from.x, a.from.y);
+                ApplySnipe(s, piece, a.Target.x, a.Target.y);
+                ResolveCounters(s);
+                break;
+            case MatchActionType.Special:
+                piece = s.At(a.from.x, a.from.y);
+                ApplySpecial(s, piece, a.TargetCount > 0 ? a.Target : MatchSquare.None);
+                ResolveCounters(s);
+                break;
+            case MatchActionType.Magic:
+                ApplyMagic(s, me, FindSkill(s, me, a.skill), a);
+                ResolveCounters(s);
+                break;
+            case MatchActionType.Forge:
+            {
+                SnapshotRecipe r = FindRecipe(s, a.piece);
+                s.Player(me).energy -= r.cost;
+                AddToHand(s, me, r.piece, true);
+                break;
+            }
+            case MatchActionType.ReleaseTimeStop:
+                ClearTimeStop(s);
+                break;
+        }
+        AfterRealtimeAction(s, piece, a.type == MatchActionType.Forge);
     }
 
     // 移動（GameSystem.ApplyMove と同じ）
@@ -731,15 +797,14 @@ public static partial class BoardSimulator
     // 爆発（GameSystem.Explode と同じ）：中心の 3×3 の駒と、入った駒（entering）を消失させる。王将は残る
     static void Explode(BoardSnapshot s, int cx, int cy, SnapshotPiece entering)
     {
+        // 消す順は GameSystem.Explode と同じ（Prototype の explode：x の大きい方から、y の小さい方から。入った駒は中心のマスの駒の前）
         List<SnapshotPiece> victims = new List<SnapshotPiece>();
         int r = MatchConfig.ExplosionRadius;
-        for (int x = cx - r; x <= cx + r; x++)
+        foreach (MatchSquare c in SquareArea(cx, cy, r))
         {
-            for (int y = cy - r; y <= cy + r; y++)
-            {
-                SnapshotPiece q = s.At(x, y);
-                if (q != null && !victims.Contains(q)) victims.Add(q); // 巨人は何マス重なっても 1 回
-            }
+            if (c.x == cx && c.y == cy && entering != null && !victims.Contains(entering)) victims.Add(entering);
+            SnapshotPiece q = s.At(c.x, c.y);
+            if (q != null && q != entering && !victims.Contains(q)) victims.Add(q); // 巨人は何マス重なっても 1 回
         }
         if (entering != null && !victims.Contains(entering)) victims.Add(entering);
 

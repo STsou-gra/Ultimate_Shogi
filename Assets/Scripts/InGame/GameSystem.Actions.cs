@@ -386,7 +386,8 @@ public partial class GameSystem
     void ExecutePlan(ActionPlan plan)
     {
         MatchAction a = plan.Action;
-        BeginSimulationCheck(a); // エディタと Development Build：盤面のシミュレーションの予測を作っておき、行動が終わったら照合する
+        // エディタと Development Build：盤面のシミュレーションの予測を作っておき、行動が終わったら照合する（合戦将棋型は行動したプレイヤーを付けて）
+        BeginSimulationCheck(IsRealtime ? WithOwner(a, plan.Owner) : a);
         RecordAction(a, plan.Owner);
 
         switch (a.type)
@@ -447,12 +448,32 @@ public partial class GameSystem
     // （手番でない・演出中・オンライン対戦の相手の手番なら空）。形は盤のクリック・ボタンで作る行動と同じ（owner は -1 のまま）。
     // 並び：盤上の駒（盤の添字 GameHelper.CalcPanelNum の順）ごとに 移動（成らない → 成る）・狙撃・必殺技
     //       → 持ち駒（PieceRules.HandOrder の順）→ 魔法（編成の順。範囲の向き → 対象を選ぶ順）→ 錬成（レシピの順）→ 解除
+    // 合戦将棋型はどちらの席でも返す（その席に切り替えて調べる。相手の時間停止中は空）。どの行動にも owner が付く（Prototype の legalActions）
     public List<MatchAction> LegalActions(PlayerType player)
+    {
+        if (!IsRealtime || !IsInTurn) return LegalActionsOfCurrent(player);
+        InputSeat prev = seat;
+        UseSeat(player);
+        try
+        {
+            List<MatchAction> res = LegalActionsOfCurrent(player);
+            foreach (MatchAction a in res) a.Owner = player;
+            return res;
+        }
+        finally
+        {
+            seat = prev;
+            if (IsInTurn && prev != null && prev.Owner.HasValue) UseSeat(prev.Owner.Value);
+        }
+    }
+
+    List<MatchAction> LegalActionsOfCurrent(PlayerType player)
     {
         List<MatchAction> res = new List<MatchAction>();
         if (!IsInTurn || match == null || gameBoard == null || IsBusy) return res;
         if (player != CurrentSide) return res;
         if (IsOnlineMatch && player != NetworkManager.Instance.MyPlayerType) return res;
+        if (timeStop != null && timeStop.Owner != player) return res; // 相手の時間停止中（合戦将棋型）
 
         // 盤上の駒
         GamePiece[] board = gameBoard.GetBoardData();
@@ -461,6 +482,7 @@ public partial class GameSystem
             GamePiece p = board[i];
             if (p == null || p.player != player) continue;
             if (GameHelper.CalcPanelNum(p.X, p.Y) != i) continue; // 巨人は 3×3 マスを占めるので、中央のマスで 1 回だけ
+            if (Policy.IsCoolingDown(p)) continue; // 合戦将棋型：動いたばかりの駒は移動・狙撃・必殺技ができない（PlanMove など）
             AddPieceActions(res, p);
         }
 
@@ -587,6 +609,13 @@ public partial class GameSystem
                 context.Targets.RemoveAt(context.Targets.Count - 1);
             }
         }
+    }
+
+    static MatchAction WithOwner(MatchAction a, PlayerType owner)
+    {
+        MatchAction c = a.Clone();
+        c.Owner = owner;
+        return c;
     }
 
     void RecordAction(MatchAction a, PlayerType owner)

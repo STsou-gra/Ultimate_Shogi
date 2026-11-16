@@ -16,6 +16,10 @@ using UnityEngine.SceneManagement;
 //  ・局面の書き出し・読み込み（ファイル）：GameSystem.State.cs の ExportState / ImportState を使う（その場で盤を作り直して続きから指す）。
 //    読み込んだ局面からは棋譜を記録しない（Prototype の importState と同じ）。演出中・再生中は書き出せない
 //  ・オンライン対戦では記録しない（相手の端末の行動・魔法がまだ同期されていないため）
+//  ・合戦将棋型（Prototype の RealtimeReplayController・棋譜の版 2）：行動には行動したプレイヤー（owner）と実行した tick（t）が付き、
+//    ハッシュはその行動の処理の直後に取る（GameSystem.Realtime.cs の RunRealtimeAction）。再生は、棋譜の戦闘型・シード・編成で始め直し、
+//    両方の席に RealtimeReplayController を付けて、記録した tick に記録した順で入れる（StepReplay は使わない）。各行動のハッシュを照らし合わせ、
+//    ずれた・実行できない・記録した tick を過ぎた・最後まで再生したら終わり、席を人（CPU と対戦なら CPU）に戻す。速さは時間の進み方の倍率
 public partial class GameSystem
 {
     // 再生の待ち時間（秒。Time.timeScale で縮む。Prototype の ReplayController の firstWait / gap）
@@ -61,6 +65,13 @@ public partial class GameSystem
 
     public bool IsReplaying => replay != null;
     public ReplayProgress Replay => replay;
+
+    // 合戦将棋型の再生の Controller（両方の席に付ける。再生中でなければ null）
+    private RealtimeReplayController realtimeReplay;
+
+    // 再生する棋譜の戦闘型（GameSystem.Start が対局の戦闘型にする。再生中でなければ本将棋型）
+    BattleRuleset ReplayRuleset => replay != null && replay.Kifu.config != null && replay.Kifu.config.Ruleset != null
+        ? replay.Kifu.config.Ruleset : BattleRulesets.Honshogi;
 
     // 再生の進み具合が変わった（HUD の表示）・再生が終わった
     public event System.Action<ReplayProgress> ReplayUpdated;
@@ -118,13 +129,8 @@ public partial class GameSystem
             KifuSession.SetCurrent(null, "オンライン対戦は、棋譜を記録しません");
             return;
         }
-        if (IsRealtime)
-        {
-            // 合戦将棋型の行動は時刻（MatchAction.t）で決まるが、再生（StepReplay）は手番ごとに出すので、まだ記録しない
-            KifuSession.SetCurrent(null, "合戦将棋型は、棋譜をまだ記録しません");
-            return;
-        }
-        KifuSession.SetCurrent(KifuFile.Create(seed, GetSkillDeck(PlayerType.Player1), GetSkillDeck(PlayerType.Player2)), null);
+        // 合戦将棋型も記録する（行動に owner と t が付く。再生は RealtimeReplayController）
+        KifuSession.SetCurrent(KifuFile.Create(seed, GetSkillDeck(PlayerType.Player1), GetSkillDeck(PlayerType.Player2), match.Ruleset), null);
     }
 
     // シーンを離れる（GameSystem.OnDestroy から）
@@ -164,6 +170,7 @@ public partial class GameSystem
         if (!string.IsNullOrEmpty(last.hash)) return;
         FlushScheduledFx();
         last.hash = StateHash(); // MatchHash（GameSystem.State.cs。ActionHistory の hash と同じ計算）
+        if (match != null && match.Clock != null) k.endTick = match.Clock.Tick; // 合戦将棋型：最後に記録した時点の tick（保存するときに今の tick にする）
     }
 
     // 演出の時刻に合わせて行う盤面の変更（SpecialContext.Schedule）を、まだなら今すぐ済ませる。
@@ -190,7 +197,9 @@ public partial class GameSystem
         if (!IsKifuSettled) return;
         FlushScheduledFx();
         FinalizeKifuHash();
-        if (replay != null) StepReplay();
+        if (replay == null) return;
+        if (!IsRealtime) StepReplay();
+        else EndRealtimeReplayAtGameOver(); // 合戦将棋型は RealtimeReplayController が毎 tick に出す
     }
 
     // ------------------------------------------------------------
@@ -215,6 +224,7 @@ public partial class GameSystem
         string reason;
         if (!CanSaveKifu(out reason)) return reason;
         FinalizeKifuHash();
+        if (match != null && match.Clock != null && KifuSession.Current != null) KifuSession.Current.endTick = match.Clock.Tick; // Prototype の endTick
         return KifuSession.SaveCurrent();
     }
 
@@ -316,10 +326,62 @@ public partial class GameSystem
         ReplayUpdated?.Invoke(r);
     }
 
+    // ------------------------------------------------------------
+    //  合戦将棋型の再生（Prototype の RealtimeReplayController）
+    // ------------------------------------------------------------
+
+    // 対局の始め（SetupRealtimeControllers から）：両方の席に再生の Controller を付ける
+    void BeginRealtimeReplay()
+    {
+        ReplayProgress r = replay;
+        List<MatchAction> recorded = new List<MatchAction>();
+        foreach (KifuEntry e in r.Kifu.actions) recorded.Add(e.ToRecorded());
+        realtimeReplay = new RealtimeReplayController(recorded, OnRealtimeReplayEnded, played =>
+        {
+            if (replay == null) return;
+            replay.Played = played;
+            ReplayUpdated?.Invoke(replay);
+        });
+        r.Total = realtimeReplay.Total;
+        SetSeatController(PlayerType.Player1, realtimeReplay);
+        SetSeatController(PlayerType.Player2, realtimeReplay);
+        if (r.Total == 0) EndReplay(new ReplayResult { Played = 0, Total = 0 });
+    }
+
+    void OnRealtimeReplayEnded(RealtimeReplayController.Result result)
+    {
+        if (replay == null) return;
+        EndReplay(new ReplayResult { Played = result.Played, Total = result.Total, Error = result.Error });
+    }
+
+    // 合戦将棋型の再生中に対局が終わった（行動・自動行動で王将を取った）
+    void EndRealtimeReplayAtGameOver()
+    {
+        if (replay == null || currentState != GameState.GameOver) return;
+        int played = realtimeReplay != null ? realtimeReplay.Played : replay.Played;
+        string error = played < replay.Total ? $"{played} 手目で対局が終わった（棋譜にはあと {replay.Total - played} 手ある）" : null;
+        EndReplay(new ReplayResult { Played = played, Total = replay.Total, Error = error });
+    }
+
+    // 合戦将棋型の再生をやめる：席から外し、人（CPU と対戦なら CPU の席に CPU）に戻す
+    void DetachRealtimeReplay()
+    {
+        RealtimeReplayController r = realtimeReplay;
+        if (r == null) return;
+        realtimeReplay = null;
+        for (int i = 0; i < 2; i++)
+        {
+            if (SeatController((PlayerType)i) == r) SetSeatController((PlayerType)i, null);
+        }
+        r.Cancel();
+        AttachRealtimeCpu();
+    }
+
     void EndReplay(ReplayResult result)
     {
         if (replay == null) return;
         replay = null;
+        DetachRealtimeReplay();
         Time.timeScale = 1f;
         KifuSession.LastReplayResult = result.Message;
         if (result.Ok) Debug.Log($"[Kifu] {result.Message}");
@@ -345,7 +407,6 @@ public partial class GameSystem
         else if (IsBusy || isRunningTurnEnd) reason = "演出が終わってから書き出してください";
         else if (IsReplaying) reason = "再生中は書き出せません";
         else if (IsOnlineMatch) reason = "オンライン対戦では使えません";
-        else if (IsRealtime) reason = "合戦将棋型ではまだ使えません（対局の時間・連打の間隔を局面に入れていないため）";
         return reason == null;
     }
 

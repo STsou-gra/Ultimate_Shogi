@@ -17,6 +17,10 @@ using UnityEngine.InputSystem;
 //  ・演出は待たない（MatchPolicy.AwaitsEffects = false）：必殺技・魔法・時間停止の解除はその場で盤面を変え、演出は重ねて再生する。
 //    全画面のカットインは出さない（MatchPolicy.ShowsCutIns = false）。盤面を変える予定（SpecialContext.ScheduleState）もその場で行う
 //  ・「一時停止」（Esc・HUD のボタン）。ルール説明を開いている間・ウィンドウが非アクティブの間も止まる（時間も入力も止まる）
+//  ・行動のハッシュ（ActionHistory・棋譜の hash）は、その行動の処理（AfterRealtimeAction）が終わった直後に取る（Prototype の RealtimeMatch.play。
+//    次の tick を進める前なので、フレームの長さに左右されない）
+//  ・席の Controller（IRealtimeSeatController）：CPU（RealtimeCpuPacer ＋ CpuPlayer。GameSystem.Cpu.cs）・棋譜の再生（RealtimeReplayController。
+//    両方の席に付ける。GameSystem.Kifu.cs）。Controller の席は人が操作できない
 public partial class GameSystem
 {
     // 戦闘型の違いの入口（対局の準備の前は本将棋型として扱う）
@@ -125,6 +129,9 @@ public partial class GameSystem
         if (owner == focusSide && Seat == SeatOf(owner) && HandUIManager.Instance != null) HandUIManager.Instance.SetStatusText(text);
     }
 
+    // 席 owner に案内文を出す（CPU の席の「考えています」など。合戦将棋型は HUD の席のパネルに出る）
+    public void ShowSeatStatus(PlayerType owner, string text) => ShowSeatNotice(owner, text);
+
     // ------------------------------------------------------------
     //  準備
     // ------------------------------------------------------------
@@ -132,11 +139,13 @@ public partial class GameSystem
     // 合戦将棋型の準備（Start から）：先手・後手の席とカーソル、案内文のキーの読み替え、HUD
     void SetupRealtime()
     {
+        // CPU と対戦：人の席はキーボード全体を使う（SeatKeys.KassenSolo）。CPU の席のキーは使わない
         realtimeSeats = new[]
         {
-            new InputSeat(PlayerType.Player1, SeatKeys.KassenSente),
-            new InputSeat(PlayerType.Player2, SeatKeys.KassenGote),
+            new InputSeat(PlayerType.Player1, HasCpu ? (IsCpuSide(PlayerType.Player1) ? SeatKeys.KassenSente : SeatKeys.KassenSolo("先手")) : SeatKeys.KassenSente),
+            new InputSeat(PlayerType.Player2, HasCpu ? (IsCpuSide(PlayerType.Player2) ? SeatKeys.KassenGote : SeatKeys.KassenSolo("後手")) : SeatKeys.KassenGote),
         };
+        if (HasCpu) focusSide = BoardZones.Opponent(cpuSide.Value); // 操作中の席は人の席
 
         // 先手の席はシーンのカーソル、後手の席は複製したカーソル（色を変える）
         sceneCursor.Bind(this, realtimeSeats[0]);
@@ -148,14 +157,19 @@ public partial class GameSystem
         TintCursor(goteCursor, new Color(1f, 0.55f, 0.6f, 1f));    // 後手：赤み
         sceneCursor.SetPosition(2, 4);
         goteCursor.SetPosition(6, 4);
-        seat = realtimeSeats[0];
+        seat = realtimeSeats[(int)focusSide];
 
         // 案内文（「決定: F / 取消: Space」など）を、操作中の席のキーに読み替えて出す
         HandUIManager.StatusFilter = FilterSeatStatus;
         if (HandUIManager.Instance != null) HandUIManager.Instance.SeatMode = true;
 
         if (FindAnyObjectByType<RealtimeHudView>() == null) gameObject.AddComponent<RealtimeHudView>();
-        Debug.Log($"{Policy.Ruleset.Name}：先手 {SeatKeys.Labels(SeatKeys.KassenSente.Up, SeatKeys.KassenSente.Left, SeatKeys.KassenSente.Down, SeatKeys.KassenSente.Right)}・" +
+        if (HasCpu)
+        {
+            InputSeat human = realtimeSeats[(int)focusSide];
+            Debug.Log($"{Policy.Ruleset.Name}：あなた（{human.Keys.Name}）は {RealtimeKeyHint(human.Keys)} で操作する。CPU は {CpuLevels.Label(MatchSetup.CpuLevel)}");
+        }
+        else Debug.Log($"{Policy.Ruleset.Name}：先手 {SeatKeys.Labels(SeatKeys.KassenSente.Up, SeatKeys.KassenSente.Left, SeatKeys.KassenSente.Down, SeatKeys.KassenSente.Right)}・" +
                   $"後手 {SeatKeys.Labels(SeatKeys.KassenGote.Up, SeatKeys.KassenGote.Left, SeatKeys.KassenGote.Down, SeatKeys.KassenGote.Right)} で同時に操作する");
     }
 
@@ -180,7 +194,9 @@ public partial class GameSystem
         foreach (InputSeat s in realtimeSeats)
         {
             UseSeat(s.Owner.Value);
-            s.Status = $"【{Policy.Ruleset.Name}】 手番なし。いつでも自分の駒を動かせる（{RealtimeKeyHint(s.Keys)}）";
+            s.Status = IsCpuSide(s.Owner.Value)
+                ? $"【CPU】 {CpuLevels.Label(MatchSetup.CpuLevel)}が {Policy.Ruleset.CpuIntervalSec[CpuLevels.Clamp(MatchSetup.CpuLevel)]:0.0} 秒ごとに動く"
+                : $"【{Policy.Ruleset.Name}】 手番なし。いつでも自分の駒を動かせる（{RealtimeKeyHint(s.Keys)}）";
         }
         UseSeat(focusSide);
         RefreshFocusUI();
@@ -280,6 +296,34 @@ public partial class GameSystem
 
     public IRealtimeSeatController SeatController(PlayerType owner) => seatControllers[(int)owner];
 
+    // controller がどちらかの席に付いているか
+    bool IsSeatControllerAttached(IRealtimeSeatController controller)
+    {
+        return controller != null && (seatControllers[0] == controller || seatControllers[1] == controller);
+    }
+
+    // 対局の始め（Start の最後）：合戦将棋型の席の Controller を付ける（棋譜の再生なら両方の席に再生、CPU と対戦なら CPU の席に CPU）
+    void SetupRealtimeControllers()
+    {
+        if (!IsRealtime) return;
+        if (replay != null)
+        {
+            BeginRealtimeReplay();
+            return;
+        }
+        AttachRealtimeCpu();
+    }
+
+    // 局面を読み込む前（GameSystem.State.cs の ImportState から）：両方の席の選択とキューをやめる
+    void ResetRealtimeForImport()
+    {
+        realtimeQueue.Clear();
+        realtimeAccMs = 0f;
+        if (realtimeSeats == null) return;
+        foreach (InputSeat s in realtimeSeats) ResetSeatSelection(s.Owner.Value);
+        UseSeat(focusSide);
+    }
+
     // ------------------------------------------------------------
     //  毎フレーム：入力 → 時間を進める → 選択の表示
     // ------------------------------------------------------------
@@ -324,15 +368,17 @@ public partial class GameSystem
         }
 
         if (!IsInTurn) return;
-        AdvanceRealtime(Time.unscaledDeltaTime * 1000f);
+        // 棋譜の早送り（Prototype の RealtimeMatch の speed）：1 フレームの上限（MaxFrameMs）をかけてから倍にする
+        AdvanceRealtime(Time.unscaledDeltaTime * 1000f, replay != null ? replay.Speed : 1f);
         if (IsInTurn && selectionsDirty) RenderSeatSelections();
     }
 
     // 実時間 ms ミリ秒ぶん時間を進める（止めている間は進めない。溜まった時間を 1 tick ずつ StepRealtime に分ける）
-    void AdvanceRealtime(float ms)
+    void AdvanceRealtime(float ms, float speed = 1f)
     {
         if (IsRealtimePaused) return;
-        realtimeAccMs += Mathf.Min(ms, MatchConfig.MaxFrameMs);
+        if (KifuMenuView.IsBlockingInput) return; // 棋譜メニューを開いている間も止める（再生も止まる）
+        realtimeAccMs += Mathf.Min(ms, MatchConfig.MaxFrameMs) * Mathf.Max(1f, speed);
         int n = 0;
         while (realtimeAccMs >= MatchConfig.TickMs && IsInTurn)
         {
@@ -384,14 +430,23 @@ public partial class GameSystem
             foreach (QueuedAction q in queue)
             {
                 if (!IsInTurn) break;
+                if (q.From != null && !IsSeatControllerAttached(q.From)) continue; // 外された Controller（終わった再生など）の行動
                 RunRealtimeAction(q);
             }
         }
-        if (!IsInTurn) return;
+        if (!IsInTurn)
+        {
+            EndRealtimeReplayAtGameOver();
+            return;
+        }
 
         // 3. 時間を進める
         RealtimeTick();
-        if (!IsInTurn) return;
+        if (!IsInTurn)
+        {
+            EndRealtimeReplayAtGameOver();
+            return;
+        }
 
         if (boardChangedThisStep)
         {
@@ -406,19 +461,29 @@ public partial class GameSystem
     {
         PlayerType prevFocus = focusSide;
         UseSeat(q.Owner);
+        bool fromReplay = q.From is RealtimeReplayController;
+        MatchAction executed = null;
+        if (fromReplay) replayDispatching = true; // 再生中でも、再生が出した行動は通す
         try
         {
             ActionPlan plan = PlanAction(q.Action, out string reason);
             if (plan == null)
             {
                 Debug.Log($"[Action] 実行できなくなった行動：{q.Action}（{reason}）");
-                if (q.From != null) q.From.OnRejected(this, q.Action);
+                if (q.From != null) q.From.OnRejected(this, q.Action, reason);
                 return;
             }
             TimeStopState stopped = timeStop;
             ExecutePlan(plan);
             AfterRealtimeAction(plan, stopped);
             boardChangedThisStep = true;
+
+            // ハッシュはこの行動の処理が終わった直後（次の行動・次の tick の前）に取る（Prototype の RealtimeMatch.play の entry.hash）
+            executed = hashPendingAction;
+            FlushScheduledFx();
+            FinishActionHash();
+            FinalizeKifuHash();
+            UpdateSimulationCheckNow(); // エディタ：シミュレーションの予測と比べる（次の tick で時間が進む前に）
         }
         catch (System.Exception e)
         {
@@ -426,6 +491,24 @@ public partial class GameSystem
         }
         finally
         {
+            replayDispatching = false;
+            // 行動を Controller に知らせる（棋譜の再生はハッシュを照らし合わせる。Prototype の onAction）
+            if (executed != null)
+            {
+                for (int i = 0; i < seatControllers.Length; i++)
+                {
+                    IRealtimeSeatController ctrl = seatControllers[i];
+                    if (ctrl == null || (i > 0 && seatControllers[0] == ctrl)) continue;
+                    try
+                    {
+                        ctrl.OnAction(this, executed);
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogException(e);
+                    }
+                }
+            }
             if (IsInTurn)
             {
                 UseSeat(prevFocus);
@@ -788,53 +871,113 @@ public partial class GameSystem
     }
 }
 
-// 合戦将棋型の席を任せる相手（CPU・棋譜の再生など。Prototype の Controller の realtimeActions）。
-// GameSystem.SetSeatController で席に付けると、毎 tick の頭に RealtimeActions が呼ばれ、返した行動をその席の行動として実行する
+// 合戦将棋型の席を任せる相手（CPU・棋譜の再生など。Prototype の Controller の realtimeActions・onAction・onRejected）。
+// GameSystem.SetSeatController で席に付けると、毎 tick の頭に RealtimeActions が呼ばれ、返した行動をその席の行動として実行する。
+// 両方の席に同じ Controller を付けたときは 1 回だけ呼ばれる（行動に owner があればその席、なければ聞いた席の行動）
 public interface IRealtimeSeatController
 {
     // この tick に入れる行動（なければ空・null）。owner は付けなくてよい（席の持ち主になる）
     IEnumerable<MatchAction> RealtimeActions(GameSystem system, PlayerType seat);
 
-    // 返した行動が実行できなかった（その tick に判定し直して、実行できなくなっていた）
-    void OnRejected(GameSystem system, MatchAction action);
+    // 返した行動が実行できなかった（その tick に判定し直して、実行できなくなっていた。reason は理由）
+    void OnRejected(GameSystem system, MatchAction action, string reason);
+
+    // 行動が 1 つ実行された（どの席の行動でも。entry は ActionHistory の記録：owner・t・その行動のあとの盤面のハッシュ hash つき）
+    void OnAction(GameSystem system, MatchAction entry);
 }
 
-// 棋譜の再生（Prototype の RealtimeReplayController）：記録した行動（ActionHistory。owner と t つき）を、記録した tick に、記録した順に入れる。
-// 同じシード（MatchSetup.Seed）で始めた対局の両方の席に付けると、同じ対局になる
+// 棋譜の再生（Prototype の src/controller/RealtimeReplayController.js）：記録した行動（owner と t つき）を、記録した tick に、記録した順に入れる。
+// 同じシード（MatchSetup.Seed・棋譜の seed）で始めた対局の両方の席に付けると、同じ対局になる。
+// 各行動のあと、盤面のハッシュを記録と照らし合わせ、ずれたら・実行できない行動があったら・記録した tick を過ぎていたら、そこで終える
+// （終わったら onEnd。GameSystem はそこで席を人・CPU に戻すので、その局面から続けて指せる）
 public class RealtimeReplayController : IRealtimeSeatController
 {
-    private readonly List<MatchAction> actions;
-    private int next;
-
-    public RealtimeReplayController(IEnumerable<MatchAction> recorded)
+    // 再生の結果（Prototype の onEnd の { finished, played, total, error }）
+    public struct Result
     {
-        // tick の順に並べる（同じ tick の行動は記録した順のまま）
+        public bool Finished;  // 最後まで再生した・ずれた・再現できなかった（false：途中でやめた）
+        public int Played;
+        public int Total;
+        public string Error;   // ずれた・再現できなかった理由（一致したら null）
+    }
+
+    private readonly List<MatchAction> actions;
+    private readonly System.Action<Result> onEnd;
+    private readonly System.Action<int> onProgress;
+    private int next;    // 次に入れる行動
+    private int played;  // 実行された行動
+
+    public int Played => played;
+    public int Total => actions.Count;
+    public bool Ended { get; private set; }
+
+    // recorded：記録した行動（ActionHistory・棋譜の actions。owner と t があるもの。hash があれば照らし合わせる）
+    public RealtimeReplayController(IEnumerable<MatchAction> recorded, System.Action<Result> onEnd = null, System.Action<int> onProgress = null)
+    {
         actions = new List<MatchAction>();
         foreach (MatchAction a in recorded)
         {
             if (a != null && a.t >= 0 && a.Owner.HasValue) actions.Add(a.Clone());
         }
+        // tick の順に並べる（同じ tick の行動は記録した順のまま）
         actions.Sort(new StableByTick(actions));
+        this.onEnd = onEnd;
+        this.onProgress = onProgress;
     }
 
-    // 再生し終わったか
+    // 再生し終わったか（全部の行動を入れた）
     public bool IsFinished => next >= actions.Count;
 
     public IEnumerable<MatchAction> RealtimeActions(GameSystem system, PlayerType seat)
     {
+        List<MatchAction> res = new List<MatchAction>();
         MatchClock clock = system.Match != null ? system.Match.Clock : null;
-        if (clock == null) yield break;
+        if (Ended || clock == null) return res;
         while (next < actions.Count && actions[next].t <= clock.Tick)
         {
-            MatchAction a = actions[next++];
-            if (a.t == clock.Tick) yield return a;
-            else Debug.LogWarning($"[Replay] 記録した tick を過ぎた行動を飛ばした：t={a.t} {a}");
+            if (actions[next].t < clock.Tick)
+            {
+                End(true, $"{next + 1} 手目の時刻（tick {actions[next].t}）を過ぎています");
+                return new List<MatchAction>();
+            }
+            MatchAction a = actions[next++].Clone();
+            a.hash = "";
+            res.Add(a);
         }
+        return res;
     }
 
-    public void OnRejected(GameSystem system, MatchAction action)
+    public void OnAction(GameSystem system, MatchAction entry)
     {
-        Debug.LogWarning($"[Replay] 記録した行動が実行できなかった（棋譜と対局がずれた）：t={action.t} {action}");
+        if (Ended || played >= actions.Count) return;
+        MatchAction recorded = actions[played];
+        played++;
+        onProgress?.Invoke(played);
+        if (!string.IsNullOrEmpty(recorded.hash) && entry.hash != recorded.hash)
+        {
+            Debug.LogWarning($"[Replay] {played} 手目のあとの盤面のハッシュが違う：棋譜 {recorded.hash} ／ 再生 {entry.hash}（{entry}）");
+            End(true, $"{played} 手目のあとの盤面が棋譜と一致しません");
+        }
+        else if (played >= actions.Count) End(true, null);
+    }
+
+    public void OnRejected(GameSystem system, MatchAction action, string reason)
+    {
+        Debug.LogWarning($"[Replay] 記録した行動が実行できなかった（棋譜と対局がずれた）：t={action.t} {action}（{reason}）");
+        End(true, $"{played + 1} 手目の行動（{action}）を再現できない：{reason}");
+    }
+
+    // 対局をやめた（「再生を止める」など）
+    public void Cancel()
+    {
+        End(false, null);
+    }
+
+    void End(bool finished, string error)
+    {
+        if (Ended) return;
+        Ended = true;
+        onEnd?.Invoke(new Result { Finished = finished, Played = played, Total = actions.Count, Error = error });
     }
 
     class StableByTick : IComparer<MatchAction>
@@ -852,13 +995,34 @@ public class RealtimeReplayController : IRealtimeSeatController
     }
 }
 
-// CPU を一定の間隔で動かす Controller（Prototype の CpuController の合戦将棋型の間隔。Lv0 2.0 秒／Lv1 1.5 秒／Lv2 1.2 秒）。
-// 手の選び方（choose）は CPU の本体を渡す（CPU が入ったら、その「次の一手」を返す関数をここに渡す）
+// CPU の考える部分（RealtimeCpuPacer が使う。CpuPlayer が実装する）。考えている間も時間は進むので、考え始めと結果の受け取りを分ける
+public interface IRealtimeCpuBrain
+{
+    // seat の席の次の一手を考え始める（今の局面を写して、別スレッド・フレームごとに考える）。指せる手がなければ false
+    bool BeginThinking(GameSystem system, PlayerType seat);
+
+    // 考え終わったか。終わったら result に行動（指さないなら null）
+    bool PollThinking(GameSystem system, out MatchAction result);
+
+    // 考えるのをやめる（結果は捨てる）
+    void CancelThinking();
+}
+
+// CPU を一定の間隔で動かす Controller（Prototype の CpuController.realtimeActions。間隔は Lv0 2.0 秒／Lv1 1.5 秒／Lv2 1.2 秒）。
+//  ・前の行動を決めてから CpuIntervalTicks(level) tick たったら、その席を手番にした写しの局面で考え始める（IRealtimeCpuBrain。考えている間も時間は進む）
+//  ・考え終わったら、その tick に行動を返す（そのときの局面で判定し、できなければ捨てる）。次に考え始めるのは、考え終わった時刻から数える
+//  ・同期で選ぶ関数（choose）を渡してもよい（テスト・簡単な CPU 用。その tick にすぐ返す）
 public class RealtimeCpuPacer : IRealtimeSeatController
 {
     private readonly int level;
     private readonly System.Func<GameSystem, PlayerType, MatchAction> choose;
+    private readonly IRealtimeCpuBrain brain;
     private int nextTick = -1;
+    private int lastTick = -1;
+    private bool thinking;
+
+    public int Level => level;
+    public bool IsThinking => thinking;
 
     public RealtimeCpuPacer(int level, System.Func<GameSystem, PlayerType, MatchAction> choose)
     {
@@ -866,19 +1030,65 @@ public class RealtimeCpuPacer : IRealtimeSeatController
         this.choose = choose;
     }
 
-    public IEnumerable<MatchAction> RealtimeActions(GameSystem system, PlayerType seat)
+    public RealtimeCpuPacer(int level, IRealtimeCpuBrain brain)
     {
-        MatchClock clock = system.Match != null ? system.Match.Clock : null;
-        if (clock == null || choose == null) yield break;
-        int interval = system.Policy.CpuIntervalTicks(level);
-        if (nextTick < 0) nextTick = clock.Tick + interval;
-        if (clock.Tick < nextTick) yield break;
-        nextTick = clock.Tick + interval;
-        MatchAction a = choose(system, seat);
-        if (a != null) yield return a;
+        this.level = level;
+        this.brain = brain;
     }
 
-    public void OnRejected(GameSystem system, MatchAction action)
+    public IEnumerable<MatchAction> RealtimeActions(GameSystem system, PlayerType seat)
+    {
+        List<MatchAction> res = new List<MatchAction>();
+        MatchClock clock = system.Match != null ? system.Match.Clock : null;
+        if (clock == null || (choose == null && brain == null)) return res;
+        int interval = system.Policy.CpuIntervalTicks(level);
+        if (clock.Tick < lastTick) Reset(); // 局面を読み込んで時間が戻った
+        lastTick = clock.Tick;
+        if (nextTick < 0) nextTick = clock.Tick + interval;
+
+        if (thinking)
+        {
+            if (!brain.PollThinking(system, out MatchAction result)) return res;
+            thinking = false;
+            nextTick = clock.Tick + interval; // 考え終わった時刻から数える（Prototype と同じ）
+            if (result != null)
+            {
+                result.Owner = seat;
+                res.Add(result);
+            }
+            return res;
+        }
+        if (clock.Tick < nextTick) return res;
+
+        if (choose != null)
+        {
+            nextTick = clock.Tick + interval;
+            MatchAction a = choose(system, seat);
+            if (a != null)
+            {
+                a.Owner = seat;
+                res.Add(a);
+            }
+            return res;
+        }
+        thinking = brain.BeginThinking(system, seat);
+        if (!thinking) nextTick = clock.Tick + 1; // 指せる手がない：次の tick にまた見る
+        return res;
+    }
+
+    // 考えている途中をやめて、間隔を数え直す
+    public void Reset()
+    {
+        if (thinking && brain != null) brain.CancelThinking();
+        thinking = false;
+        nextTick = -1;
+    }
+
+    public void OnRejected(GameSystem system, MatchAction action, string reason)
+    {
+    }
+
+    public void OnAction(GameSystem system, MatchAction entry)
     {
     }
 }

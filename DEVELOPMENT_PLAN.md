@@ -1,6 +1,6 @@
 # アルティメット将棋 開発予定
 
-最終更新: 2026-11-15
+最終更新: 2026-11-16
 目標: ゲーム出展型イベント『大阪ゲームダンジョン2』（2026-12-26）に試遊できる状態で出展する
 
 > この資料は「現状」「決まったこと」「今後入れる案」をまとめたものです。
@@ -12,7 +12,7 @@
 
 | 分類 | 内容 |
 |---|---|
-| 基本ルール | 9×9盤・通常の初期配置、駒の移動、持ち駒を打つ、二歩・行き所のない駒の禁止 |
+| 基本ルール | 9×9盤・通常の初期配置、駒の移動、持ち駒を打つ、二歩（成っていない歩だけを数える。2026-11-16 に Prototype に合わせた）・行き所のない駒の禁止 |
 | 成り | 実装済み。敵陣3段で成る／成らないを選択、行き所のない駒は強制的に成る、成った駒の動き（と金・竜王・竜馬など）も対応 |
 | 勝利条件 | 相手を詰ませたら勝ち（相手の王将が1枚のとき）。王将が2枚以上ある間は、すべて取ったら勝ち |
 | 王手・詰み | 王手の表示、詰み、打ち歩詰めの禁止、千日手（連続王手の千日手を含む）。王将が1枚のプレイヤーにのみ適用。王手放置は禁止しない（放置したら次の手で王将を取られて負け） |
@@ -25,13 +25,13 @@
 | 駒錬成・新駒 | エナジーを払って「火薬」（3）「狙撃手」（5）「鳥」（2）「巨人」（5）を錬成し、持ち駒に加える（手番は使わない）。火薬は踏まれると周囲3×3が爆発、狙撃手は王将以外の相手の駒を盤上のどこからでも撃てる、鳥は前の1×3だけに動く常に翼状態の駒、巨人は3×3マスを占めて前へまっすぐ1〜5マス動き、先頭の横3マスの相手の駒をまとめて取る HP 3 の駒（5-1・5-3）。ショップUIはまだなく、画面右上の錬成ボタン（Z・X・C・V キー）で錬成する |
 | 魔法スキル | Prototype の魔法スキルの仕組みを移植（5-5）。ランクは 通常／必殺／超常。対局前の編成画面で 通常×3・必殺×1・超常×1 を選び、自分の手番にエナジーを払って発動（魔法陣 → カットイン → 効果）。通常魔法は Prototype の「盾」「剣」「落とし穴」「壁」「翼」「ボム」（駒 → 狙うマスの2段階で選ぶ。2026-11-15 に Prototype の新しい仕様へ）「ワープ」「カウンター」（手番を使う）と、今までの「2回行動」「駒入替」「爆発」「王将複製」（手番を使わない）。動作確認用の「魔力の火花」はデバッグ用として定義だけ残し、編成では選べない（2026-11-15。Prototype のコミット 80dd2f9）。必殺魔法は Prototype の「ファランクス」「隕石」「破壊砲」（手番を使う）。「コスト獲得」は廃止。超常魔法は「天変地異」「世界の終わり」「アンデッド・パラダイス」「停止世界」（1対局に1回・解放条件あり。手番を使う） |
 | 画面遷移 | タイトル → 対戦モード（「2人で対戦」／「CPU と対戦」：先手か後手か・CPU の強さ）→ 魔法スキル編成（枠を押すと候補がカードで並ぶ。カードは説明の書き出しだけで、「詳細」で全文と補足をポップアップ。CPU と対戦では人の分だけ。2人で対戦では右上で戦闘型を選ぶ）→ 対局 → ゲームオーバー（勝者・引き分けを表示。CPU と対戦なら「あなたの勝利!」「CPU の勝利…」） → タイトル |
-| 戦闘型 | 「本将棋型」（今までの手番制）と「合戦将棋型」（手番のないリアルタイム制。Prototype から移植）を編成画面で選ぶ（5-11）。CPU と対戦・オンライン対戦・棋譜の再生は本将棋型だけ。違いは `MatchPolicy` の 1 か所に閉じ込めた |
+| 戦闘型 | 「本将棋型」（今までの手番制）と「合戦将棋型」（手番のないリアルタイム制。Prototype から移植）を編成画面で選ぶ（5-11）。CPU と対戦（CPU は一定の間隔で動く）・棋譜の記録と再生・局面の書き出しと読み込みは両方の戦闘型で使える（2026-11-16）。オンライン対戦は本将棋型だけ。違いは `MatchPolicy` の 1 か所に閉じ込めた |
 | ルール説明 | 対局中に「ルール」ボタン（Tab キー）で開閉するオーバーレイ（5-6）。錬成・必殺技・魔法の一覧は定義データから自動で並べる |
-| 対戦形式 | 同一PCでの2人対戦（キーボード操作。合戦将棋型はキーボードを左右に分けて両者が同時に操作）／CPU と対戦（本将棋型だけ。Lv0 ランダム・Lv1 ふつう・Lv2 つよい。5-9）／自作サーバーでのオンライン対戦（本将棋型だけ。移動・打つのみ同期。錬成・狙撃・必殺技はオンラインでは使えない。CPU も使わない） |
-| CPU | Prototype の CPU（`src/cpu/evaluate.js`・`search.js`・`CpuController.js`）を移植（5-9）。合法手（移動・打つ・必殺技・狙撃・魔法・解除）を GameObject なしの盤面（`BoardSnapshot`）で 1 つずつ試して評価する。考えている間も画面は止まらない（別スレッド。WebGL は 1 フレームずつ区切る）。対局の結果に関わる乱数は先読みしない |
+| 対戦形式 | 同一PCでの2人対戦（キーボード操作。合戦将棋型はキーボードを左右に分けて両者が同時に操作）／CPU と対戦（Lv0 ランダム・Lv1 ふつう・Lv2 つよい。5-9。合戦将棋型では CPU が Lv0 2.0 秒／Lv1 1.5 秒／Lv2 1.2 秒ごとに動き、人はキーボード全体で操作する。5-11）／自作サーバーでのオンライン対戦（本将棋型だけ。移動・打つのみ同期。錬成・狙撃・必殺技はオンラインでは使えない。CPU も使わない） |
+| CPU | Prototype の CPU（`src/cpu/evaluate.js`・`search.js`・`CpuController.js`）を移植（5-9）。合法手（移動・打つ・必殺技・狙撃・魔法・解除）を GameObject なしの盤面（`BoardSnapshot`）で 1 つずつ試して評価する。考えている間も画面は止まらない（別スレッド。WebGL は 1 フレームずつ区切る）。対局の結果に関わる乱数は先読みしない。合戦将棋型（手番がない）は CPU の席を手番にした写しの局面で先読みする（Prototype と同じ形） |
 | 行動（Action） | 操作はすべて「行動」（`MatchAction`。移動・打つ・必殺技・狙撃・魔法・錬成・停止世界の解除）にして `GameSystem.Dispatch` で実行する（5-7）。合戦将棋型では行動をキューに入れて次の tick で実行し、行動したプレイヤー（`owner`）と時刻（`t`）を残す。CPU・棋譜・討伐任務の土台 |
-| 局面の書き出し・ハッシュ | 今の局面を `MatchSnapshot`（JSON）に書き出し・読み込みできる（`GameSystem.ExportState` / `ImportState`）。盤面のハッシュ（`MatchHash`）を行動ごとに棋譜（`ActionHistory`）へ残す（5-8）。遊び方は変えていない |
-| 棋譜 | Prototype の棋譜を移植（5-10）。対局中の「棋譜」ボタン（K キー）と結果画面から JSON ファイル（`ultimate-shogi-日時.json`）に保存（本将棋型だけ。合戦将棋型はまだ記録しない）。読み込むと編成・シードで対局を始め直して行動を順に再生（等速・4倍速。再生中は操作できない）、各行動のあとの盤面のハッシュがずれたらその手で止める。再生のあとはその局面から続けて指せる。今の局面の書き出し・読み込み（5-8）もメニューから使える。ファイルの選択はエディターと Windows ビルド |
+| 局面の書き出し・ハッシュ | 今の局面を `MatchSnapshot`（JSON）に書き出し・読み込みできる（`GameSystem.ExportState` / `ImportState`）。盤面のハッシュ（`MatchHash`）を行動ごとに棋譜（`ActionHistory`）へ残す（5-8）。合戦将棋型は対局の時間・駒の連打の間隔・tick で数える炎上の期限・停止世界の経過も入る（ハッシュには時間と連打の間隔） |
+| 棋譜 | Prototype の棋譜を移植（5-10）。対局中の「棋譜」ボタン（K キー）と結果画面から JSON ファイル（`ultimate-shogi-日時.json`）に保存（合戦将棋型も。行動したプレイヤーと tick を記録し、再生は記録した tick に入れる）。読み込むと編成・シードで対局を始め直して行動を順に再生（等速・4倍速。再生中は操作できない）、各行動のあとの盤面のハッシュがずれたらその手で止める。再生のあとはその局面から続けて指せる。今の局面の書き出し・読み込み（5-8）もメニューから使える。ファイルの選択はエディターと Windows ビルド |
 
 **オンライン対戦のサーバー側**には、王手・詰み・千日手などの判定はまだ入っていない（クライアント側で判定している）。
 
@@ -766,9 +766,9 @@ Prototype の README「対戦モード・CPU」と同じ遊び方。タイトル
 - 評価値の「王の安全」は、王将が 1 枚のときだけ見る（Unity は王将が 2 枚以上なら王手・詰みがない。R-1）。超常魔法の「解放済み・未使用」は、超常魔法を編成しているときだけ数える。鳥・翼は Prototype の評価にもないので入れていない（巨人は Prototype と同じく入れた。5-3）。
 - 爆発（火薬・爆発の魔法）では王将を倒せない（10 章の決定。シミュレーションも同じ）。
 - 試す順番で、移動のうち相手の駒を取る手を必殺技・狙撃と同じ先頭に並べた（Prototype は移動をすべて同じ順位にしている。時間切れのときに取る手を試し終えているように）。
-- Prototype の合戦将棋型（リアルタイム）の CPU は、合戦将棋型が Unity にないので移していない。
+- 合戦将棋型の CPU は 5-11 の「CPU」に書いた（2026-11-16 に移した）。
 - Prototype は Web Worker で考える。Unity は別スレッド（WebGL は 1 フレームずつ区切る）。
-- 棋譜（Prototype の `src/game/kifu.js`。Unity では 9 章 Phase 6 の「棋譜の保存・再生」）はまだない。入れるときは、`MatchSetup`（モード・CPU の側・強さ）も棋譜に残し、再生のあとは 2人で対戦として続ける（Prototype と同じ）。CPU の手も `ActionHistory` に人の手と同じ形で残っている。
+- 棋譜は 5-10。CPU の手も `ActionHistory` に人の手と同じ形で残る。再生が終わると、今の対戦モードの設定（`MatchSetup`）で続ける（Prototype は 2人で対戦として続ける）。
 
 **Unity エディターでの確認手順**
 1. GameTitle シーンから再生 →「ゲームスタート」で対戦モードの画面が開く。「2人で対戦」で今までどおり編成画面（両者の枠）→ 対局になること。
@@ -794,7 +794,7 @@ Prototype の棋譜（`src/game/kifu.js`・`src/core/hash.js`・`src/controller/
 |---|---|
 | 棋譜メニュー | 画面の左下（「ルール」ボタンの上）の「棋譜 [K]」ボタン／K キー。この対局の棋譜を保存（.json）・棋譜を読み込んで再生・棋譜を読み込んで早送り再生（4倍速）・今の局面を書き出す（.json）・局面を読み込んで続きから指す。閉じる：K・Esc・Space・「閉じる」・枠の外をクリック。開いている間は対局の操作を受け付けない（再生も止まる） |
 | 保存 | 棋譜メニュー、または結果画面（右下）の「棋譜を保存」で、JSON ファイル `ultimate-shogi-日時.json` を保存する（日時は対局を始めた時刻（UTC）。Prototype と同じ）。保存先はファイルの保存ダイアログで選ぶ |
-| 棋譜の中身 | 版（`format`・`version`）・保存した日時・ゲームの版・対局の設定（`config`：基本対戦 × 本将棋型・先手）・両者の魔法スキルの編成（`loadouts`：枠の順の `SkillDefinition.Id`。空き枠は `""`）・乱数のシード（`seed`）・行動の列（`actions`：`MatchAction` の項目 ＋ `hash`）。デバッグキーでマスを変えた対局は `debugEdited` |
+| 棋譜の中身 | 版（`format`・`version`）・保存した日時・ゲームの版・対局の設定（`config`：基本対戦 × 戦闘型（本将棋型・合戦将棋型）・先手）・両者の魔法スキルの編成（`loadouts`：枠の順の `SkillDefinition.Id`。空き枠は `""`）・乱数のシード（`seed`）・行動の列（`actions`：`MatchAction` の項目 ＋ `hash`）。デバッグキーでマスを変えた対局は `debugEdited` |
 | ハッシュ | 各行動に、その行動の処理がすべて終わった時点の盤面のハッシュ（5-8 の `MatchHash`。`GameSystem.StateHash`。`ActionHistory` の `hash` と同じ計算） |
 | 再生 | ファイルを選ぶと、棋譜の編成・シードで対局を始め直し（Board シーンを読み込み直す）、行動を最初から順に `Dispatch` する（最初は 1.2 秒、各行動の前に 0.3 秒待つ）。再生中は操作できない。画面の上に「棋譜の再生中 N / M 手（等速・4倍速）」と「再生を止める」ボタン。結果画面の「棋譜を読み込んで再生」からも始められる |
 | ずれたとき | 各行動のあと、盤面のハッシュを棋譜と照らし合わせ、ずれたらその手で止めて「N 手目のあとの盤面が棋譜と一致しません」と出す。実行できない行動があったときも、その手で止めて何手目かを出す |
@@ -803,9 +803,11 @@ Prototype の棋譜（`src/game/kifu.js`・`src/core/hash.js`・`src/controller/
 | ファイルの選択 | Unity エディター（`EditorUtility` のダイアログ）と Windows ビルド（Windows のファイルダイアログ）。それ以外の環境は、保存は `Application.persistentDataPath/Kifu` に書き、読み込みはそのフォルダの一番新しい .json を読む（仮） |
 | オンライン対戦 | 記録しない（相手の端末の行動・魔法がまだ同期されていないため。棋譜メニューの保存・書き出し・読み込みも使えない） |
 | CPU と対戦 | 記録する。再生中は CPU は考えない（再生が両者の行動を出す）。再生が終わると、今の対戦モードの設定で続ける |
+| 合戦将棋型 | 記録する（2026-11-16）。行動に行動したプレイヤー `owner` と実行した tick `t`、棋譜に保存した時点の tick `endTick` が入る（Prototype の棋譜の版 2 と同じ）。ハッシュはその行動の処理の直後に取る。再生は棋譜の戦闘型・シード・編成で始め直し、両方の席に `RealtimeReplayController` を付けて記録した tick に記録した順で入れる（早送りは時間の進み方が 4 倍）。ずれた・実行できない・記録した tick を過ぎたらその手で止まる（5-11） |
 
 **Prototype との違い**
-- 棋譜の形式は Unity 版だけのもの（`format: "ultimate-shogi-unity-kifu"`）。座標の x と y が逆・魔法の名前が `SkillDefinition.Id`（`Shield` など）・行動の種類が数値・ハッシュに入れる項目が違うので、Prototype の棋譜は読めない（読もうとすると理由を出す）。
+- 棋譜の形式は Unity 版だけのもの（`format: "ultimate-shogi-unity-kifu"`）。座標の x と y が逆・魔法の名前が `SkillDefinition.Id`（`Shield` など）・行動の種類が数値・ハッシュに入れる項目が違うので、Prototype の棋譜はゲームの中では読めない（読もうとすると理由を出す）。
+  ただし単体テスト（`Tests/SnapshotTests/KassenTests.cs`）は Prototype の `tests/kifus/kassen-1.json`・`kassen-2.json` を座標・魔法の名前を直して `BoardSimulator` で再生し、Prototype の hash.js と同じ文字列（`PrototypeHashText`）のハッシュが全行動で一致することを確かめている（5-11）。
 - 局面の書き出しは、演出中・再生中はできない（時間停止中は書き出せる。5-8）。Prototype の exportState はいつでも書き出せる。
 - Prototype は局面の書き出し・読み込みがコンソールの API だけだが、Unity にはコンソールがないので棋譜メニューのボタンにした。
 - 「再生を止める」ボタンを足した（Prototype は「最初から」で中断する）。止めた局面から続けて指せる。
@@ -868,7 +870,9 @@ Prototype の棋譜（`src/game/kifu.js`・`src/core/hash.js`・`src/controller/
 | 経過時間・一時停止 | 画面の上に「合戦将棋型　経過 m:ss」と「一時停止 [Esc]」ボタン。ルール説明を開いている間・ウィンドウが非アクティブの間も止まる（時間も入力も止まる。止めている間は画面を暗くして理由を出す） |
 | 2回行動 | 使えない（手番がないので意味がない。ボタンは押せない） |
 | オンライン対戦 | 使えない（オンライン対戦は本将棋型だけ。行動のキュー・tick は通信に乗せていない。既存の手番を使う魔法と同じ扱い） |
-| CPU | Unity 側にはまだ CPU がない。席を任せる口（`IRealtimeSeatController`）と、一定の間隔（Lv0 2.0 秒／Lv1 1.5 秒／Lv2 1.2 秒）で動かす `RealtimeCpuPacer` を用意した。CPU が入ったら、その「次の一手」を返す関数を `RealtimeCpuPacer` に渡して `GameSystem.SetSeatController` で席に付ける |
+| CPU | CPU と対戦で合戦将棋型を選べる（2026-11-16。下の「CPU」）。CPU の席には `RealtimeCpuPacer` が付き、Lv0 2.0 秒／Lv1 1.5 秒／Lv2 1.2 秒ごとに 1 回動く。人はキーボード全体で自分の席を操作する |
+| 棋譜 | 記録・保存・再生できる（2026-11-16。下の「棋譜」。5-10） |
+| 局面の書き出し・読み込み | 使える（2026-11-16。対局の時間・連打の間隔・炎上の期限・停止世界の経過も入る。下の「局面の書き出し・読み込み」） |
 
 **入力の割り当て**（Prototype はマウスで「自分の駒・自分の持ち駒・自分のパネルのボタンを選べばその人の行動」。Unity はキーボード操作なので、キーボードを左右に分けて席ごとにカーソルを持たせた）
 
@@ -912,12 +916,49 @@ Prototype の棋譜（`src/game/kifu.js`・`src/core/hash.js`・`src/controller/
 - ルールとの関係：`EnemyZoneDropLockRule` は `MatchPolicy.IsDropLocked`、`UchifuzumeRule` は `MatchPolicy.ForbidsUchifuzume` を見る（`Rules/GameRules.cs`）。炎上の期限は `BoardCells.SetBurningUntil`（単位は戦闘型で違う。鎮火は本将棋型がターンの終わり、合戦将棋型が毎 tick に `ExtinguishExpired(MatchPolicy.Now)`）。世界の終わりの開始時刻も `MatchPolicy.Now`。
 - ルール説明：「戦闘型」のページ（`RulesBook.RulesetPage`）は `BattleRulesets.All` と各定義の秒数から作る。「操作」のページに合戦将棋型の席のキー（`SeatKeys`）も載る。
 - 合戦将棋型ではマスのデバッグキー（`CellDebugTool` の 1・2・3・0）は使わない（数字キーを魔法に使うため）。
-- 動作確認：Unity がない環境で、Unity の参照 DLL と UI・TMPro・InputSystem のスタブを使ってスクリプト全体のコンパイルを確かめ、`MatchPolicy` の数値（6 tick・60 秒＝1200 tick・炎上 10 ターン＝400 tick・停止世界 200 tick・自動行動 60 tick・世界の終わり 200 tick・CPU の間隔 40／30／24 tick）を Prototype の `tests/core/kassen.test.js` と同じになるか確かめた。Unity エディターでの動作確認はまだ（9 章）。
+- 動作確認（2026-11-16）：`Tests/SnapshotTests` を `dotnet run`（16449 件・失敗 0。`KassenTests.cs`：kassen.test.js を移したもの・合戦将棋型の CPU・ハッシュと局面の往復・Prototype の棋譜 kassen-1（253 手）・kassen-2（137 手）の全行動のハッシュが一致）。Unity エディターがない環境で、Unity 2021.3 の参照 DLL（NuGet の UnityEngine.Modules に `MonoBehaviour.destroyCancellationToken` を Mono.Cecil で足したもの）・DOTween.dll（Modules のソースも）と、UI・EventSystems・TMPro・InputSystem・`Awaitable`・UnityEditor のスタブ・NUnit で、`Assets/Scripts`・`Assets/Editor`・`Assets/Tests` の全スクリプトが、そのまま・`UNITY_EDITOR`・`UNITY_STANDALONE_WIN` の 3 通りでコンパイルできることを確かめた。エディターでの確認はまだ（下の手順 17〜24）。
+- 動作確認（前回）：Unity がない環境で、Unity の参照 DLL と UI・TMPro・InputSystem のスタブを使ってスクリプト全体のコンパイルを確かめ、`MatchPolicy` の数値（6 tick・60 秒＝1200 tick・炎上 10 ターン＝400 tick・停止世界 200 tick・自動行動 60 tick・世界の終わり 200 tick・CPU の間隔 40／30／24 tick）を Prototype の `tests/core/kassen.test.js` と同じになるか確かめた。Unity エディターでの動作確認はまだ（9 章）。
+
+**CPU（2026-11-16。Prototype の `src/controller/CpuController.js` の `realtimeActions`・`src/cpu/search.js`）**
+- 対戦モードの画面で「CPU と対戦」→ 編成画面の右上で戦闘型を選ぶ（CPU と対戦でも `BattleRulesetPicker` を出す。合戦将棋型を選ぶと、説明に CPU の間隔も出る）。
+- 対局の始めに `GameSystem.SetupRealtimeControllers` が CPU の席に `RealtimeCpuPacer`（`GameSystem.Realtime.cs`）を `SetSeatController` で付ける。思考は `CpuPlayer`（`IRealtimeCpuBrain`）。
+  - 前の行動を決めてから `MatchPolicy.CpuIntervalTicks(level)`（40／30／24 tick）たったら、`CpuPlayer.BeginThinking` がその席の合法手（`GameSystem.LegalActions(seat)`。合戦将棋型はその席に切り替えて調べ、`owner` を付ける）と、`current` をその席にした写しのスナップショットを作り、本将棋型と同じく別スレッド（WebGL は 1 フレームに 6 ミリ秒ずつ）で `CpuSearch` を回す。考えている間も時間は進む。
+  - 考え終わった tick に行動を返す（`owner` つき）。その tick の局面で `PlanAction` し直し、実行できなければ捨てる（Prototype と同じ）。次に考え始めるのは考え終わった時刻から数える。指せる手がなければ次の tick にまた見る。局面を読み込んで時間が戻ったら数え直す。
+  - 本将棋型の「1 手に 0.6 秒以上かける」はない（間隔が代わり）。CPU の席の案内文（「考えています」・選んだ行動）は HUD の席のパネルに出る。
+- 先読み（`CpuSearch`）は Prototype の search.js と同じ形：手番のない局面では `current` を CPU の席にして渡す。手を試した局面は「次は相手が動ける」として `current` を相手にしてから評価する（Lv2 の相手の応手は相手の席の合法手で近似）。停止世界のロールアウトでは `current` を CPU の席に戻す。時間（Tick）は先読みしない。
+- 人の席はキーボード全体（`SeatKeys.KassenSolo`：カーソル WASD・矢印、決定 F・Enter、取消 Space・BackSpace、H 持ち駒、E 必殺技、G 狙撃、Q 解除、R 向き、Z・X・C・V 錬成、1〜5 魔法）。操作中の席はいつも人の席。CPU の席は操作できない（`CanSeatOperate`）。盤は回さない（先手の側から見る。Prototype と同じ）。
+- HUD の CPU の席のパネルは、キーの代わりに強さと間隔（「考え中」）を出す。
+
+**棋譜（2026-11-16。Prototype の `src/match/RealtimeMatch.js`・`RealtimeReplayController.js`・`src/game/kifu.js` の版 2）**
+- 記録：`RecordAction` が行動に `owner` と `t`（`Clock.Tick`）を付けて `ActionHistory` と棋譜（`KifuEntry.t`）に残す。ハッシュは `RunRealtimeAction` が行動の処理（`AfterRealtimeAction`）の直後、次の行動・次の tick の前に取る（Prototype の `entry.hash = hashState(s)`。フレームの長さに左右されない）。棋譜の `config.ruleset` は `kassen`、保存した時点の tick は `endTick`。
+- 再生：`ReplayKifu` → Board シーンを読み込み直し、`GameSystem.Start` が棋譜の戦闘型（`ReplayRuleset`）・シード・編成で対局を始め、`BeginRealtimeReplay` が両方の席に `RealtimeReplayController` を付ける。記録した tick に記録した順で行動を入れ（`PlanAction` は `replayDispatching` で通す）、行動ごとに `OnAction` でハッシュを照らし合わせる。ずれた・実行できない（`OnRejected`）・記録した tick を過ぎた・最後まで再生した・途中で対局が終わったら `EndReplay`：再生の Controller を外し、CPU と対戦なら CPU の席に CPU を付け直す（その局面から続けて指せる）。
+- 早送りは時間の進み方（1 フレームの上限 250ms をかけてから 4 倍。Prototype の `speed`）と `Time.timeScale`。棋譜メニューを開いている間は時間も止まる。
+- `IRealtimeSeatController` に `OnAction`（実行した行動。ハッシュつき）と `OnRejected` の理由を足した。
+
+**局面の書き出し・読み込み（2026-11-16）**
+- `MatchSnapshot` に戦闘型 `ruleset` と時間 `clock`（`tick`・`time`）、`PieceSnapshot.cooldownUntil`（連打の間隔が終わる tick。`GamePiece.cooldownUntilTick`）、`TimeStopSnapshot.elapsed`（止まってからの tick）を足した。炎上の期限（`CellSnapshot.burnUntil`）と世界の終わりの発動時刻は合戦将棋型では対局の時間の tick のまま入る。版は 1 のまま（足した項目がない JSON は本将棋型）。
+- `MatchHash` は本将棋型でない戦闘型のとき、時間停止の次に `["versus","kassen",null]`・`[tick, 対局の時間]`・連打の間隔 `[[x, y, 終わる tick], …]`（段 → 筋の順）を足す（Prototype の hash.js の extraParts。ボス・討伐任務の項目は Unity にないので入れない）。本将棋型のハッシュは変わらない。
+- `GameSystem.Kifu.cs`・`GameSystem.State.cs` の「合戦将棋型ではまだ使えません」を外した。読み込みは、局面の戦闘型が対局の戦闘型と同じときだけ（`MatchSnapshotIO.RulesetMismatch`）。読み込む前に両方の席の選択とまだ実行していない行動のキューを捨てる。
+- `BoardSnapshot` にも `ruleset`・`clockTick`・`clockTime`・`timeStopElapsed`・`SnapshotPiece.cooldownUntil` を足した（`CaptureSnapshot` が入れる）。
+
+**CPU 用のシミュレーション（2026-11-16。`Match/BoardSimulator.Realtime.cs`）**
+- `BoardSimulator` が合戦将棋型の局面を扱う：行動するプレイヤーは `owner`（`ActorOf`）、合法手はどちらの席でも返して `owner` を付ける（相手の時間停止中は空）、動いたばかりの駒の移動・狙撃・必殺技は出さない、敵陣への打ち込み禁止は開始から 60 秒（`IsDropLocked`）、打ち歩詰めは禁止しない、2回行動は使えない。
+- 行動のあと（`AfterRealtimeAction`）：手数 +1 → 動いた駒に連打の間隔 → 停止世界の回数（錬成は数えない）→ 勝敗 → 超常魔法の解放。手番は交代しない。
+- `Tick`：tick +1 → 停止世界の間は止まった時間だけ数えて 10 秒で解除 → 対局の時間 +1 → 毎秒のエナジー → 鎮火 → 世界の終わり（10 秒ごと）→ ファランクス・アンデッド（3 秒ごと。先手 → 後手）→ 解放の判定（1 秒ごと）。`GameSystem.RealtimeTick` と同じ順。
+- 炎上の期限・世界の終わりの発動時刻は `Now`（合戦将棋型は対局の時間）。停止世界の発動で `timeStopElapsed = 0`。
+- 魔法「魔力の火花」（`MagicKind.Spark`。盤面への効果はない）をシミュレーションに足した（Prototype の棋譜が使っているため。編成では選べないので CPU は使わない）。
+- エディターのシミュレーションの照合（`[Snapshot]`）は合戦将棋型でも行う（行動の処理の直後、次の tick の前に比べる）。
+
+**Prototype との違い（2026-11-16 に Prototype の棋譜で照らし合わせて直したもの・残したもの）**
+- 二歩：Unity は成った歩も数えていたので、Prototype（と本将棋）と同じく成っていない歩だけを数えるようにした（`NifuDropRule`・`BoardSimulator.CanDropTo`。本将棋型も変わる）。
+- 3×3 の範囲の駒を消す順（隕石・ボム・爆発・火薬）を Prototype の `squareArea`・`explode` と同じにした（Prototype の段 y = 0 から＝ Unity の x の大きい方から、筋の小さい方から。火薬に入った駒は中心のマスの駒の前）。倒された初期配置の駒の記録の順（ハッシュに入る）が Prototype と同じになる。
+- Prototype の移動は成れるなら必ず成る。Unity は選べる（棋譜の再生のテストでは「成れるなら成る」に直して当てはめる）。
+- 合戦将棋型の CPU と対戦で人が後手でも盤は回さない（Prototype も回さない）。人はキーボード全体を使う（Prototype はマウス）。
+- 再生が終わったら、今の対戦モードの設定で続ける（Prototype は人に戻す）。
 
 **未実装**
-- CPU（Unity 側に CPU 自体がない。入ったら `RealtimeCpuPacer` に渡す）
-- 棋譜の保存・読み込みの UI（行動の列・シードは残しているので、`RealtimeReplayController` に渡し、`MatchSetup.Seed` を同じにすれば再生できる）
 - 駒ごとの連打の間隔の見た目（Prototype にもない）
+- Prototype の棋譜をゲームの中で読み込む（今はテストだけ）
 
 **Unity エディターで確かめる手順**（9 章 Phase 6 のタスク）
 1. コンパイル：Unity でプロジェクトを開き、Console にエラーが出ないこと（新しいスクリプトの .meta も入れてある）。
@@ -934,8 +975,19 @@ Prototype の棋譜（`src/game/kifu.js`・`src/core/hash.js`・`src/controller/
 12. 一時停止：Esc（ボタン）で暗くなって「一時停止中」、時間とカーソル・キーが止まること。もう一度 Esc で再開。Tab でルール説明を開いている間・Game ビューの外をクリックしてウィンドウが非アクティブの間も止まること。ルール説明を Esc で閉じても一時停止にならないこと。
 13. 勝敗：王将を取ると（必殺技・ファランクス・アンデッドでも）その時点で勝ち。王手の表示・詰み・千日手が出ないこと。火薬・爆発では王将が倒れないこと。
 14. ルール説明：Tab で「戦闘型」のページに本将棋型・合戦将棋型の説明と秒数、「この対局」の印。「操作」のページに先手・後手のキーが出ること。
-15. 棋譜：Console の `[Action] t=… [先手]／[後手] …  {"…","owner":0,"t":…}` に行動したプレイヤーと tick が出ること。
+15. 棋譜：Console の `[Action] t=… [先手]／[後手] …  {"…","owner":0,"t":…}` に行動したプレイヤーと tick が出ること。続けて `[Action] … のあとの盤面のハッシュ` が同じ tick のうちに出ること。
 16. 表示の位置：HUD の左のパネル・上の帯が、スキルボタン・錬成パネル・ルールボタン・持ち駒の表示・案内文と重ならないこと（重なるなら `RealtimeHudView` の位置を調整する）。
+
+（2026-11-16 に足した分：CPU・棋譜・局面の書き出し）
+
+17. CPU と対戦の編成画面：タイトル →「CPU と対戦」→ 後手・Lv1 →「編成へ」。右上に戦闘型の選択が出て、CPU の枠の「CPU は魔法を自分で選びます」・先手の枠・対局開始ボタンと重ならないこと。「合戦将棋型」を押すと説明に「CPU（Lv1 ふつう）は 1.5 秒ごとに動く」が出ること。
+18. 合戦将棋型の CPU と対戦：対局が始まると、左の後手のパネルが「（CPU）」で、キーの代わりに「Lv1 ふつう：1.5 秒ごとに動く」と出ること。CPU が約 1.5 秒ごとに 1 回動き（考えている間も時間・エナジーが進み、画面が止まらない）、Console に `[CPU] 後手（Lv1 ふつう）：…` が出ること。人は WASD／矢印・F／Enter・Space／BackSpace・H・E・G・Q・R・1〜5・Z〜V のどれでも先手を操作でき、後手（CPU）の駒は動かせないこと。`[Snapshot] シミュレーションの予測と一致` が出て、違うという警告が出ないこと。
+19. Lv0（2.0 秒）・Lv2（1.2 秒）でも 1 局ずつ。人を後手にしても（盤は回らない）CPU の先手が動き、王将を取って結果画面に「あなたの勝利!」か「CPU（…）の勝利…」が出ること。CPU が停止世界を使うと、その間は人が動けず、CPU が何回か動いてから解除する（10 回か 10 秒）こと。Build Settings を WebGL にしても考えている間に画面が止まらないこと。
+20. 合戦将棋型の棋譜の保存：2人で対戦の合戦将棋型で、移動・打つ・魔法・必殺技・錬成・隕石・停止世界を混ぜて 1〜2 分指し、K →「この対局の棋譜を保存」。メニューの見出しが「この対局：N 手（合戦将棋型）」で、保存した JSON の `config.ruleset` が `kassen`、各行動に `owner`・`t`・`hash`、`endTick` が入っていること。結果画面の「棋譜を保存」でも保存できること。
+21. 合戦将棋型の棋譜の再生：「棋譜を読み込んで再生」→ 合戦将棋型で始め直り、両方の席のパネルが「（棋譜の再生）」で、記録した時刻どおりに行動が再生されること（キーでは操作できない）。最後に「全 M 手の盤面が棋譜と一致した」と出て、その局面から続けて指せること。早送り（4倍速）でも最後まで一致すること。途中の `hash` を 1 つ書き換える・`t` を前にずらすと、その手で止まって理由が出ること。CPU と対戦の棋譜を再生したあとは、CPU の席に CPU が戻ること。
+22. 合戦将棋型の局面の書き出し・読み込み：対局の途中（経過 1 分ほど・炎上中のマスあり・動かしたばかりの駒あり・停止世界の途中）で「今の局面を書き出す」→ 少し指してから「局面を読み込んで続きから指す」で、経過時間・エナジー・炎上の残り秒・停止世界の残り秒／回数・選んでいた駒の取り消しが戻ること。Console の「局面を読み込みました（合戦将棋型　経過 m:ss・tick …）」のハッシュが、書き出したときのハッシュと同じこと。本将棋型の対局で合戦将棋型の局面を読み込むと理由が出ること。
+23. 本将棋型の棋譜・局面が今までどおり再生・読み込めること（5-10 の手順 4〜9。二歩の判定を変えたので、成った歩（と金）がある筋に歩を打てることも確かめる）。
+24. Test Runner の EditMode テストに `CheckKassenStateRoundTrip` が出て通ること。
 
 **合法手（`GameSystem.LegalActions(player)`。Prototype の `legalActions`）**
 - そのプレイヤーが今選べる行動をすべて返す。`CanDispatch` で実行できる行動と同じになるように、判定は `PlanAction` と同じ部品（`IsPromoteChoiceAllowed`・`CanDropPieceTo`・`SpecialBlockReason`・`SnipeBlockReason`・`SkillBlockReason`・`IsSkillTargetSelectable`・`ForgeBlockReason`・`ReleaseBlockReason`）を使っている。手番でない・演出中・オンライン対戦の相手の手番なら空。
@@ -962,11 +1014,12 @@ GameObject に依存しない対局の状態（`BoardSnapshot`）と、それに
 - デバッグキー `L` は、スナップショットの合法手が `GameSystem.LegalActions` と同じか・JSON にして読み戻しても同じかも確かめる。
 - **単体テスト**：`Tests/SnapshotTests`（Unity の外で動かす。.NET 8 SDK があれば、そのフォルダで `dotnet run`）。`PieceMoves` が移す前の各駒のクラス（`OracleMain.cs`）と全マスで同じか、ランダムな 6000 局面で `BoardSimulator`・`SnapshotRules` が今のルール（`GameRules.cs`）と同じ判定か、当てはめたときの取り・盾・火薬・成り・炎上・手番などの結果、JSON の往復、ランダムに 400 局指し続けても壊れないかを確かめる。必殺技・魔法・CPU は `SkillCpuTests.cs`、カウンターは `CounterTests.cs`。
 
-**ほかの機能との組み合わせ（ブランチ統合のときに決めたこと）**
-- CPU と対戦は本将棋型だけ（CPU は手番のある `BoardSnapshot` で先読みするため）。CPU と対戦の編成画面には戦闘型の選択を出さず、`GameSystem` も本将棋型にする。合戦将棋型の CPU は `IRealtimeSeatController`（`RealtimeCpuPacer`）でつなぐ。
-- 棋譜（5-10）は本将棋型だけ記録する（合戦将棋型の行動は時刻 `t` で決まるが、`StepReplay` は手番ごとに出すため）。棋譜を再生するときは本将棋型で始める。
-- 局面の書き出し・読み込み（5-8）は合戦将棋型ではまだ使えない（対局の時間・連打の間隔・tick で数える炎上の期限を `MatchSnapshot` に入れていないため）。行動ごとのハッシュは残る。
-- 盤面のシミュレーションの照合（5-9。エディターの `[Snapshot]`）は合戦将棋型では行わない。
+**ほかの機能との組み合わせ（ブランチ統合のときに決めたこと。2026-11-16 に更新）**
+- CPU と対戦は両方の戦闘型で使える。CPU と対戦の編成画面にも戦闘型の選択を出す。合戦将棋型の CPU は `RealtimeCpuPacer`（上の「CPU」）。
+- 棋譜（5-10）は両方の戦闘型で記録する。棋譜を再生するときは棋譜の戦闘型で始める（本将棋型は `StepReplay`、合戦将棋型は `RealtimeReplayController`）。
+- 局面の書き出し・読み込み（5-8）は両方の戦闘型で使える（同じ戦闘型の対局にだけ読み込める）。
+- 盤面のシミュレーションの照合（5-9。エディターの `[Snapshot]`）は合戦将棋型でも行う。
+- オンライン対戦は今までどおり本将棋型だけ。
 
 ---
 
@@ -1182,7 +1235,7 @@ GameObject に依存しない対局の状態（`BoardSnapshot`）と、それに
 - [x] CPU（Lv0〜Lv2。`CpuSearch`・`CpuEvaluate`・`CpuPlayer`）と対戦モードの画面（`ModeSelectView`）、CPU の編成（`CpuLoadout`）。単体テスト `SkillCpuTests.cs`（5-9）
 - [ ] Unity エディターでの動作確認（5-9 の「Unity エディターでの確認手順」1〜8）
 - [ ] CPU の強さ・考える時間の調整（試遊で、Lv1 が強すぎ／弱すぎないか。`CpuPlayer.TimeLimitMs`・`MinThinkSeconds`、評価の重み `CpuEvaluate`）
-- [ ] 棋譜の保存と再生に CPU と対戦の設定（`MatchSetup`）を入れ、再生のあとは 2人で対戦として続ける（棋譜を入れるとき）
+- [ ] 棋譜の保存と再生に CPU と対戦の設定（`MatchSetup`）を入れる（今は再生のあと、今の対戦モードの設定で続ける）
 - [x] 局面の書き出し・読み込み（`MatchSnapshot`・`GameSystem.ExportState` / `ImportState`）と盤面のハッシュ（`MatchHash`）、行動ごとのハッシュ（`MatchAction.hash`）。EditMode テスト（5-8）
 - [ ] Unity エディターでの動作確認（Test Runner の EditMode テストが通ること・テストが一覧に出ること、右クリックメニューでの書き出し → 読み込みで盤・持ち駒・エナジー・スキルボタン・マス・停止世界の表示・世界の終わりの表示が戻ること、読み込んだ局面から続けて指せること、Console の行動ごとのハッシュの行）
 - [x] 棋譜（5-10）：記録・各行動のあとの盤面のハッシュ（`MatchHash`）・JSON ファイルへの保存（棋譜メニュー・結果画面）・読み込んで再生（等速・4倍速・ずれたらその手で止める・再生のあとは続けて指せる）
@@ -1192,7 +1245,8 @@ GameObject に依存しない対局の状態（`BoardSnapshot`）と、それに
 - [ ] Windows ビルドでのファイルダイアログの確認
 - [ ] ほかの環境（Mac・WebGL など）のファイルの選択（今は `persistentDataPath/Kifu` の一番新しいファイルを読むだけ）
 - [ ] タイトル画面・編成画面からの棋譜の再生（Prototype はタイトル・対戦モード・編成画面からも開ける）
-- [ ] 回帰棋譜（Prototype の `tests/kifus/` に当たるもの）を作り、自動テスト（Unity Test Framework の PlayMode テストで棋譜を再生して全手のハッシュの一致を見る）を足す
+- [x] Prototype の回帰棋譜 `tests/kifus/kassen-1.json`・`kassen-2.json` を `BoardSimulator` で再生し、全行動のハッシュが Prototype と一致することを確かめる単体テスト（`Tests/SnapshotTests/KassenTests.cs`。2026-11-16）
+- [ ] 回帰棋譜（Unity の棋譜）を作り、自動テスト（Unity Test Framework の PlayMode テストで棋譜を再生して全手のハッシュの一致を見る）を足す
 - [x] 戦闘型の定義（`BattleRuleset`・`BattleRulesets`）とポリシー（`MatchPolicy`）。戦闘型の違いはポリシーの 1 か所に閉じ込め、各処理は戦闘型の Id を見ない（5-11）
 - [x] 編成画面で本将棋型・合戦将棋型を選ぶ（`BattleRulesetPicker`・`MatchSetup`）
 - [x] 合戦将棋型：固定刻み（50ms）のゲームループ・行動のキュー（次の tick で実行。`owner` と `t` を残す）・毎秒のエナジー・連打の間隔・ターン数の読み替え（打ち込み禁止 60 秒・炎上 2 秒／ターン・世界の終わり 10 秒・自動行動 3 秒・停止世界 10 回か 10 秒）・カットインなしで演出を待たない実行（`GameSystem.Realtime.cs`）
@@ -1201,9 +1255,10 @@ GameObject に依存しない対局の状態（`BoardSnapshot`）と、それに
 - [x] 合戦将棋型の勝敗：王将をすべて倒したら勝ち（詰み・千日手・王手の表示・打ち歩詰めの禁止はなし）
 - [x] ルール説明に「戦闘型」のページと合戦将棋型のキー
 - [x] 合戦将棋型の CPU の接続口（`IRealtimeSeatController`・一定の間隔で動かす `RealtimeCpuPacer`）と棋譜の再生（`RealtimeReplayController`・`MatchSetup.Seed`）
-- [ ] Unity エディターでの動作確認（合戦将棋型。5-11 の「Unity エディターで確かめる手順」1〜16）
-- [ ] CPU を合戦将棋型の席に付ける（今は CPU と対戦なら本将棋型にしている。`RealtimeCpuPacer`。Lv0 2.0 秒／Lv1 1.5 秒／Lv2 1.2 秒）
-- [ ] 合戦将棋型の棋譜（今は記録しない。行動の `owner`・`t` とシードを残し、再生は `RealtimeReplayController` で）・局面の書き出し（対局の時間・連打の間隔を `MatchSnapshot` に入れる）
+- [ ] Unity エディターでの動作確認（合戦将棋型。5-11 の「Unity エディターで確かめる手順」1〜24）
+- [x] CPU を合戦将棋型の席に付ける（`RealtimeCpuPacer` ＋ `CpuPlayer`。Lv0 2.0 秒／Lv1 1.5 秒／Lv2 1.2 秒。先読みは手番のない局面でも使える。CPU と対戦の編成画面にも戦闘型の選択。2026-11-16）
+- [x] 合戦将棋型の棋譜（行動の `owner`・`t`・ハッシュの記録・保存・`RealtimeReplayController` での再生と照合）・局面の書き出し（対局の時間・連打の間隔・炎上の期限・停止世界の経過を `MatchSnapshot` に入れる）・CPU 用のシミュレーション（`BoardSimulator.Realtime.cs`）（2026-11-16）
+- [ ] CPU の合戦将棋型の強さの調整（試遊で。間隔 `BattleRuleset.CpuIntervalSec`・考える時間 `CpuPlayer.TimeLimitMs`）
 - [ ] 合戦将棋型をオンライン対戦に乗せるか決める（今は本将棋型だけ）
 
 ### Unity エディターでの確かめ方：ボム・ワープ・魔力の火花

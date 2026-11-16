@@ -14,6 +14,9 @@ using System.Collections.Generic;
 // ・停止世界（時間停止）の中では、1 回の行動ごとに「その行動のあと時間停止を解除したらどうなるか」で評価する。
 //   停止世界そのものを使う手は、時間停止中の行動を Lv1 で続けて試してから評価する（時間が許せば）。
 //   時間停止中の効果は、シミュレーションでは予定にせずすぐ起こす近似（BoardSimulator.ApplyForSearch）
+// ・合戦将棋型（手番がない。BoardSnapshot.IsRealtime）：current を CPU の席にした局面を渡す（CpuPlayer）。手を試した局面は
+//   「次は相手が動ける」として current を相手にしてから評価する（Lv2 の相手の応手は、相手の席の行動の一覧で近似する。Prototype と同じ）。
+//   時間（Tick）は進めない（連打の間隔・毎秒のエナジー・自動行動は先読みしない）
 //
 // 画面を止めないように、思考は Step を呼ぶたびに少しずつ進む（手を 1 つ試すごとに区切る）。
 // 別スレッドなら Step を最後まで呼び続け（Run）、スレッドが使えない環境（WebGL）では 1 フレームに数ミリ秒ずつ呼ぶ（CpuPlayer）
@@ -234,13 +237,22 @@ public sealed class CpuSearch
         Simulated++;
         BoardSnapshot c = s.Clone();
         PlayerType actor = s.Current;
+        bool rt = s.IsRealtime;
         c.rngState = (uint)(rng.Next() * 4294967296.0); // 結果の乱数を先読みしない
         if (!BoardSimulator.ApplyForSearch(c, a)) return null;
-        if (c.timeStopped && c.timeStopOwner == (int)actor && c.Current == actor && !c.gameOver && !IsTimeStopCast(s, a))
+        if (c.timeStopped && c.timeStopOwner == (int)actor && (rt || c.Current == actor) && !c.gameOver && !IsTimeStopCast(s, a))
         {
-            BoardSimulator.ApplyForSearch(c, MatchAction.ReleaseTimeStop());
+            BoardSimulator.ApplyForSearch(c, Owned(MatchAction.ReleaseTimeStop(), c, actor));
         }
+        if (rt && !c.gameOver) c.current = (int)BoardZones.Opponent(actor); // 合戦将棋型：次は相手が動けるとして評価する
         return c;
+    }
+
+    // 合戦将棋型の行動には、行動するプレイヤーを付ける
+    static MatchAction Owned(MatchAction a, BoardSnapshot s, PlayerType owner)
+    {
+        if (s.IsRealtime) a.owner = (int)owner;
+        return a;
     }
 
     static bool IsTimeStopCast(BoardSnapshot s, MatchAction a)
@@ -252,6 +264,7 @@ public sealed class CpuSearch
     IEnumerator<bool> TimeStopRollout(BoardSnapshot c0, Holder<BoardSnapshot> result)
     {
         BoardSnapshot c = c0.Clone();
+        if (c.IsRealtime) c.current = (int)me; // 合戦将棋型：Simulate が相手にした手番を戻す
         for (int i = 0; i < 20 && c.timeStopped && c.Current == me && !c.gameOver && !OutOfTime; i++)
         {
             MatchAction bestAction = null;
@@ -270,8 +283,9 @@ public sealed class CpuSearch
             }
             if (bestAction == null || bestAction.type == MatchActionType.ReleaseTimeStop) break;
             BoardSimulator.ApplyForSearch(c, bestAction);
+            if (c.IsRealtime) c.current = (int)me;
         }
-        if (c.timeStopped && c.Current == me) BoardSimulator.ApplyForSearch(c, MatchAction.ReleaseTimeStop());
+        if (c.timeStopped && c.Current == me) BoardSimulator.ApplyForSearch(c, Owned(MatchAction.ReleaseTimeStop(), c, me));
         result.Value = c;
     }
 

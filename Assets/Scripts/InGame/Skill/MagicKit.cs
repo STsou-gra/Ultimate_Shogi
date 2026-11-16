@@ -109,10 +109,12 @@ public static class MagicKit
     }
 
     // (cx, cy) を中心とした (2r+1)×(2r+1) のうち盤内のマス（Prototype の squareArea）
+    // 並びは Prototype の squareArea と同じ（Prototype の段 y = 0（後手の奥）から＝ Unity の x の大きい方から、筋 y の小さい方から）。
+    // 範囲の駒を消す順（倒された初期配置の駒の記録の順）がこの並びになる
     public static List<Vector2Int> SquareArea(int cx, int cy, int r = 1)
     {
         List<Vector2Int> result = new List<Vector2Int>();
-        for (int x = cx - r; x <= cx + r; x++)
+        for (int x = cx + r; x >= cx - r; x--)
         {
             for (int y = cy - r; y <= cy + r; y++)
             {

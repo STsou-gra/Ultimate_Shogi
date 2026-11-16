@@ -30,6 +30,7 @@ public static partial class BoardSimulator
         SpecialKind kind = SpecialOf(s, p);
         if (kind == SpecialKind.None) return "必殺技がありません";
         if (kind == SpecialKind.Unknown) return "シミュレーションできない必殺技です";
+        if (IsCoolingDown(s, p)) return "動いたばかりの駒です";
         if (!s.IsSpecialReady(p)) return "まだ必殺技を使えません";
         if (p.frozen) return "消失・爆発の予定がある駒は動かせません";
         if (s.online) return "オンライン対戦ではまだ使えません";
@@ -335,6 +336,7 @@ public static partial class BoardSimulator
         if (p.energy < skill.cost) return "エナジー不足";
         if (skill.endsTurn && s.online) return "オンライン対戦ではまだ使えません";
         if (s.timeStopped && skill.kind == MagicKind.DoubleTurn) return "時間停止中は使えません";
+        if (s.IsRealtime && skill.kind == MagicKind.DoubleTurn) return "合戦将棋型では使えません（手番がない）";
         if (!SkillCanUse(s, owner, skill)) return "今は効果の対象がありません";
         return null;
     }
@@ -378,6 +380,7 @@ public static partial class BoardSimulator
         {
             case MagicKind.Shield: return IsOwnPiece(owner, p) && !p.shield;
             case MagicKind.Counter: return IsOwnPiece(owner, p) && !p.counter;
+            case MagicKind.Spark: return IsOwnPiece(owner, p);
             case MagicKind.Sword: return IsOwnPiece(owner, p) && FrontEnemies(s, p).Count > 0;
             case MagicKind.Pitfall: return IsEmptyNormal(s, x, y);
             case MagicKind.Swap: return !chosen.Contains(new MatchSquare(x, y)) && IsOwnPiece(owner, p);
@@ -646,7 +649,7 @@ public static partial class BoardSimulator
                 ShuffleCells(s);
                 break;
             case MagicKind.WorldEnd:
-                if (sp.worldEndSince < 0) sp.worldEndSince = s.turnNumber;
+                if (sp.worldEndSince < 0) sp.worldEndSince = Now(s); // 本将棋型：ターン数 ／ 合戦将棋型：対局の時間
                 WorldEndCollapse(s, MatchConfig.WorldEndCells);
                 break;
             case MagicKind.UndeadParadise:
@@ -670,7 +673,10 @@ public static partial class BoardSimulator
                 s.timeStopRemaining = MatchConfig.TimeStopMoves;
                 s.timeStopJustStarted = true;
                 s.timeStopReleasable = false;
+                s.timeStopElapsed = 0; // 合戦将棋型：止まっている tick（TimeStopSec 秒で解除）
                 break;
+            case MagicKind.Spark:
+                break; // 魔力の火花（SparkEffect）：盤面への効果はない（動作確認用）
         }
     }
 
@@ -770,8 +776,9 @@ public static partial class BoardSimulator
     // MagicKit.SquareArea
     static List<MatchSquare> SquareArea(int cx, int cy, int r)
     {
+        // 並びは MagicKit.SquareArea と同じ（Prototype の squareArea：x の大きい方から、y の小さい方から）
         List<MatchSquare> result = new List<MatchSquare>();
-        for (int x = cx - r; x <= cx + r; x++)
+        for (int x = cx + r; x >= cx - r; x--)
         {
             for (int y = cy - r; y <= cy + r; y++)
             {
@@ -830,7 +837,7 @@ public static partial class BoardSimulator
     {
         SnapshotCell c = s.Cell(x, y);
         if (c == null || c.IsBlocked || turns <= 0) return; // 破壊マス・壁は炎上しない
-        int until = s.turnNumber + turns - 1;
+        int until = BurnUntilFor(s, turns); // 本将棋型：最後のターン ／ 合戦将棋型：期限の clockTime
         c.burnUntil = c.IsBurning && c.burnUntil >= 0 ? System.Math.Max(c.burnUntil, until) : until;
         c.state = CellState.Burning;
     }
@@ -915,13 +922,13 @@ public static partial class BoardSimulator
         return pool;
     }
 
-    // MatchState.WorldEndCellsThisRound
+    // MatchState.WorldEndCellsThisRound（発動した時刻（Now）の分は発動したときに崩れているので数えない）
     static int WorldEndCellsThisRound(BoardSnapshot s)
     {
-        int n = 0;
+        int n = 0, now = Now(s);
         foreach (SnapshotPlayer p in s.players)
         {
-            if (p.worldEndSince >= 0 && p.worldEndSince < s.turnNumber) n += MatchConfig.WorldEndCells;
+            if (p.worldEndSince >= 0 && p.worldEndSince < now) n += MatchConfig.WorldEndCells;
         }
         return n;
     }

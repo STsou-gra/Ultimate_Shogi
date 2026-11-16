@@ -416,11 +416,9 @@ public partial class GameSystem : MonoBehaviour
         // 乱数のシードは対局ごとに決める（棋譜に残す。棋譜の再生では、その値を使う。局面の読み込みは乱数の状態ごと戻す。GameSystem.Kifu.cs。
         // MatchSetup.Seed があればそれを使う）
         uint seed = BeginKifuMatch();
-        // 戦闘型（本将棋型・合戦将棋型）は編成画面で選んだもの（MatchSetup）。次のときは本将棋型だけ：
-        //  オンライン対戦（合戦将棋型は通信に乗せていない）・CPU と対戦（CPU は手番のある本将棋型だけ。合戦将棋型の CPU は
-        //  IRealtimeSeatController でつなぐ予定）・棋譜の再生（棋譜は本将棋型だけ記録する。GameSystem.Kifu.cs）
-        bool honshogiOnly = IsOnlineMatch || MatchSetup.IsVsCpu || IsReplaying;
-        BattleRuleset ruleset = honshogiOnly ? BattleRulesets.Honshogi : MatchSetup.Ruleset;
+        // 戦闘型（本将棋型・合戦将棋型）は編成画面で選んだもの（MatchSetup。CPU と対戦も）。
+        // オンライン対戦は本将棋型だけ（合戦将棋型は通信に乗せていない）。棋譜の再生は棋譜の戦闘型（GameSystem.Kifu.cs）
+        BattleRuleset ruleset = IsOnlineMatch ? BattleRulesets.Honshogi : IsReplaying ? ReplayRuleset : MatchSetup.Ruleset;
         match = new MatchState(MatchConfig.FirstPlayer, seed, ruleset);
         // エナジーの増減の「+N エナジー」（BasicMoveFx は Start で作られる。対局の準備の前に作られていなければ探す）
         match.Energy.Changed += (player, value, delta) =>
@@ -467,8 +465,13 @@ public partial class GameSystem : MonoBehaviour
             }
         }
 
-        // 合戦将棋型：先手・後手の席とカーソル・経過時間と一時停止の表示（GameSystem.Realtime.cs）
-        if (match.Policy.IsRealtime) SetupRealtime();
+        // 合戦将棋型：先手・後手の席とカーソル・経過時間と一時停止の表示（GameSystem.Realtime.cs）と、
+        // 席の Controller（棋譜の再生なら両方の席に再生、CPU と対戦なら CPU の席に CPU）
+        if (match.Policy.IsRealtime)
+        {
+            SetupRealtime();
+            SetupRealtimeControllers();
+        }
     }
 
     // Update is called once per frame
@@ -1207,15 +1210,15 @@ public partial class GameSystem : MonoBehaviour
         Exploded?.Invoke(new ExplosionInfo(cx, cy, fxDelay, entering));
         pendingActionFxTime = Mathf.Max(pendingActionFxTime, fxDelay + ExplosionFxDuration);
 
+        // 消す順は Prototype の explode と同じ（MagicKit.SquareArea の並び。火薬に入った駒は中心のマスの駒の前。
+        // Prototype では入った駒が中心のマスに重なっている）。倒された初期配置の駒の記録の順がこの並びになる
         List<GamePiece> victims = new List<GamePiece>();
         int r = MatchConfig.ExplosionRadius;
-        for (int x = cx - r; x <= cx + r; x++)
+        foreach (Vector2Int c in MagicKit.SquareArea(cx, cy, r))
         {
-            for (int y = cy - r; y <= cy + r; y++)
-            {
-                GamePiece piece = gameBoard.GetPieceAt(x, y);
-                if (piece != null && !victims.Contains(piece)) victims.Add(piece); // 巨人は何マス重なっても 1 回
-            }
+            if (c.x == cx && c.y == cy && entering != null && !victims.Contains(entering)) victims.Add(entering);
+            GamePiece piece = gameBoard.GetPieceAt(c.x, c.y);
+            if (piece != null && piece != entering && !victims.Contains(piece)) victims.Add(piece); // 巨人は何マス重なっても 1 回
         }
         if (entering != null && !victims.Contains(entering)) victims.Add(entering);
         if (held != null)

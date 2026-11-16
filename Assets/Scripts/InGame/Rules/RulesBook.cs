@@ -117,7 +117,7 @@ public static class RulesBook
     {
         RulesPage p = new RulesPage("基本ルール");
         p.Heading("基本ルール")
-         .Text("本将棋と同じ初期配置・動き。取った駒は持ち駒になり、空きマスに打てる（二歩・行き所のない駒・打ち歩詰めは禁止）。")
+         .Text("本将棋と同じ初期配置・動き。取った駒は持ち駒になり、空きマスに打てる（二歩・行き所のない駒・打ち歩詰めは禁止。二歩は成っていない歩だけを数える）。")
          .Text("敵陣（相手側の3段）に入る・敵陣の中で動く・敵陣から出るときに、成るか成らないかを選べる。行き所がなくなる駒は必ず成る。");
 
         p.Heading("勝ち負け")
@@ -169,6 +169,14 @@ public static class RulesBook
              .Text($"超常魔法の解放 … 行動のあとと {d.UnlockCheckSec:0} 秒ごとに判定", 2)
              .Text("「2回行動」は使えない（手番がない）。")
              .Text("画面の上に経過時間。「一時停止」（Esc）で止められる。ルール説明を開いている間・ウィンドウが非アクティブの間も止まる。");
+            if (r.CpuIntervalSec != null && r.CpuIntervalSec.Length > 0)
+            {
+                List<string> intervals = new List<string>();
+                for (int lv = 0; lv < r.CpuIntervalSec.Length; lv++) intervals.Add($"Lv{lv} {r.CpuIntervalSec[lv]:0.0} 秒");
+                p.Text($"CPU と対戦：CPU は一定の間隔ごとに 1 回動く（{string.Join("／", intervals)}）。考えている間も時間は進み、決めた手はそのときの盤面で実行できなければ捨てる。あなたはキーボード全体で自分の席を操作する（「操作」のページ）。");
+            }
+            p.Text("棋譜：行動ごとに、行動した側と時刻（tick）も記録する。再生では同じ時刻に同じ順で行動を入れ、行動ごとに盤面を棋譜と照らし合わせる。")
+             .Text("局面の書き出し・読み込み：対局の時間・駒の連打の間隔・炎上の残り・停止世界の経過も書き出す（読み込めるのは同じ戦闘型の対局だけ）。");
         }
         return p;
     }
@@ -582,7 +590,8 @@ public static class RulesBook
         p.Heading("棋譜")
          .Text("棋譜メニュー：K（左下の「棋譜」ボタン）。この対局の棋譜の保存（.json）・棋譜を読み込んで再生（等速・4倍速）・今の局面の書き出しと読み込み")
          .Text("棋譜の再生中は操作できない（画面の上に進み具合。「再生を止める」でその局面から続けて指せる）。最後まで再生しても、その局面から続けて指せる")
-         .Text("結果画面の「棋譜を保存」でも保存できる");
+         .Text("結果画面の「棋譜を保存」でも保存できる")
+         .Text("合戦将棋型の棋譜も保存・再生できる（時刻つき。早送りは時間の進み方が 4 倍）。局面は同じ戦闘型の対局で読み込める");
         p.Heading("合戦将棋型の操作（先手・後手が同時に操作する）");
         foreach (SeatKeys k in new[] { SeatKeys.KassenSente, SeatKeys.KassenGote })
         {
@@ -591,6 +600,20 @@ public static class RulesBook
              .Text($"必殺技 {SeatKeys.Label(k.Special)}　狙撃 {SeatKeys.Label(k.Snipe)}　範囲の向き {SeatKeys.Label(k.Orient)}　時間停止の解除 {SeatKeys.Label(k.Release)}", 2)
              .Text($"魔法 {SeatKeys.Label(k.Skills, 0)}〜{SeatKeys.Label(k.Skills, k.Skills.Length - 1)}（編成の枠の順）　錬成 {SeatKeys.Labels(new[] { k.Forge[0] })}・{SeatKeys.Label(k.Forge, 1)}", 2);
         }
+        SeatKeys solo = SeatKeys.KassenSolo("CPU と対戦（あなたの席）");
+        string All(UnityEngine.InputSystem.Key[] keys)
+        {
+            List<string> names = new List<string>();
+            foreach (UnityEngine.InputSystem.Key key in keys)
+            {
+                string n = SeatKeys.KeyName(key);
+                if (!names.Contains(n)) names.Add(n);
+            }
+            return string.Join("・", names);
+        }
+        p.Sub(solo.Name)
+         .Text($"キーボード全体を使う：カーソル {SeatKeys.Labels(solo.Up, solo.Left, solo.Down, solo.Right)}　決定 {All(solo.Ok)}　取消 {All(solo.Cancel)}　持ち駒 {SeatKeys.Label(solo.Hand)}", 2)
+         .Text($"必殺技 {SeatKeys.Label(solo.Special)}　狙撃 {SeatKeys.Label(solo.Snipe)}　範囲の向き {SeatKeys.Label(solo.Orient)}　時間停止の解除 {SeatKeys.Label(solo.Release)}　魔法 {SeatKeys.Label(solo.Skills, 0)}〜{SeatKeys.Label(solo.Skills, solo.Skills.Length - 1)}　錬成 {All(solo.Forge)}", 2);
         p.Text("成る・成らない：カーソルのキーで選んで決定。画面のボタン（魔法・錬成・必殺技・狙撃）は、最後にキーを押した側（「操作中」）の分。")
          .Text("一時停止：Esc（画面の上の「一時停止」ボタン）。");
 

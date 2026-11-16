@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
@@ -94,14 +95,24 @@ public class RealtimeHudView : MonoBehaviour
         bool cpu = gameSystem.SeatController(owner) != null;
         string name = owner == PlayerType.Player1 ? "☗ 先手" : "☖ 後手";
         string energy = $"エナジー {gameSystem.Match.Energy.Get(owner)}";
-        string state = cpu ? "（CPU）" : focus ? "（操作中）" : "";
+        IRealtimeSeatController ctrl = gameSystem.SeatController(owner);
+        string state = ctrl is RealtimeReplayController ? "（棋譜の再生）" : cpu ? "（CPU）" : focus ? "（操作中）" : "";
         TimeStopState ts = gameSystem.TimeStop;
         if (ts != null && ts.Owner != owner) state = "（相手の時間停止中は動けない）";
         p.Header.text = $"{name}{state}　{energy}";
 
         StringBuilder sb = new StringBuilder();
-        sb.Append($"<size=85%>移動 {SeatKeys.Labels(k.Up, k.Left, k.Down, k.Right)}　決定 {SeatKeys.Label(k.Ok)}　取消 {SeatKeys.Label(k.Cancel)}　持ち駒 {SeatKeys.Label(k.Hand)}\n");
-        sb.Append($"必殺技 {SeatKeys.Label(k.Special)}　狙撃 {SeatKeys.Label(k.Snipe)}　向き {SeatKeys.Label(k.Orient)}　解除 {SeatKeys.Label(k.Release)}　錬成 {SeatKeys.Label(k.Forge, 0)}・{SeatKeys.Label(k.Forge, 1)}</size>\n");
+        if (ctrl is RealtimeCpuPacer pacer)
+        {
+            // CPU の席：キーの代わりに強さと間隔（Lv0 2.0 秒／Lv1 1.5 秒／Lv2 1.2 秒）
+            sb.Append($"<size=85%>{CpuLevels.Label(pacer.Level)}：{MatchPolicy.TicksToSec(gameSystem.Policy.CpuIntervalTicks(pacer.Level)):0.0} 秒ごとに動く{(pacer.IsThinking ? "（考え中）" : "")}</size>\n");
+        }
+        else if (!cpu)
+        {
+            string forge = string.Join("・", System.Linq.Enumerable.Range(0, k.Forge.Length).Select(i => SeatKeys.Label(k.Forge, i)));
+            sb.Append($"<size=85%>移動 {SeatKeys.Labels(k.Up, k.Left, k.Down, k.Right)}　決定 {SeatKeys.Label(k.Ok)}　取消 {SeatKeys.Label(k.Cancel)}　持ち駒 {SeatKeys.Label(k.Hand)}\n");
+            sb.Append($"必殺技 {SeatKeys.Label(k.Special)}　狙撃 {SeatKeys.Label(k.Snipe)}　向き {SeatKeys.Label(k.Orient)}　解除 {SeatKeys.Label(k.Release)}　錬成 {forge}</size>\n");
+        }
         SkillDeck deck = gameSystem.GetSkillDeck(owner);
         if (deck != null && deck.skills != null)
         {
@@ -109,13 +120,13 @@ public class RealtimeHudView : MonoBehaviour
             {
                 SkillDefinition skill = deck.skills[i];
                 if (skill == null) continue;
-                string key = SeatKeys.Label(k.Skills, i);
+                string key = cpu ? "" : SeatKeys.Label(k.Skills, i);
                 bool usable = gameSystem.CanUseSkill(owner, skill);
                 string color = usable ? "#FFFFFF" : "#7A7A86";
                 string used = skill.rank == SkillRank.Transcendent
                     ? (gameSystem.IsTranscendentUsed(owner) ? "（使用済み）" : gameSystem.IsTranscendentUnlocked(owner) ? "" : "（未解放）")
                     : "";
-                sb.Append($"<color={color}>[{key}] {skill.skillName} {skill.cost}{used}</color>  ");
+                sb.Append($"<color={color}>{(key.Length > 0 ? $"[{key}] " : "")}{skill.skillName} {skill.cost}{used}</color>  ");
                 if (i % 3 == 2) sb.Append('\n');
             }
         }

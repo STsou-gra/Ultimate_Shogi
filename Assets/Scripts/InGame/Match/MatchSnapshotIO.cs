@@ -30,6 +30,13 @@ public static class MatchSnapshotIO
             s.moveNumber = match.Turn.MoveNumber;
             s.rng.seed = match.Rng.Seed;
             s.rng.state = match.Rng.State;
+            s.ruleset = match.Ruleset.Id;
+            if (match.Clock != null)
+            {
+                s.clock.active = true;
+                s.clock.tick = match.Clock.Tick;
+                s.clock.time = match.Clock.Time;
+            }
         }
 
         foreach (PlayerType owner in new[] { PlayerType.Player1, PlayerType.Player2 })
@@ -122,6 +129,7 @@ public static class MatchSnapshotIO
             counter = piece.hasCounter,
             held = held,
             hp = PieceRules.IsGiant(piece.type) ? piece.hp : 0,
+            cooldownUntil = piece.cooldownUntilTick,
         };
     }
 
@@ -136,6 +144,7 @@ public static class MatchSnapshotIO
         t.remaining = ts.Remaining;
         t.ending = ts.Ending;
         t.justStarted = ts.JustStarted;
+        t.elapsed = ts.Elapsed;
         foreach (TimeStopMove m in ts.Moves)
         {
             t.moves.Add(new TimeStopMoveSnapshot
@@ -186,12 +195,17 @@ public static class MatchSnapshotIO
 
     // s を match・cells に戻し、駒を spawn で作り直す（spawn は駒を作って盤に置き、ApplyPiece で状態を写して返す。
     // held の駒は盤のデータに入れずにその場に置くこと）。時間停止中なら timeStop に組み立てた状態が入る（それ以外は null）。
-    // pieces は id → 作った駒。s は Validate を通っていること
+    // pieces は id → 作った駒。s は Validate を通っていて、戦闘型が match と同じであること（RulesetMismatch）
     public static void Restore(MatchSnapshot s, MatchState match, BoardCells cells, System.Func<PieceSnapshot, GamePiece> spawn,
         out TimeStopState timeStop, out Dictionary<int, GamePiece> pieces)
     {
         match.Turn.Restore((PlayerType)s.firstPlayer, (PlayerType)s.current, s.turnNumber, s.moveNumber);
         match.Rng.Restore((uint)s.rng.seed, (uint)s.rng.state);
+        if (match.Clock != null)
+        {
+            match.Clock.Tick = s.clock != null && s.clock.active ? s.clock.tick : 0;
+            match.Clock.Time = s.clock != null && s.clock.active ? s.clock.time : 0;
+        }
         foreach (PlayerType owner in new[] { PlayerType.Player1, PlayerType.Player2 })
         {
             PlayerSnapshot p = s.Player(owner);
@@ -232,6 +246,7 @@ public static class MatchSnapshotIO
         piece.hasPhalanx = ps.phalanx;
         piece.hasWing = ps.wing;
         piece.hasCounter = ps.counter;
+        piece.cooldownUntilTick = ps.cooldownUntil;
         if (PieceRules.IsGiant(ps.type)) piece.hp = ps.hp > 0 ? System.Math.Min(ps.hp, GiantRules.MaxHp) : GiantRules.MaxHp;
         piece.UpdateVisual();
     }
@@ -246,6 +261,7 @@ public static class MatchSnapshotIO
             Remaining = t.remaining,
             Ending = t.ending,
             JustStarted = t.justStarted,
+            Elapsed = t.elapsed,
         };
         foreach (TimeStopMoveSnapshot m in t.moves)
         {
@@ -333,6 +349,10 @@ public static class MatchSnapshotIO
         if (s.rng == null || s.pieces == null || s.cells == null || s.positions == null) return "局面のデータが壊れています";
         if (s.version < 1 || s.version > MatchSnapshot.CurrentVersion) return $"対応していない局面の版です（version {s.version}）";
         if (!IsPlayer(s.firstPlayer) || !IsPlayer(s.current)) return "先手・手番のプレイヤーが正しくありません";
+        BattleRuleset ruleset = s.Ruleset;
+        if (ruleset == null) return $"知らない戦闘型です（{s.ruleset}）";
+        if (ruleset.Realtime && (s.clock == null || !s.clock.active)) return "合戦将棋型の局面に、対局の時間がありません";
+        if (ruleset.Realtime && (s.clock.tick < 0 || s.clock.time < 0 || s.clock.time > s.clock.tick)) return "対局の時間が正しくありません";
         if (s.turnNumber < 0 || s.moveNumber < 1) return "ターン数・手数が正しくありません";
         if (s.gameOver && !s.draw && !IsPlayer(s.winner)) return "勝者が正しくありません";
         if (s.players == null || s.players.Count != 2 || s.Player(PlayerType.Player1) == null || s.Player(PlayerType.Player2) == null)
@@ -393,6 +413,14 @@ public static class MatchSnapshotIO
             }
         }
         return null;
+    }
+
+    // 局面の戦闘型が対局（match）の戦闘型と違えば理由（同じなら null）。戦闘型は対局の始めに決めるので、違う戦闘型の局面は読み込めない
+    public static string RulesetMismatch(MatchSnapshot s, MatchState match)
+    {
+        BattleRuleset r = s != null ? s.Ruleset : null;
+        if (r == null || match == null || r.Id == match.Ruleset.Id) return null;
+        return $"{r.Name}の局面です（今の対局は{match.Ruleset.Name}。編成画面で{r.Name}を選んで始めた対局で読み込んでください）";
     }
 
     static bool IsPlayer(int v) => v == (int)PlayerType.Player1 || v == (int)PlayerType.Player2;

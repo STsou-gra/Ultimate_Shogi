@@ -19,6 +19,10 @@ using UnityEngine;
 //  cells            … 通常でないマス（破壊・炎上・落とし穴）だけ。盤の添字の順
 //  timeStop         … 時間停止（停止世界）中なら active = true
 //  positions        … 千日手の判定用に記録した局面（手番の始まりごと）
+//  ruleset          … 戦闘型（BattleRuleset.Id。"honshogi" / "kassen"。版 1 のまま足した項目：ない JSON は本将棋型）
+//  clock            … 合戦将棋型の時間（MatchClock の tick と対局の時間。本将棋型は active = false）。
+//                     合戦将棋型では、駒の連打の間隔（PieceSnapshot.cooldownUntil。tick）・炎上の期限（CellSnapshot.burnUntil。対局の時間の tick）・
+//                     世界の終わりの発動時刻（PlayerSnapshot.worldEndSince。対局の時間）・停止世界の経過（TimeStopSnapshot.elapsed。tick）も時間で入る
 //
 // 座標は GamePiece の X・Y と同じ（x = 段、y = 筋。Prototype とは x と y が逆）。
 // JsonUtility は null を書けないので、「なし」は -1（駒の id・マス・プレイヤー・ターン）で表す。列挙は数値で書かれる
@@ -47,6 +51,11 @@ public class MatchSnapshot
     public List<CellSnapshot> cells = new List<CellSnapshot>();
     public TimeStopSnapshot timeStop = new TimeStopSnapshot();
     public List<PositionSnapshot> positions = new List<PositionSnapshot>();
+    public string ruleset = BattleRulesets.Honshogi.Id;
+    public ClockSnapshot clock = new ClockSnapshot();
+
+    // 戦闘型（知らない Id なら null）
+    public BattleRuleset Ruleset => BattleRulesets.ById(string.IsNullOrEmpty(ruleset) ? BattleRulesets.Honshogi.Id : ruleset);
 
     // owner のプレイヤーの分（なければ null）
     public PlayerSnapshot Player(PlayerType owner)
@@ -100,9 +109,20 @@ public class MatchSnapshot
         if (cells == null) cells = new List<CellSnapshot>();
         if (timeStop == null) timeStop = new TimeStopSnapshot();
         if (positions == null) positions = new List<PositionSnapshot>();
+        if (string.IsNullOrEmpty(ruleset)) ruleset = BattleRulesets.Honshogi.Id;
+        if (clock == null) clock = new ClockSnapshot();
         foreach (PlayerSnapshot p in players) p?.FillMissing();
         timeStop.FillMissing();
     }
+}
+
+// 合戦将棋型の時間（MatchClock）。tick … 行動の t（停止世界の間も進む）／ time … 対局の時間（停止世界の間は止まる）
+[System.Serializable]
+public class ClockSnapshot
+{
+    public bool active;
+    public int tick;
+    public int time;
 }
 
 // 乱数 GameRng（Seed・State は uint。JSON で読みやすいように long で持つ）
@@ -122,7 +142,7 @@ public class PlayerSnapshot
     public List<string> loadout = new List<string>();          // 魔法の編成（SkillDeck の枠の順に SkillDefinition.Id。空の枠は ""）
     public bool transcendentUnlocked;    // 超常魔法が解放されたか
     public bool transcendentUsed;        // 超常魔法を使ったか
-    public int worldEndSince = -1;       // 世界の終わりを発動したターン（未発動なら -1）
+    public int worldEndSince = -1;       // 世界の終わりを発動したターン（合戦将棋型は対局の時間。未発動なら -1）
     public List<FallenSnapshot> fallenInitial = new List<FallenSnapshot>(); // 倒された初期配置の駒（倒された順）
 
     public int HandCountOf(PieceType type)
@@ -176,6 +196,7 @@ public class PieceSnapshot
     public bool counter;    // カウンター状態（通常魔法「カウンター」）
     public bool held;       // 時間停止の予定の駒（盤のデータから外して、その場に残している）
     public int hp;          // 巨人の残りの HP（巨人以外は 0。巨人の x・y は 3×3 の中央のマス）
+    public int cooldownUntil; // 合戦将棋型：連打の間隔が終わる tick（GamePiece.cooldownUntilTick。0 = 動いたことがない）
 }
 
 // 通常でないマス 1 つ（BoardCell）
@@ -185,7 +206,7 @@ public struct CellSnapshot
     public int x;
     public int y;
     public CellState state;
-    public int burnUntil; // 炎上が終わるターン（なければ -1）
+    public int burnUntil; // 炎上が終わるターン（合戦将棋型は対局の時間の tick。なければ -1）
     public int trap;      // 落とし穴の持ち主（(int)PlayerType。なければ -1）
     public int wall;      // 壁を建てた側（(int)PlayerType。state が Wall のときだけ使う）
 }
@@ -200,6 +221,7 @@ public class TimeStopSnapshot
     public int remaining;
     public bool ending;
     public bool justStarted;
+    public int elapsed;      // 合戦将棋型：止まってからの tick（TimeStopState.Elapsed。TimeStopSec 秒で解除）
     public List<TimeStopMoveSnapshot> moves = new List<TimeStopMoveSnapshot>();
     public List<TimeStopPendingSnapshot> pending = new List<TimeStopPendingSnapshot>();
 

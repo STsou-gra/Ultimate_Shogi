@@ -188,9 +188,58 @@ public static partial class MatchSnapshotChecks
     // ------------------------------------------------------------
     //  局面を作る（GameSystem の代わりに、MatchState・BoardCells・駒の配列を直接持つ）
     // ------------------------------------------------------------
+    // 合戦将棋型：対局の時間・駒の連打の間隔・炎上の期限（対局の時間の tick）・停止世界の経過が、書き出し → JSON → 読み込み → 書き出しで戻り、
+    // ハッシュも同じ。ハッシュには時間・連打の間隔が入る。戦闘型の違う対局には読み込めない（MatchSnapshotIO.RulesetMismatch）
+    public static void CheckKassenStateRoundTrip()
+    {
+        using (Fixture f = new Fixture(BattleRulesets.Kassen))
+        {
+            True(f.match.Clock != null, "合戦将棋型の MatchState に時間がない");
+            f.match.Turn.BeginRealtime();
+            f.match.Clock.Tick = 345;
+            f.match.Clock.Time = 300;
+            f.match.Energy.Gain(PlayerType.Player1, 15);
+            f.match.Energy.Gain(PlayerType.Player2, 15);
+            f.NewPiece(PieceType.King, PlayerType.Player1, 0, 4).IsInitial = true;
+            f.NewPiece(PieceType.King, PlayerType.Player2, 8, 4).IsInitial = true;
+            GamePiece pawn = f.NewPiece(PieceType.Pawn, PlayerType.Player1, 3, 2);
+            pawn.cooldownUntilTick = 350;
+            f.NewPiece(PieceType.Pawn, PlayerType.Player2, 5, 6).cooldownUntilTick = 120; // 間隔が終わった駒も記録は残る（Prototype の p.cd）
+            f.cells.SetBurningUntil(4, 4, f.match.Policy.BurnUntilFor(10));
+            f.timeStop = new TimeStopState(PlayerType.Player1, MatchConfig.TimeStopMoves) { Remaining = 7, Elapsed = 55 };
+
+            MatchSnapshot s = f.Export();
+            Equal("kassen", s.ruleset, "局面の戦闘型");
+            True(s.clock.active && s.clock.tick == 345 && s.clock.time == 300, "局面の時間");
+            Equal(350, s.pieces.Find(p => p.type == PieceType.Pawn && p.owner == 0).cooldownUntil, "駒の連打の間隔");
+            Equal(300 + 400, s.cells.Find(c => c.x == 4 && c.y == 4).burnUntil, "炎上の期限（対局の時間 + 20 秒）");
+            Equal(55, s.timeStop.elapsed, "停止世界の経過");
+            True(MatchHash.BuildText(s).Contains("[\"versus\",\"kassen\",null],[345,300],[[3,2,350],[5,6,120]]"), "ハッシュに時間・連打の間隔が入る");
+
+            using (Fixture g = new Fixture(BattleRulesets.Kassen))
+            {
+                MatchSnapshot back = g.Load(MatchSnapshot.FromJson(s.ToJson()));
+                Equal(s.ToJson(), back.ToJson(), "書き出し → 読み込み → 書き出しで JSON が変わった（合戦将棋型）");
+                Equal(MatchHash.Compute(s), MatchHash.Compute(back), "読み込んだあとのハッシュ");
+                True(g.match.Clock.Tick == 345 && g.match.Clock.Time == 300, "読み込んだあとの時間");
+                True(g.timeStop != null && g.timeStop.Elapsed == 55 && g.timeStop.Remaining == 7, "読み込んだあとの停止世界");
+                GamePiece q = g.board[GameHelper.CalcPanelNum(3, 2)];
+                True(q != null && q.cooldownUntilTick == 350 && g.match.Policy.IsCoolingDown(q), "読み込んだあとの連打の間隔");
+            }
+            using (Fixture h = new Fixture())
+            {
+                True(MatchSnapshotIO.RulesetMismatch(s, h.match) != null, "合戦将棋型の局面を本将棋型の対局に読み込めてしまう");
+                True(MatchSnapshotIO.RulesetMismatch(h.Export(), h.match) == null, "本将棋型の局面を本将棋型の対局に読み込めない");
+            }
+            MatchSnapshot noClock = MatchSnapshot.FromJson(s.ToJson());
+            noClock.clock.active = false;
+            True(MatchSnapshotIO.Validate(noClock) != null, "時間のない合戦将棋型の局面が Validate を通った");
+        }
+    }
+
     sealed class Fixture : System.IDisposable
     {
-        public readonly MatchState match = new MatchState(PlayerType.Player1, 12345u);
+        public readonly MatchState match;
         public readonly BoardCells cells = new BoardCells();
         public readonly GamePiece[] board = new GamePiece[BoardCells.Size * BoardCells.Size];
         public readonly Dictionary<PieceType, int>[] hands = { NewHand(), NewHand() };
@@ -202,8 +251,10 @@ public static partial class MatchSnapshotChecks
         private readonly List<Object> created = new List<Object>();
         private readonly Dictionary<string, SkillDefinition> skills = new Dictionary<string, SkillDefinition>();
 
-        public Fixture()
+        // ruleset：戦闘型（省略すると本将棋型。合戦将棋型なら MatchState.Clock がある）
+        public Fixture(BattleRuleset ruleset = null)
         {
+            match = new MatchState(PlayerType.Player1, 12345u, ruleset);
             foreach (string id in new[] { "Shield", "Sword", "Pitfall", "Meteor", "TimeStop" })
             {
                 SkillDefinition skill = ScriptableObject.CreateInstance<SkillDefinition>();

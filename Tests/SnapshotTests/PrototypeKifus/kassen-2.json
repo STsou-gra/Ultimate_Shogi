@@ -1,0 +1,1750 @@
+{
+ "format": "ultimate-shogi-kifu",
+ "version": 2,
+ "createdAt": "2026-11-05T23:00:00.091Z",
+ "seed": 7,
+ "config": {
+  "mode": "versus",
+  "ruleset": "kassen"
+ },
+ "setup": null,
+ "loadouts": [
+  {
+   "normal": [
+    "shield",
+    "pitfall",
+    "sword"
+   ],
+   "ultimate": "meteor",
+   "transcendent": "time_stop"
+  },
+  {
+   "normal": [
+    "shield",
+    "sword",
+    "test_spark"
+   ],
+   "ultimate": "phalanx",
+   "transcendent": "world_end"
+  }
+ ],
+ "actions": [
+  {
+   "type": "move",
+   "from": {
+    "x": 4,
+    "y": 0
+   },
+   "to": {
+    "x": 3,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 3,
+   "hash": "d4322d58"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 6
+   },
+   "to": {
+    "x": 2,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 6,
+   "hash": "aee40606"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 0
+   },
+   "to": {
+    "x": 6,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 8,
+   "hash": "45c7ee1c"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 8,
+    "y": 2
+   },
+   "to": {
+    "x": 8,
+    "y": 3
+   },
+   "owner": 1,
+   "t": 9,
+   "hash": "d9acdc25"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 3,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 21,
+   "hash": "d1082507"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 0
+   },
+   "to": {
+    "x": 5,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 26,
+   "hash": "e8a08570"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 0
+   },
+   "to": {
+    "x": 2,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 27,
+   "hash": "de2c87db"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 0,
+    "y": 2
+   },
+   "to": {
+    "x": 0,
+    "y": 3
+   },
+   "owner": 1,
+   "t": 29,
+   "hash": "688b3ad6"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 8
+   },
+   "to": {
+    "x": 3,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 30,
+   "hash": "ebf12d7e"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 6
+   },
+   "to": {
+    "x": 5,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 31,
+   "hash": "7c29500c"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 4,
+    "y": 6
+   },
+   "to": {
+    "x": 4,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 37,
+   "hash": "0e6a7ebe"
+  },
+  {
+   "type": "magic",
+   "skill": "pitfall",
+   "target": {
+    "x": 6,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 41,
+   "hash": "4cffa5e2"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 7
+   },
+   "to": {
+    "x": 4,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 42,
+   "hash": "964c86d1"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 6,
+    "y": 2
+   },
+   "owner": 1,
+   "t": 49,
+   "hash": "f3dfb551"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 1
+   },
+   "to": {
+    "x": 0,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 53,
+   "hash": "07d42fd2"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 7,
+    "y": 1
+   },
+   "to": {
+    "x": 6,
+    "y": 0
+   },
+   "owner": 1,
+   "t": 83,
+   "hash": "7e9c99b3"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 7,
+    "y": 7
+   },
+   "to": {
+    "x": 4,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 85,
+   "hash": "d7161a6a"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 4,
+    "y": 6
+   },
+   "to": {
+    "x": 3,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 88,
+   "hash": "aa774f1d"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 8
+   },
+   "to": {
+    "x": 2,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 92,
+   "hash": "edb381a5"
+  },
+  {
+   "type": "forge",
+   "piece": "KAYAKU",
+   "owner": 1,
+   "t": 108,
+   "hash": "62bb999c"
+  },
+  {
+   "type": "magic",
+   "skill": "pitfall",
+   "target": {
+    "x": 3,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 125,
+   "hash": "8c72fa4e"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 2
+   },
+   "to": {
+    "x": 2,
+    "y": 3
+   },
+   "owner": 1,
+   "t": 132,
+   "hash": "bcf067c7"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 4,
+    "y": 7
+   },
+   "to": {
+    "x": 5,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 144,
+   "hash": "dde9f0e6"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 2
+   },
+   "to": {
+    "x": 6,
+    "y": 3
+   },
+   "owner": 1,
+   "t": 148,
+   "hash": "b9866913"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 8,
+    "y": 0
+   },
+   "to": {
+    "x": 8,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 151,
+   "hash": "a9788931"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 3
+   },
+   "to": {
+    "x": 6,
+    "y": 4
+   },
+   "owner": 1,
+   "t": 155,
+   "hash": "84ae447d"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 8
+   },
+   "to": {
+    "x": 3,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 158,
+   "hash": "a4f6d3a8"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 6
+   },
+   "to": {
+    "x": 6,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 159,
+   "hash": "72ed9d8f"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 6
+   },
+   "to": {
+    "x": 1,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 169,
+   "hash": "dfe9abc5"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 0,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 171,
+   "hash": "60c6397e"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 5
+   },
+   "to": {
+    "x": 5,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 177,
+   "hash": "4574c5af"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 1,
+    "y": 0
+   },
+   "owner": 1,
+   "t": 184,
+   "hash": "9d8fb7df"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 2,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 191,
+   "hash": "ad3183dc"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 1
+   },
+   "to": {
+    "x": 2,
+    "y": 0
+   },
+   "owner": 1,
+   "t": 194,
+   "hash": "5d0a313f"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 7
+   },
+   "to": {
+    "x": 3,
+    "y": 8
+   },
+   "owner": 0,
+   "t": 195,
+   "hash": "83ea65ca"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 5
+   },
+   "to": {
+    "x": 3,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 196,
+   "hash": "b4fb126b"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 0
+   },
+   "to": {
+    "x": 2,
+    "y": 2
+   },
+   "owner": 1,
+   "t": 200,
+   "hash": "ddaf1d4f"
+  },
+  {
+   "type": "drop",
+   "piece": "KAYAKU",
+   "to": {
+    "x": 0,
+    "y": 4
+   },
+   "owner": 1,
+   "t": 202,
+   "hash": "84af2293"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 8,
+    "y": 8
+   },
+   "owner": 0,
+   "t": 204,
+   "hash": "e3bb9813"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 4
+   },
+   "to": {
+    "x": 0,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 206,
+   "hash": "c6b133f7"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 0
+   },
+   "to": {
+    "x": 8,
+    "y": 2
+   },
+   "owner": 1,
+   "t": 207,
+   "hash": "e9034c8c"
+  },
+  {
+   "type": "special",
+   "from": {
+    "x": 5,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 208,
+   "hash": "91f5cd4a"
+  },
+  {
+   "type": "drop",
+   "piece": "FU",
+   "to": {
+    "x": 5,
+    "y": 3
+   },
+   "owner": 0,
+   "t": 215,
+   "hash": "c29298a6"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 0,
+    "y": 2
+   },
+   "to": {
+    "x": 0,
+    "y": 1
+   },
+   "owner": 0,
+   "t": 221,
+   "hash": "4fa7f08b"
+  },
+  {
+   "type": "drop",
+   "piece": "HI",
+   "to": {
+    "x": 5,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 230,
+   "hash": "b83eb041"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 1
+   },
+   "to": {
+    "x": 5,
+    "y": 2
+   },
+   "owner": 1,
+   "t": 244,
+   "hash": "61b7ae01"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 7,
+    "y": 6
+   },
+   "to": {
+    "x": 7,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 246,
+   "hash": "b828c9e8"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 8,
+    "y": 3
+   },
+   "owner": 1,
+   "t": 255,
+   "hash": "118c86b6"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 0,
+    "y": 3
+   },
+   "owner": 1,
+   "t": 259,
+   "hash": "7a199e68"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 7
+   },
+   "to": {
+    "x": 8,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 261,
+   "hash": "7715e7d6"
+  },
+  {
+   "type": "magic",
+   "skill": "sword",
+   "target": {
+    "x": 5,
+    "y": 3
+   },
+   "owner": 0,
+   "t": 265,
+   "hash": "224d00c9"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 8,
+    "y": 3
+   },
+   "owner": 1,
+   "t": 274,
+   "hash": "1e7f83a4"
+  },
+  {
+   "type": "special",
+   "from": {
+    "x": 0,
+    "y": 1
+   },
+   "target": {
+    "x": 1,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 276,
+   "hash": "00ac9365"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 7,
+    "y": 2
+   },
+   "owner": 1,
+   "t": 278,
+   "hash": "7d02d946"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 8,
+    "y": 7
+   },
+   "to": {
+    "x": 2,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 279,
+   "hash": "a4a5a576"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 4,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 288,
+   "hash": "10080dd4"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 5,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 292,
+   "hash": "ca9dc3da"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 8,
+    "y": 8
+   },
+   "to": {
+    "x": 8,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 293,
+   "hash": "6e4d02e9"
+  },
+  {
+   "type": "drop",
+   "piece": "GI",
+   "to": {
+    "x": 3,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 298,
+   "hash": "c75e5ec5"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 2,
+    "y": 2
+   },
+   "owner": 1,
+   "t": 303,
+   "hash": "4334b2b5"
+  },
+  {
+   "type": "magic",
+   "skill": "phalanx",
+   "target": {
+    "x": 5,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 304,
+   "hash": "a9c3f90c"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 2
+   },
+   "to": {
+    "x": 2,
+    "y": 1
+   },
+   "owner": 0,
+   "t": 308,
+   "hash": "46c3407e"
+  },
+  {
+   "type": "magic",
+   "skill": "pitfall",
+   "target": {
+    "x": 1,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 312,
+   "hash": "ff000af0"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 5
+   },
+   "to": {
+    "x": 5,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 319,
+   "hash": "ae8c2b9c"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 0
+   },
+   "to": {
+    "x": 4,
+    "y": 0
+   },
+   "owner": 1,
+   "t": 326,
+   "hash": "7b164948"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 7,
+    "y": 2
+   },
+   "owner": 1,
+   "t": 338,
+   "hash": "4805a1ee"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 1
+   },
+   "to": {
+    "x": 1,
+    "y": 0
+   },
+   "owner": 1,
+   "t": 351,
+   "hash": "82a23a69"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 1
+   },
+   "to": {
+    "x": 6,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 354,
+   "hash": "38dd7e46"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 8,
+    "y": 2
+   },
+   "to": {
+    "x": 7,
+    "y": 3
+   },
+   "owner": 1,
+   "t": 355,
+   "hash": "a5596ae9"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 7
+   },
+   "to": {
+    "x": 6,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 356,
+   "hash": "9c97abeb"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 6
+   },
+   "to": {
+    "x": 1,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 358,
+   "hash": "d48f1c82"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 3,
+    "y": 2
+   },
+   "owner": 1,
+   "t": 360,
+   "hash": "4aac1351"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 7
+   },
+   "to": {
+    "x": 2,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 367,
+   "hash": "2f57de90"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 8
+   },
+   "to": {
+    "x": 4,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 368,
+   "hash": "368e3a7f"
+  },
+  {
+   "type": "special",
+   "from": {
+    "x": 7,
+    "y": 3
+   },
+   "owner": 1,
+   "t": 373,
+   "hash": "3fe3c38c"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 0,
+    "y": 6
+   },
+   "to": {
+    "x": 0,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 377,
+   "hash": "a6e18553"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 0
+   },
+   "to": {
+    "x": 1,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 378,
+   "hash": "1cec9ac2"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 0,
+    "y": 0
+   },
+   "to": {
+    "x": 0,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 388,
+   "hash": "81687d85"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 4,
+    "y": 0
+   },
+   "to": {
+    "x": 3,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 391,
+   "hash": "e7389ffb"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 7
+   },
+   "to": {
+    "x": 0,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 395,
+   "hash": "fff8231d"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 0,
+    "y": 3
+   },
+   "owner": 1,
+   "t": 397,
+   "hash": "422880b1"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 3,
+    "y": 2
+   },
+   "owner": 1,
+   "t": 401,
+   "hash": "361bc5ea"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 1
+   },
+   "to": {
+    "x": 1,
+    "y": 2
+   },
+   "owner": 1,
+   "t": 412,
+   "hash": "445efedf"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 2
+   },
+   "to": {
+    "x": 6,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 414,
+   "hash": "b468ff63"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 7,
+    "y": 3
+   },
+   "to": {
+    "x": 2,
+    "y": 8
+   },
+   "owner": 1,
+   "t": 417,
+   "hash": "6c76c776"
+  },
+  {
+   "type": "drop",
+   "piece": "FU",
+   "to": {
+    "x": 1,
+    "y": 3
+   },
+   "owner": 1,
+   "t": 419,
+   "hash": "7d9af7dd"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 7,
+    "y": 0
+   },
+   "owner": 1,
+   "t": 425,
+   "hash": "9319a2d4"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 8,
+    "y": 3
+   },
+   "to": {
+    "x": 8,
+    "y": 4
+   },
+   "owner": 1,
+   "t": 429,
+   "hash": "8b907e25"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 5,
+    "y": 8
+   },
+   "owner": 0,
+   "t": 431,
+   "hash": "5c136f38"
+  },
+  {
+   "type": "special",
+   "from": {
+    "x": 8,
+    "y": 4
+   },
+   "owner": 1,
+   "t": 436,
+   "hash": "74d3fa44"
+  },
+  {
+   "type": "magic",
+   "skill": "sword",
+   "target": {
+    "x": 0,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 456,
+   "hash": "85514370"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 8,
+    "y": 6
+   },
+   "to": {
+    "x": 7,
+    "y": 7
+   },
+   "owner": 1,
+   "t": 463,
+   "hash": "66b5497d"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 2,
+    "y": 3
+   },
+   "owner": 1,
+   "t": 472,
+   "hash": "16e4f9fc"
+  },
+  {
+   "type": "forge",
+   "piece": "KAYAKU",
+   "owner": 0,
+   "t": 478,
+   "hash": "58922e2f"
+  },
+  {
+   "type": "drop",
+   "piece": "FU",
+   "to": {
+    "x": 5,
+    "y": 0
+   },
+   "owner": 1,
+   "t": 486,
+   "hash": "f5abd871"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 3,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 494,
+   "hash": "5e1ba80f"
+  },
+  {
+   "type": "drop",
+   "piece": "GI",
+   "to": {
+    "x": 7,
+    "y": 4
+   },
+   "owner": 1,
+   "t": 500,
+   "hash": "022529cf"
+  },
+  {
+   "type": "magic",
+   "skill": "pitfall",
+   "target": {
+    "x": 3,
+    "y": 0
+   },
+   "owner": 0,
+   "t": 503,
+   "hash": "1702b869"
+  },
+  {
+   "type": "special",
+   "from": {
+    "x": 0,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 508,
+   "hash": "6af319aa"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 8
+   },
+   "to": {
+    "x": 2,
+    "y": 7
+   },
+   "owner": 1,
+   "t": 510,
+   "hash": "206b3db8"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 0
+   },
+   "to": {
+    "x": 1,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 512,
+   "hash": "449e1ae2"
+  },
+  {
+   "type": "drop",
+   "piece": "KE",
+   "to": {
+    "x": 6,
+    "y": 4
+   },
+   "owner": 1,
+   "t": 520,
+   "hash": "7f9c8c10"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 2
+   },
+   "to": {
+    "x": 2,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 524,
+   "hash": "a8602a17"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 8,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 526,
+   "hash": "e1c5856a"
+  },
+  {
+   "type": "magic",
+   "skill": "pitfall",
+   "target": {
+    "x": 7,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 536,
+   "hash": "b205a180"
+  },
+  {
+   "type": "magic",
+   "skill": "sword",
+   "target": {
+    "x": 7,
+    "y": 8
+   },
+   "owner": 0,
+   "t": 537,
+   "hash": "2420acaa"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 2,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 543,
+   "hash": "d7f34a58"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 3
+   },
+   "to": {
+    "x": 7,
+    "y": 3
+   },
+   "owner": 1,
+   "t": 553,
+   "hash": "85023e8c"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 7,
+    "y": 4
+   },
+   "to": {
+    "x": 6,
+    "y": 3
+   },
+   "owner": 1,
+   "t": 555,
+   "hash": "1a8962c8"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 4,
+    "y": 8
+   },
+   "to": {
+    "x": 5,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 556,
+   "hash": "0bc4c3fd"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 7
+   },
+   "to": {
+    "x": 5,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 567,
+   "hash": "9e7c16a4"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 8,
+    "y": 7
+   },
+   "to": {
+    "x": 8,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 572,
+   "hash": "7232eb70"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 6
+   },
+   "to": {
+    "x": 4,
+    "y": 8
+   },
+   "owner": 0,
+   "t": 576,
+   "hash": "876c80da"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 7,
+    "y": 3
+   },
+   "to": {
+    "x": 8,
+    "y": 3
+   },
+   "owner": 1,
+   "t": 579,
+   "hash": "1a9569b4"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 3,
+    "y": 2
+   },
+   "owner": 1,
+   "t": 580,
+   "hash": "12402922"
+  },
+  {
+   "type": "special",
+   "from": {
+    "x": 8,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 581,
+   "hash": "ecdf1668"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 4,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 582,
+   "hash": "b745bf07"
+  },
+  {
+   "type": "drop",
+   "piece": "KY",
+   "to": {
+    "x": 8,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 583,
+   "hash": "c7e0d996"
+  },
+  {
+   "type": "special",
+   "from": {
+    "x": 8,
+    "y": 3
+   },
+   "owner": 1,
+   "t": 589,
+   "hash": "f84ab0e6"
+  },
+  {
+   "type": "magic",
+   "skill": "sword",
+   "target": {
+    "x": 8,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 607,
+   "hash": "d2fcc804"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 0,
+    "y": 7
+   },
+   "to": {
+    "x": 2,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 625,
+   "hash": "5796eb60"
+  },
+  {
+   "type": "drop",
+   "piece": "FU",
+   "to": {
+    "x": 1,
+    "y": 5
+   },
+   "owner": 1,
+   "t": 636,
+   "hash": "53cc9093"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 0
+   },
+   "to": {
+    "x": 5,
+    "y": 1
+   },
+   "owner": 1,
+   "t": 638,
+   "hash": "99b998f7"
+  },
+  {
+   "type": "forge",
+   "piece": "KAYAKU",
+   "owner": 0,
+   "t": 646,
+   "hash": "61aa7edc"
+  },
+  {
+   "type": "magic",
+   "skill": "phalanx",
+   "target": {
+    "x": 3,
+    "y": 2
+   },
+   "owner": 1,
+   "t": 647,
+   "hash": "d25a2a9d"
+  },
+  {
+   "type": "drop",
+   "piece": "FU",
+   "to": {
+    "x": 4,
+    "y": 4
+   },
+   "owner": 1,
+   "t": 653,
+   "hash": "5ce53624"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 4,
+    "y": 7
+   },
+   "to": {
+    "x": 3,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 658,
+   "hash": "79e67247"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 0,
+    "y": 8
+   },
+   "to": {
+    "x": 0,
+    "y": 0
+   },
+   "owner": 0,
+   "t": 659,
+   "hash": "13ff3f81"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 1
+   },
+   "to": {
+    "x": 3,
+    "y": 0
+   },
+   "owner": 1,
+   "t": 661,
+   "hash": "0e565dd3"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 6,
+    "y": 8
+   },
+   "owner": 0,
+   "t": 670,
+   "hash": "4278c5ca"
+  },
+  {
+   "type": "magic",
+   "skill": "sword",
+   "target": {
+    "x": 4,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 687,
+   "hash": "86174ca4"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 2,
+    "y": 2
+   },
+   "owner": 1,
+   "t": 696,
+   "hash": "70d03448"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 4,
+    "y": 8
+   },
+   "to": {
+    "x": 7,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 697,
+   "hash": "70dc02a7"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 8,
+    "y": 2
+   },
+   "to": {
+    "x": 7,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 703,
+   "hash": "d4a8d714"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 1
+   },
+   "to": {
+    "x": 5,
+    "y": 2
+   },
+   "owner": 1,
+   "t": 709,
+   "hash": "1bc66ce6"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 5,
+    "y": 2
+   },
+   "owner": 1,
+   "t": 711,
+   "hash": "c2d879cc"
+  },
+  {
+   "type": "special",
+   "from": {
+    "x": 5,
+    "y": 2
+   },
+   "owner": 1,
+   "t": 716,
+   "hash": "b48cde64"
+  }
+ ],
+ "endTick": 716
+}
