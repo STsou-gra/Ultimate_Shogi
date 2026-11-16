@@ -19,6 +19,12 @@ public class KifuMenuView : MonoBehaviour
     public static string KifuRulesetNote(KifuFile k)
     {
         BattleRuleset r = k != null && k.config != null ? k.config.Ruleset : null;
+        // 討伐任務の棋譜は、ボスの名前も出す
+        if (k != null && k.config != null && k.config.mode == GameModes.BossRaid.Id)
+        {
+            BossDef boss = BossDefs.ById(k.config.boss);
+            return $"（討伐任務：{(boss != null ? boss.Name : k.config.boss)}）";
+        }
         return r != null && r.Realtime ? $"（{r.Name}）" : "";
     }
 
