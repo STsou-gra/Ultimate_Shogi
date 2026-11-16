@@ -133,7 +133,9 @@ public class TimeStopMove
 
 // Giant：巨人への攻撃（Target が巨人。Reason が空なら取り（ByOwner が取った側）、空でなければその理由の消失。巨人は盤に残したまま。
 // 時間が動き出してから GameSystem.HitGiant で HP を減らす）。数値で保存しているので末尾に足していく
-public enum TimeStopKind { Capture, Explode, Vanish, Promote, Cell, Giant }
+// Boss：討伐任務のボスへのダメージ（BossHit が攻撃の種類、At が当たったマス。時間が動き出してから GameSystem.DamageBoss で与える。
+// Prototype の damage.js の deferBossDamage）
+public enum TimeStopKind { Capture, Explode, Vanish, Promote, Cell, Giant, Boss }
 public enum TimeStopCellEffect { Trap, Break, Burn, Wall }
 
 // 時間停止の予定 1 つ（Prototype の pending の 1 件）
@@ -154,4 +156,5 @@ public class TimeStopPending
     public TimeStopCellEffect CellEffect; // マスの変化の種類
     public PlayerType CellOwner;          // 落とし穴を仕掛けた・壁を建てたプレイヤー
     public int Turns;                     // 炎上のターン数
+    public BossHit BossHit;               // ボスへのダメージの予定：攻撃の種類
 }

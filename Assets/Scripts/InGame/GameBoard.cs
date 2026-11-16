@@ -31,6 +31,57 @@ public class GameBoard : MonoBehaviour
     // 盤だけを受け取る判定（持ち駒のルール・魔法の空きマスなど）が、予定の駒が残っているマスを見るのに使う
     public TimeStopState TimeStop { get; set; }
 
+    // 討伐任務のボス（盤の駒の配列には入れない。対局の始めに GameSystem が入れる。討伐任務でなければ null）。
+    // 盤だけを受け取る判定（移動・持ち駒のルール・魔法の空きマスなど）が、ボスのマスを見るのに使う
+    public BossState Boss { get; set; }
+
+    // (x, y) がボスのマスか（倒れたボスはどのマスも占めない）
+    public bool BossAt(int x, int y)
+    {
+        return Boss != null && Boss.Covers(x, y);
+    }
+
+    // マスの一覧のうち、ボスに重なる最初のマス（なければ null）
+    public Vector2Int? BossOverlap(IEnumerable<Vector2Int> cells)
+    {
+        if (Boss == null || !Boss.IsAlive || cells == null) return null;
+        foreach (Vector2Int c in cells)
+        {
+            if (Boss.Covers(c.x, c.y)) return c;
+        }
+        return null;
+    }
+
+    // 走り駒の通り道（移動先の手前まで）にボスのマスがあるか（走り駒はボスで止まる。GameHelper.IsPathBlocked の討伐任務の分）
+    public bool PathCrossesBoss(int fromX, int fromY, int toX, int toY)
+    {
+        if (Boss == null || !Boss.IsAlive) return false;
+        int dx = toX - fromX, dy = toY - fromY;
+        if (Mathf.Abs(dx) <= 1 && Mathf.Abs(dy) <= 1) return false;
+        int stepX = System.Math.Sign(dx), stepY = System.Math.Sign(dy);
+        int x = fromX + stepX, y = fromY + stepY;
+        for (int n = 0; n < 10 && (x != toX || y != toY); n++)
+        {
+            if (Boss.Covers(x, y)) return true;
+            x += stepX;
+            y += stepY;
+        }
+        return false;
+    }
+
+    // 初期配置の差し替え（討伐任務の編成。GameSystem.Start が UseLayout で入れる）と、盤の準備（Start）が済んだか
+    private List<PieceSpawnData> layoutOverride;
+    private bool started;
+
+    // 初期配置を layout にする（討伐任務の編成）。盤の準備がもう済んでいれば、並べ直す
+    public void UseLayout(List<PieceSpawnData> layout)
+    {
+        layoutOverride = layout;
+        if (!started) return;
+        RemoveAllPieces();
+        SetupInitialPieces();
+    }
+
 
     [SerializeField] private List<PieceMap> pieceMapList = new List<PieceMap>();
 
@@ -50,6 +101,7 @@ public class GameBoard : MonoBehaviour
             panel.transform.localPosition = location;
         }
         AllDeactivePanel();
+        started = true;
         SetupInitialPieces();
     }
 
@@ -77,13 +129,18 @@ public class GameBoard : MonoBehaviour
     }
     void SetupInitialPieces()
     {
-        List<PieceSpawnData> layout = CreateLayout();
+        List<PieceSpawnData> layout = layoutOverride ?? CreateLayout();
         foreach (PieceSpawnData item in layout)
         {
             int index = GameHelper.CalcPanelNum(item.X, item.Y);
 
             // ここで本物の駒（MonoBehaviour）を生成する
             GameObject prefab = GetPrefabByType(item.type);
+            if (prefab == null)
+            {
+                Debug.LogError($"Prefab not found for type: {item.type}");
+                continue;
+            }
             GameObject obj = Instantiate(prefab, transform);
 
             // データをセット
@@ -233,21 +290,29 @@ public class GameBoard : MonoBehaviour
         if (index == -1) return null;
 
         GameObject prefab = GetPrefabByType(type);
-        if (prefab == null)
+        GamePiece piece;
+        if (prefab != null)
+        {
+            piece = Instantiate(prefab, transform).GetComponent<GamePiece>();
+        }
+        else if (PieceRules.IsMinion(type))
+        {
+            // ボスの手下（小赤鬼）はプレハブを持たない：実行時に絵を作る（Piece/PieceKooni.cs）
+            piece = PieceKooni.Create(transform);
+        }
+        else
         {
             Debug.LogError($"Prefab not found for type: {type}");
             return null;
         }
-
-        GameObject obj = Instantiate(prefab, transform);
-        GamePiece piece = obj.GetComponent<GamePiece>();
         piece.player = player;
         piece.X = x;
         piece.Y = y;
         piece.Cells = Cells;
         piece.transform.localPosition = GameHelper.CalcPanelLocation(x, y);
 
-        if (piece.player == PlayerType.Player2)
+        // 後手の駒は逆向き（手下は顔の絵なので回さない）
+        if (piece.player == PlayerType.Player2 && !PieceRules.IsMinion(type))
         {
             piece.transform.localRotation = Quaternion.Euler(0, 0, 180);
         }

@@ -35,6 +35,10 @@ public abstract class GamePiece : MonoBehaviour
     // 巨人は 3×3 マスを占め、X・Y は中央のマス（GameBoard は占めるマス全部に同じ駒を入れる。GiantRules）
     [System.NonSerialized] public int hp = 0;
 
+    // 討伐任務：ボスの手下（小赤鬼）の状態（次に動く時刻・決めた行き先。Prototype の p.minion）。手下でない駒は Active = false のまま。
+    // 進めるのは Match/BossEngine.cs（GameSystem.Boss.cs から）
+    [System.NonSerialized] public MinionData minion;
+
     [Header("Tick Effects")]
     public bool isSpecialReady = false; // 必殺技を発動できる（オーラが光り、光の粒が立ち上る）。moveCount から GameSystem が設定する
     public bool hasFuse = false;        // 火薬の導火線（先端で火花が散る）

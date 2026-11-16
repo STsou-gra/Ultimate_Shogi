@@ -43,13 +43,50 @@ public class MatchState
     // 超常魔法「世界の終わり」を発動したターン（未発動なら null。Prototype の state.worldEndSince）
     private readonly int?[] worldEndSince = new int?[2];
 
-    public MatchState(PlayerType firstPlayer, uint seed, BattleRuleset ruleset = null)
+    // モード（基本対戦・討伐任務）
+    public GameModeDef Mode => Policy.Mode;
+
+    // 討伐任務：ボス（盤の駒には入れない。Boss.Covers で引く）・王将の被弾の数など・編成（棋譜と局面に残す）。
+    // 討伐任務でなければ Boss.active・Raid.active は false のまま（null にはしない）
+    public BossState Boss { get; private set; } = new BossState();
+    public RaidState Raid { get; private set; } = new RaidState();
+    public RaidFormation Formation { get; private set; }
+
+    public bool HasBoss => Boss != null && Boss.active;
+    // (x, y) がボスのマスか（倒れたボスはどのマスも占めない）
+    public bool BossAt(int x, int y) => Boss != null && Boss.Covers(x, y);
+
+    public MatchState(PlayerType firstPlayer, uint seed, BattleRuleset ruleset = null, GameModeDef mode = null)
     {
         Turn = new TurnState(firstPlayer);
         Energy = new EnergyState();
         Rng = new GameRng(seed);
-        Policy = new MatchPolicy(ruleset, this);
+        Policy = new MatchPolicy(ruleset, this, mode);
         if (Policy.IsRealtime) Clock = new MatchClock();
+    }
+
+    // 討伐任務を始める（Prototype の setupRaid のうち、状態の分）：ボスを置き、王将の被弾を 0 にする。
+    // 超常魔法は最初から解放済み（プレイヤーの席だけ。解放の演出は出さない）。駒を並べるのは GameBoard
+    public void SetupRaid(BossDef def, RaidFormation formation)
+    {
+        Boss = BossState.Create(def);
+        Raid = new RaidState { active = true };
+        Formation = formation != null ? formation.Clone() : new RaidFormation();
+        if (Policy.TranscendentUnlockedFromStart)
+        {
+            foreach (PlayerType owner in new[] { PlayerType.Player1, PlayerType.Player2 })
+            {
+                if (Policy.IsPlayerSeat(owner)) transcendentUnlocked[(int)owner] = true;
+            }
+        }
+    }
+
+    // 局面の読み込み（MatchSnapshotIO.Restore）：ボス・討伐任務の状態を戻す
+    public void RestoreRaid(BossState boss, RaidState raid, RaidFormation formation)
+    {
+        Boss = boss != null ? boss.Clone() : new BossState();
+        Raid = raid != null ? raid.Clone() : new RaidState();
+        if (formation != null) Formation = formation.Clone();
     }
 
     // 倒された自分の初期配置の駒（持ち主ごと。取り・消失どちらも）

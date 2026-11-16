@@ -23,6 +23,10 @@ using UnityEngine;
 //  clock            … 合戦将棋型の時間（MatchClock の tick と対局の時間。本将棋型は active = false）。
 //                     合戦将棋型では、駒の連打の間隔（PieceSnapshot.cooldownUntil。tick）・炎上の期限（CellSnapshot.burnUntil。対局の時間の tick）・
 //                     世界の終わりの発動時刻（PlayerSnapshot.worldEndSince。対局の時間）・停止世界の経過（TimeStopSnapshot.elapsed。tick）も時間で入る
+//  mode             … モード（GameModeDef.Id。"versus" = 基本対戦 ／ "bossRaid" = 討伐任務。版 1 のまま足した項目：ない JSON は基本対戦）
+//  boss / raid      … 討伐任務だけ（BossState・RaidState。それ以外は active = false）：ボスの位置・HP・向き・AI のフェーズと期限・予告の範囲・
+//                     暴れ回りの次の 1 歩、王将の被弾の数・手下の番号。手下（小赤鬼）の動き（次に動く時刻・行き先）は PieceSnapshot の minion〜
+//  formation        … 討伐任務の編成（自陣に並べた駒・錬成駒。錬成できる駒はここから決まる）
 //
 // 座標は GamePiece の X・Y と同じ（x = 段、y = 筋。Prototype とは x と y が逆）。
 // JsonUtility は null を書けないので、「なし」は -1（駒の id・マス・プレイヤー・ターン）で表す。列挙は数値で書かれる
@@ -53,6 +57,15 @@ public class MatchSnapshot
     public List<PositionSnapshot> positions = new List<PositionSnapshot>();
     public string ruleset = BattleRulesets.Honshogi.Id;
     public ClockSnapshot clock = new ClockSnapshot();
+    public string mode = "versus";
+    public BossState boss = new BossState();
+    public RaidState raid = new RaidState();
+    public RaidFormation formation = new RaidFormation();
+
+    // モード（知らない Id なら基本対戦）
+    public GameModeDef Mode => GameModes.ById(mode);
+    public bool HasBoss => boss != null && boss.active;
+    public bool IsRaid => raid != null && raid.active;
 
     // 戦闘型（知らない Id なら null）
     public BattleRuleset Ruleset => BattleRulesets.ById(string.IsNullOrEmpty(ruleset) ? BattleRulesets.Honshogi.Id : ruleset);
@@ -111,6 +124,17 @@ public class MatchSnapshot
         if (positions == null) positions = new List<PositionSnapshot>();
         if (string.IsNullOrEmpty(ruleset)) ruleset = BattleRulesets.Honshogi.Id;
         if (clock == null) clock = new ClockSnapshot();
+        if (string.IsNullOrEmpty(mode)) mode = GameModes.Versus.Id;
+        if (boss == null) boss = new BossState();
+        if (boss.ai == null) boss.ai = new BossAiState();
+        if (boss.ai.cells == null) boss.ai.cells = new List<MatchSquare>();
+        if (boss.id == null) boss.id = "";
+        if (boss.ai.attack == null) boss.ai.attack = "";
+        if (boss.ai.last == null) boss.ai.last = "";
+        if (raid == null) raid = new RaidState();
+        if (formation == null) formation = new RaidFormation();
+        if (formation.pieces == null) formation.pieces = new List<RaidPlacement>();
+        if (formation.forgePicks == null) formation.forgePicks = new List<PieceType>();
         foreach (PlayerSnapshot p in players) p?.FillMissing();
         timeStop.FillMissing();
     }
@@ -197,6 +221,16 @@ public class PieceSnapshot
     public bool held;       // 時間停止の予定の駒（盤のデータから外して、その場に残している）
     public int hp;          // 巨人の残りの HP（巨人以外は 0。巨人の x・y は 3×3 の中央のマス）
     public int cooldownUntil; // 合戦将棋型：連打の間隔が終わる tick（GamePiece.cooldownUntilTick。0 = 動いたことがない）
+    // 討伐任務：ボスの手下（小赤鬼）の状態（MinionData。手下でない駒は minion = false のまま）
+    public bool minion;       // 手下の状態を持つか
+    public int minionSerial;  // 現れた順の番号（手下を動かす順）
+    public int minionNext;    // 次に動く対局の時間（tick）
+    public bool minionPlanned; // 行き先を決めたか
+    public bool minionHasTo;  // 行き先があるか
+    public int minionToX = -1;
+    public int minionToY = -1;
+
+    public MinionData Minion => new MinionData { Active = minion, Serial = minionSerial, Next = minionNext, Planned = minionPlanned, HasTo = minionHasTo, ToX = minionToX, ToY = minionToY };
 }
 
 // 通常でないマス 1 つ（BoardCell）
@@ -266,6 +300,7 @@ public class TimeStopPendingSnapshot
     public TimeStopCellEffect cellEffect;
     public int cellOwner;
     public int turns;
+    public BossHit bossHit;  // ボスへのダメージの予定（kind が Boss のとき）：攻撃の種類
 }
 
 // 千日手の判定用に記録した局面 1 つ（GameSystem の positionHistory）

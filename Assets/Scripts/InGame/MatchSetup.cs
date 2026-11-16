@@ -5,6 +5,7 @@ public enum MatchMode
 {
     TwoPlayers, // 2人で対戦（1 台の画面で交代に操作）
     VsCpu,      // CPU と対戦
+    BossRaid,   // 討伐任務（ボスバトル。プレイヤーは先手の 1 人。戦闘型は合戦将棋型だけ。Prototype の src/defs/modes/bossRaid.js）
 }
 
 public static class MatchSetup
@@ -24,6 +25,48 @@ public static class MatchSetup
     public static int CpuLevel = 1;
 
     public static bool IsVsCpu => Mode == MatchMode.VsCpu;
+
+    // ------------------------------------------------------------
+    //  討伐任務（タイトル → ボス選択（BossSelectView）→ 編成（FormationView）→ 魔法スキル（DeckSelectController）→ 対局）
+    // ------------------------------------------------------------
+
+    public static bool IsBossRaid => Mode == MatchMode.BossRaid;
+    // ボスの種類（BossDefs の Id）と編成（自陣の駒・錬成駒）
+    public static string BossId { get; set; } = "";
+    public static RaidFormation Formation { get; set; }
+    public static BossDef Boss => BossDefs.ById(BossId);
+    // モードの定義（棋譜の config.mode・局面の mode・ハッシュに Id が入る）
+    public static GameModeDef GameMode => IsBossRaid ? GameModes.BossRaid : GameModes.Versus;
+
+    // 前回の編成（ボスごと。この起動の間だけ覚える。Prototype の game.raidChoice.setups）
+    static readonly System.Collections.Generic.Dictionary<string, RaidFormation> lastFormations = new System.Collections.Generic.Dictionary<string, RaidFormation>();
+    // 前回選んだボス
+    public static string LastBossId { get; set; } = "";
+
+    // ボス id の前回の編成（なければ null）
+    public static RaidFormation LastFormation(string id)
+    {
+        RaidFormation f;
+        return !string.IsNullOrEmpty(id) && lastFormations.TryGetValue(id, out f) ? f.Clone() : null;
+    }
+
+    public static void RememberFormation(string id, RaidFormation formation)
+    {
+        if (!string.IsNullOrEmpty(id) && formation != null) lastFormations[id] = formation.Clone();
+    }
+
+    // 討伐任務にする：ボスと編成を決める（戦闘型はボスの定義のもの＝合戦将棋型。プレイヤーは先手）
+    public static void SetBossRaid(string bossId, RaidFormation formation)
+    {
+        Mode = MatchMode.BossRaid;
+        BossId = bossId ?? "";
+        Formation = formation != null ? formation.Clone() : null;
+        HumanSide = PlayerType.Player1;
+        BossDef def = Boss;
+        if (def != null) RulesetId = def.RulesetId;
+        LastBossId = BossId;
+        RememberFormation(BossId, Formation);
+    }
     public static PlayerType CpuSide => HumanSide == PlayerType.Player1 ? PlayerType.Player2 : PlayerType.Player1;
 
     // side を CPU が指すか
@@ -45,6 +88,7 @@ public static class MatchSetup
     public static string SideLabel(PlayerType side)
     {
         string name = side == PlayerType.Player1 ? "先手" : "後手";
+        if (IsBossRaid) return side == PlayerType.Player1 ? "あなた" : (Boss != null ? Boss.Name : "ボス");
         if (!IsVsCpu) return name;
         return IsCpu(side) ? $"{name}（CPU Lv{CpuLevel}）" : $"{name}（あなた）";
     }
