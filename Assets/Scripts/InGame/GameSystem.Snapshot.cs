@@ -37,6 +37,13 @@ public partial class GameSystem
             s.clockTick = match.Clock.Tick;
             s.clockTime = match.Clock.Time;
         }
+        // モードと、討伐任務のボス・王将の被弾（BoardSimulator.Boss.cs。手下の状態は駒ごと）
+        s.mode = match.Mode.Id;
+        if (match.HasBoss)
+        {
+            s.boss = match.Boss.Clone();
+            s.raid = match.Raid != null ? match.Raid.Clone() : new RaidState();
+        }
 
         // 盤上の駒（時間停止の予定で盤のデータから外している駒は入れない。合法手の判定と同じく「ないもの」として扱う）
         GamePiece[] board = gameBoard.GetBoardData();
@@ -69,6 +76,7 @@ public partial class GameSystem
                 frozen = IsFrozenInTimeStop(p),
                 pendingPromote = timeStop != null && timeStop.HasPendingPromote(p),
                 cooldownUntil = p.cooldownUntilTick,
+                Minion = p.minion,
             });
         }
 

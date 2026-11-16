@@ -7,10 +7,13 @@ using TMPro;
 //  ・「棋譜を保存（N 手）」… 終わった対局の棋譜（KifuSession.Current）を JSON ファイルに保存する
 //  ・「棋譜を読み込んで再生」… 棋譜を選んで、Board シーンで最初から再生する
 //  ・直前に棋譜を再生していたら、その結果（全手が一致したか・何手目でずれたか）も出す
+//  ・討伐任務の結果なら、画面の左下に「もう一度」（同じボス・同じ編成・同じ魔法で対局をやり直す）・「ボス選択へ」・「タイトルへ」も出す
+//    （Prototype の GameOverScene の討伐任務のボタン。「棋譜を保存」は右下のもの）
 // GameResultDisplay（結果画面の勝者テキスト）が自動で作る。画面の右下に置く
 public class KifuGameOverPanel : MonoBehaviour
 {
     const string MatchSceneName = "Board";
+    const string TitleSceneName = "GameTitle";
 
     private TMP_FontAsset font;
     private TextMeshProUGUI messageText;
@@ -55,6 +58,34 @@ public class KifuGameOverPanel : MonoBehaviour
 
         messageText = RuntimeUi.CreateText("Message", box.transform, KifuSession.LastReplayResult ?? "", 20f, RuntimeUi.Hex(0xffe082), TextAlignmentOptions.Center, font);
         RuntimeUi.Place(messageText.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, pad + 196f), new Vector2(w - pad * 2f, 90f));
+
+        if (GameResult.Raid != null) BuildRaidPanel(canvas, GameResult.Raid);
+    }
+
+    // 討伐任務の結果のボタン（画面の左下）：「もう一度」「ボス選択へ」「タイトルへ」
+    void BuildRaidPanel(Canvas canvas, RaidResultInfo raid)
+    {
+        const float w = 520f, pad = 24f;
+        Image box = RuntimeUi.CreatePanel("RaidBox", canvas.transform, RuntimeUi.WithAlpha(RuntimeUi.BoxColor, 0.9f), true);
+        RuntimeUi.Place(box.rectTransform, new Vector2(0f, 0f), new Vector2(24f, 24f), new Vector2(w, 330f));
+
+        string head = raid.Cleared ? $"討伐任務：{raid.BossName}　クリアタイム {raid.TimeLabel}" : $"討伐任務：{raid.BossName}　討伐失敗";
+        TextMeshProUGUI title = RuntimeUi.CreateText("Title", box.transform, head, 26f, RuntimeUi.GoldColor, TextAlignmentOptions.Center, font);
+        RuntimeUi.Place(title.rectTransform, new Vector2(0.5f, 1f), new Vector2(0f, pad), new Vector2(w - pad * 2f, 40f));
+
+        // もう一度：同じボス・同じ編成・同じ魔法（MatchSetup と DeckTransferManager に残っている）。棋譜の再生で来たなど、設定が残っていなければ押せない
+        Button again = RuntimeUi.CreateButton("RaidAgain", box.transform, RuntimeUi.Hex(0xc62828), "もう一度", 28f, font, out _);
+        RuntimeUi.Place((RectTransform)again.transform, new Vector2(0.5f, 1f), new Vector2(0f, pad + 52f), new Vector2(w - pad * 2f, 64f));
+        again.interactable = MatchSetup.IsBossRaid && MatchSetup.Boss != null && MatchSetup.Boss.Id == raid.BossId && MatchSetup.Formation != null;
+        again.onClick.AddListener(() => SceneManager.LoadScene(MatchSceneName));
+
+        Button select = RuntimeUi.CreateButton("RaidBossSelect", box.transform, RuntimeUi.Hex(0x6a1b9a), "ボス選択へ", 28f, font, out _);
+        RuntimeUi.Place((RectTransform)select.transform, new Vector2(0.5f, 1f), new Vector2(0f, pad + 128f), new Vector2(w - pad * 2f, 64f));
+        select.onClick.AddListener(BossSelectView.OpenAfterLoadingTitle);
+
+        Button toTitle = RuntimeUi.CreateButton("RaidTitle", box.transform, RuntimeUi.GrayButton, "タイトルへ", 28f, font, out _);
+        RuntimeUi.Place((RectTransform)toTitle.transform, new Vector2(0.5f, 1f), new Vector2(0f, pad + 204f), new Vector2(w - pad * 2f, 64f));
+        toTitle.onClick.AddListener(() => SceneManager.LoadScene(TitleSceneName));
     }
 
     void SetMessage(string message)

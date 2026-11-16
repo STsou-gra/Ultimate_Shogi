@@ -11,6 +11,7 @@ using TMPro;
 // タイトルの「ゲームスタート」（GameSceneManager.PlayGame）で、タイトルの上に重ねて開く（シーンに置かなくてよい。Canvas は実行時に作る）。
 //  ・「2人で対戦」：1 台の画面で交代に操作（今までと同じ）→ 魔法の編成（両者）
 //  ・「CPU と対戦」：自分が先手か後手か・CPU の強さ（Lv0〜Lv2）を選ぶ → 魔法の編成（人の分だけ。CPU は自分で選ぶ）
+//  ・「討伐任務」：ボスバトル。ボス選択（BossSelectView）→ 編成（FormationView）→ 魔法の編成 → 対局（Prototype はタイトル画面から入る）
 // 選んだ設定は MatchSetup に入れる（前回の設定を覚えている）。
 // 操作：マウス、またはキーボード（← → で選ぶ・↑ ↓ で行を移る・Enter で決定・Esc で戻る）
 public class ModeSelectView : MonoBehaviour
@@ -32,7 +33,7 @@ public class ModeSelectView : MonoBehaviour
     Button startButton, backButton;
     TextMeshProUGUI levelNote;
 
-    int modeFocus;             // 0 = 2人で対戦、1 = CPU と対戦
+    int modeFocus;             // 0 = 2人で対戦、1 = CPU と対戦、2 = 討伐任務
     int cpuRow;                // 0 = 手番、1 = 強さ、2 = 開始
     PlayerType side;
     int level;
@@ -54,7 +55,7 @@ public class ModeSelectView : MonoBehaviour
         font = Resources.Load<TMP_FontAsset>(FontPath);
         side = MatchSetup.HumanSide;
         level = MatchSetup.CpuLevel;
-        modeFocus = MatchSetup.IsVsCpu ? 1 : 0;
+        modeFocus = MatchSetup.IsBossRaid ? 2 : MatchSetup.IsVsCpu ? 1 : 0;
         EnsureEventSystem();
         Build();
         ShowModePage();
@@ -78,7 +79,9 @@ public class ModeSelectView : MonoBehaviour
 
         if (!onCpuPage)
         {
-            if (left || right) { modeFocus = 1 - modeFocus; Refresh(); }
+            int n = modeButtons.Count;
+            if (left) { modeFocus = (modeFocus + n - 1) % n; Refresh(); }
+            if (right) { modeFocus = (modeFocus + 1) % n; Refresh(); }
             if (enter) ChooseMode(modeFocus);
             if (back) Close();
             return;
@@ -107,6 +110,13 @@ public class ModeSelectView : MonoBehaviour
         {
             MatchSetup.SetTwoPlayers();
             SceneManager.LoadScene(NextScene);
+            return;
+        }
+        if (index == 2)
+        {
+            // 討伐任務：ボス選択へ（この画面は閉じる。ボス選択の「戻る」でまた開く）
+            BossSelectView.Open();
+            Destroy(gameObject);
             return;
         }
         ShowCpuPage();
@@ -191,8 +201,9 @@ public class ModeSelectView : MonoBehaviour
 
         // 1 ページ目：2人で対戦 / CPU と対戦
         modePage = Page(root.transform, "ModePage");
-        modeButtons.Add(BigButton(modePage.transform, "2人で対戦", "1 台の画面で交代に操作", new Vector2(-330, 40), () => ChooseMode(0)));
-        modeButtons.Add(BigButton(modePage.transform, "CPU と対戦", "先手・後手と CPU の強さを選ぶ", new Vector2(330, 40), () => ChooseMode(1)));
+        modeButtons.Add(BigButton(modePage.transform, "2人で対戦", "1 台の画面で交代に操作", new Vector2(-590, 40), () => ChooseMode(0)));
+        modeButtons.Add(BigButton(modePage.transform, "CPU と対戦", "先手・後手と CPU の強さを選ぶ", new Vector2(0, 40), () => ChooseMode(1)));
+        modeButtons.Add(BigButton(modePage.transform, "討伐任務", "ボスバトル（1 人で挑む）", new Vector2(590, 40), () => ChooseMode(2)));
         Text(modePage.transform, "← → で選んで Enter／クリック　　Esc：タイトルに戻る", 30, new Vector2(0, -300), new Vector2(1400, 60));
         Button close = SmallButton(modePage.transform, "◀ タイトルに戻る", new Vector2(0, -400), Close);
         close.GetComponent<RectTransform>().sizeDelta = new Vector2(420, 80);
