@@ -9,6 +9,7 @@ using System.Text;
 //  ・錬成 … ForgeRecipeBook にレシピを足す
 //  ・必殺技 … SpecialMoveBook に技を足す
 //  ・魔法 … SkillDatabase（編成の候補）に定義を足す。ランクごとに並ぶ
+// 討伐任務のページ（RaidPage）は、ボスの定義（BossDefs・BossAttacks）とダメージ・コストの表（RaidRules）から作る（ボス・攻撃を足すと自動で出る）。
 // 一部の魔法（壁・ファランクス・翼・カウンター・ワープ・ボム・停止世界・アンデッド・パラダイスと超常魔法の解放条件）は「魔法の補足」ページに詳しい決まりを載せる。
 // その魔法が候補にないときは補足も出さない。デバッグ用の魔法（SkillDefinition.debugOnly。魔力の火花）は一覧にも補足にも出さない。
 // 編成画面（DeckSelectController・SkillCardView・SkillDetailPopup）のカードと「詳細」も、
@@ -88,6 +89,7 @@ public class RulesSources
     public PlayerType? CpuSide;                             // この対局で CPU が指す側（2人で対戦なら null）
     public int CpuLevel;                                    // その CPU の強さ
     public BattleRuleset Ruleset;                           // この対局の戦闘型（なければ null。「戦闘型」ページの印に使う）
+    public BossDef Boss;                                    // この対局のボス（討伐任務でなければ null。「討伐任務」ページの印に使う）
     public IReadOnlyList<BattleRuleset> Rulesets;           // 戦闘型の一覧（なければ BattleRulesets.All）
 }
 
@@ -106,8 +108,88 @@ public static class RulesBook
         };
         RulesPage extra = MagicDetailPage(src);
         if (extra != null) pages.Add(extra);
+        pages.Add(RaidPage(src));
         pages.Add(ControlsPage(src));
         return pages;
+    }
+
+    // ------------------------------------------------------------
+    //  討伐任務（ボスバトル）。数値は定義（BossDefs・BossAttacks・RaidRules・MinionRules）から作る
+    // ------------------------------------------------------------
+    static RulesPage RaidPage(RulesSources src)
+    {
+        RulesPage p = new RulesPage("討伐任務");
+        p.Heading("討伐任務（ボスバトル）")
+         .Text("対戦モードの「討伐任務」で遊ぶ。プレイヤー 1 人（先手・盤の手前）でボスに挑み、ボスの HP を 0 にすれば討伐成功（クリアタイムが出る）。戦闘型は合戦将棋型（手番なし）。")
+         .Text("流れ：ボス選択 → 編成（駒の配置）→ 錬成駒 → 魔法スキル → 対局 → 結果（「もう一度」「ボス選択へ」「棋譜を保存」「タイトルへ」）。");
+
+        p.Heading("編成");
+        List<string> costs = new List<string>();
+        foreach (PieceType t in RaidRules.BasicPalette) costs.Add($"{PieceNames.Short(t)} {RaidRules.TeamCost(t)}");
+        foreach (PieceType t in RaidRules.OriginalPalette) costs.Add($"{PieceNames.Full(t)} {RaidRules.TeamCost(t)}");
+        p.Text("チームコスト制：自陣（手前 3 段）に、コストの合計がボスごとの上限以下になるように駒を並べる。王将は必ず 1 枚。")
+         .Text($"コスト … {string.Join("・", costs)}", 2)
+         .Text("「おまかせ配置」は本将棋の初期配置から上限に入る駒を並べる。「クリア」で全部外す。前回の編成はボスごとに覚えている（ゲームを閉じるまで）。", 2);
+        List<string> forge = new List<string>();
+        foreach (PieceType t in RaidRules.ForgePickTypes)
+        {
+            RaidForgeOption? o = RaidRules.ForgeRecipeOf(t);
+            if (o.HasValue) forge.Add($"{PieceNames.Full(t)} {o.Value.Cost}");
+        }
+        p.Text("錬成：初期配置に置いた駒の種類（王将を除く）は、対局中に錬成できる。それに加えて「錬成駒」を選べる（数はボスごと。初期配置に置いていない種類から）。")
+         .Text($"錬成のコスト（エナジー）… {string.Join("・", forge)}", 2)
+         .Text("魔法スキル：討伐任務で使えるものだけを編成できる（相手の駒・王将を前提にした魔法は使えない）。超常魔法は最初から解放済み。", 1);
+
+        p.Heading("ボスとの戦い")
+         .Text("ボスは盤のマスを占める（駒ではないので、取れない・押せない）。走り駒はボスで止まり、持ち駒はボスのマスに打てない。")
+         .Text("攻撃：駒をボスのマスへ動かすと攻撃になり、駒は元のマスへ戻る（移動として数える。攻撃したマスが敵陣なら成れる）。")
+         .Text($"駒のダメージ … 桂・銀・金 {RaidRules.PieceBossDamage(PieceType.GoldGeneral, false)}／角・飛・巨人 {RaidRules.PieceBossDamage(PieceType.Rook, false)}／そのほか {RaidRules.PieceBossDamage(PieceType.Pawn, false)}。成った駒は +1", 2)
+         .Text($"必殺技 {RaidRules.BossDamage(null, BossHit.OfSpecial(PieceType.Pawn))}・爆発 {RaidRules.BossDamage(null, BossHit.Explosion)}・狙撃 {RaidRules.BossDamage(null, BossHit.Snipe)}・ファランクスの槍 {RaidRules.BossDamage(null, BossHit.Phalanx)}", 2)
+         .Text($"魔法 … 剣 {RaidRules.MagicBossDamage("Sword")}・ボム {RaidRules.MagicBossDamage("Bomb")}・隕石 {RaidRules.MagicBossDamage("Meteor")}・破壊砲 {RaidRules.MagicBossDamage("Cannon")}（1 回の技・魔法・爆発につき 1 回だけ当たる）", 2)
+         .Text($"エナジー：1 秒ごとに +{BattleRulesets.Kassen.EnergyPerSec}。盤上の駒を動かす・必殺技を使うたびに +{GameModes.BossRaid.MoveEnergy}（ボスへの攻撃も含む）。")
+         .Text("ボスの攻撃：範囲を予告の秒数だけ前から赤く光らせ、技の名前と残り秒数を出す。範囲は予告の始めに決まり、そのあと動かない。")
+         .Text("当たった駒 … 盾があれば盾が割れて残る／火薬は爆発する（ボスにも当たる）／巨人は HP -1／それ以外は撃破（盤から消え、駒の価値ぶんのエナジーを得る。持ち駒にはならない）", 2)
+         .Text("王将はボスの攻撃に 2 回まで耐え、3 回目でゲームオーバー（回数はボスごと。盾があれば盾が先に割れる）。王将が取られる・消失するのも負け。", 2)
+         .Text($"停止世界：行動回数の上限がなく、{BattleRulesets.Kassen.Durations.TimeStopSec:0} 秒のあいだ何回でも行動できる。その間ボス・手下は止まり、ボスへのダメージは時間が動き出してから入る。")
+         .Text("アンデッドはボスへ向かって進み、ボスを攻撃する。隕石は敵陣のマスも中心にできる。");
+
+        foreach (BossDef def in BossDefs.All)
+        {
+            if (def == null) continue;
+            if (!def.Implemented)
+            {
+                p.Heading($"{def.Name}（準備中）").Text("まだ選べない（ボス選択の画面にカードだけ出る）。");
+                continue;
+            }
+            p.Heading(def.Name);
+            p.Text($"{Clean(def.Description)}", 1, src.Boss == def ? "この対局" : null)
+             .Text($"{def.W}×{def.H} マス・HP {def.Hp}。前の行動が終わってから {def.CooldownSec:0} 秒で次の攻撃を予告する。" +
+                   $"チームコストの上限 {def.CostLimit}・錬成駒 {def.ForgeSlots} 種まで。王将は {def.KingMaxHits - 1} 回まで耐える。");
+            foreach (BossAttackEntry entry in def.Attacks)
+            {
+                BossAttackDef a = BossAttacks.ById(entry.Id);
+                if (a == null) continue;
+                string tail = a.IsLasting ? $"予告 {a.TelegraphSec:0} 秒（範囲は出ず、ボスが赤く光る）→ {a.DurationSec:0} 秒間、{a.StepSec:0} 秒ごとに 1 マス動く（次の行き先を出す）→ {a.RestSec:0} 秒休む"
+                    : $"予告 {a.TelegraphSec:0} 秒";
+                p.Text($"{a.Name}：{Clean(a.Description)}（{tail}）", 2);
+            }
+            if (System.Array.Exists(def.Attacks, e => e.Id == BossAttacks.Summon.Id))
+            {
+                p.Text($"小赤鬼：{MinionRules.StepSec:0} 秒ごとに周り 8 マスのどれかへ 1 マス動く（{MinionRules.WarnSec:0} 秒前から行き先の矢印が出る）。隣にプレイヤーの駒がいれば襲い（ボスの攻撃と同じ扱い）、" +
+                       $"いなければ王将へ近づく。普通の駒と同じように取れる（持ち駒にはならない）。盤上は {BossAttacks.SummonMax} 体まで。", 2);
+            }
+            if (System.Array.Exists(def.Attacks, e => e.Id == BossAttacks.Rampage.Id))
+            {
+                p.Text("暴れ回りで踏まれた駒はボスの攻撃を受ける。残った駒（盾・王将）は押し出される。", 2);
+            }
+        }
+
+        SeatKeys k = SeatKeys.RaidSolo("討伐任務");
+        p.Heading("操作")
+         .Text($"キーボード全体を使う（CPU と対戦の合戦将棋型と同じ）。錬成のキーは {SeatKeys.Label(k.Forge, 0)}〜{SeatKeys.Label(k.Forge, k.Forge.Length - 1)}（画面右上の錬成パネルの順）。")
+         .Text("画面の左上にボスのパネル（HP・今の行動と残り秒数・王将の耐久・攻撃の一覧）。")
+         .Text("棋譜・局面：ボスと編成も記録する。棋譜を再生すると同じ戦いになる（行動ごとに盤面を照らし合わせる）。");
+        return p;
     }
 
     // ------------------------------------------------------------
@@ -549,7 +631,7 @@ public static class RulesBook
     {
         RulesPage p = new RulesPage("操作");
         p.Heading("対戦モード")
-         .Text("タイトルの「ゲームスタート」で選ぶ：「2人で対戦」（1 台の画面で交代に操作）／「CPU と対戦」（自分が先手か後手か・CPU の強さを選ぶ）");
+         .Text("タイトルの「ゲームスタート」で選ぶ：「2人で対戦」（1 台の画面で交代に操作）／「CPU と対戦」（自分が先手か後手か・CPU の強さを選ぶ）／「討伐任務」（ボスバトル。「討伐任務」のページ）");
         for (int lv = CpuLevels.Min; lv <= CpuLevels.Max; lv++) p.Text($"{CpuLevels.Label(lv)}：{CpuLevels.Note(lv)}", 2);
         p.Text("CPU と対戦では、魔法スキルの編成は自分の分だけ（CPU は自分で選ぶ）。盤は回らず、いつも自分が手前。CPU の手番は操作できない（考えている間も画面は動く）");
         if (src.CpuSide.HasValue)

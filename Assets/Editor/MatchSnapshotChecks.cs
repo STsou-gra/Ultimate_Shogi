@@ -9,7 +9,7 @@ using UnityEngine;
 // 失敗したら CheckFailedException を投げる。メニュー「UltimateShogi/局面の書き出しを確かめる」からも全部を実行できる。
 //
 // Check〜 を足すと、テストにも自動で並ぶ（public static・引数なし・名前が Check で始まるメソッド）。
-// 魔法スキルの編成画面の確認は MatchSnapshotChecks.Loadout.cs（同じクラスの続き）
+// 魔法スキルの編成画面の確認は MatchSnapshotChecks.Loadout.cs、討伐任務の確認は MatchSnapshotChecks.Raid.cs（同じクラスの続き）
 public static partial class MatchSnapshotChecks
 {
     public class CheckFailedException : System.Exception
@@ -251,10 +251,10 @@ public static partial class MatchSnapshotChecks
         private readonly List<Object> created = new List<Object>();
         private readonly Dictionary<string, SkillDefinition> skills = new Dictionary<string, SkillDefinition>();
 
-        // ruleset：戦闘型（省略すると本将棋型。合戦将棋型なら MatchState.Clock がある）
-        public Fixture(BattleRuleset ruleset = null)
+        // ruleset：戦闘型（省略すると本将棋型。合戦将棋型なら MatchState.Clock がある）。mode：モード（省略すると基本対戦）
+        public Fixture(BattleRuleset ruleset = null, GameModeDef mode = null)
         {
-            match = new MatchState(PlayerType.Player1, 12345u, ruleset);
+            match = new MatchState(PlayerType.Player1, 12345u, ruleset, mode);
             foreach (string id in new[] { "Shield", "Sword", "Pitfall", "Meteor", "TimeStop" })
             {
                 SkillDefinition skill = ScriptableObject.CreateInstance<SkillDefinition>();

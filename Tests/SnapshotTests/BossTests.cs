@@ -959,6 +959,33 @@ static partial class Program
         BoardSnapshot vv = BoardSnapshot.FromJson(v.ToJson());
         Check(vv != null && !vv.HasBoss && !vv.IsRaid && vv.mode == "versus", "BoardSnapshot: 基本対戦にはボスがいない");
         Check(BoardSnapshot.FromJson("{\"version\":1}") is BoardSnapshot old && !old.HasBoss && !old.IsRaid && old.mode == "versus", "BoardSnapshot: 項目のない JSON は基本対戦");
+
+        // 局面（MatchSnapshot）のハッシュ：討伐任務はモード・ボス・王将の被弾・手下を足す。基本対戦は今までと同じ
+        MatchSnapshot m = new MatchSnapshot();
+        m.players.Add(new PlayerSnapshot { owner = 0 });
+        m.players.Add(new PlayerSnapshot { owner = 1 });
+        m.ruleset = "kassen";
+        m.clock = new ClockSnapshot { active = true, tick = 260, time = 240 };
+        m.pieces.Add(new PieceSnapshot { id = 1, type = PieceType.King, owner = 0, x = 0, y = 4 });
+        string versus = MatchHash.BuildText(m);
+        Check(versus.EndsWith(",[\"versus\",\"kassen\",null],[260,240],[]]"), $"MatchHash: 基本対戦は討伐任務の項目を足さない（{versus.Substring(Math.Max(0, versus.Length - 60))}）");
+        m.mode = "bossRaid";
+        m.boss = BossState.Create(AKAONI);
+        m.boss.x = 5; m.boss.y = 2; m.boss.hp = 21; m.boss.facingX = 0; m.boss.facingY = 1;
+        m.boss.ai.phase = BossAiState.Telegraph; m.boss.ai.until = 300; m.boss.ai.attack = "sweep"; m.boss.ai.last = "smash";
+        m.raid = new RaidState { active = true, kingHits = 1 };
+        string raid = MatchHash.BuildText(m);
+        Check(raid.EndsWith(",[\"bossRaid\",\"kassen\",\"akaoni\"],[260,240],[],[\"akaoni\",5,2,21,0,1,\"telegraph\",300,\"sweep\",\"smash\"],[1]]"),
+            $"MatchHash: 討伐任務はモード・ボス・王将の被弾を足す（{raid.Substring(Math.Max(0, raid.Length - 110))}）");
+        m.pieces.Add(new PieceSnapshot { id = 2, type = PieceType.Kooni, owner = 1, x = 7, y = 8, minion = true, minionSerial = 2, minionNext = 280, minionPlanned = true, minionHasTo = true, minionToX = 6, minionToY = 7 });
+        m.pieces.Add(new PieceSnapshot { id = 3, type = PieceType.Kooni, owner = 1, x = 6, y = 0, minion = true, minionSerial = 1, minionNext = 290 });
+        string mins = MatchHash.BuildText(m);
+        Check(mins.EndsWith(",[1],[[6,0,290,null],[7,8,280,[6,7]]]]"), $"MatchHash: 手下がいるときだけ [x, y, 次に動く時刻, 行き先] を足す（{mins.Substring(Math.Max(0, mins.Length - 60))}）");
+        m.raid.kingHits = 2;
+        Check(MatchHash.Compute(m) != MatchHash.Fnv1a(mins), "MatchHash: 王将の被弾が違えば違うハッシュ");
+        MatchSnapshot back = MatchSnapshot.FromJson(m.ToJson());
+        Check(back != null && back.mode == "bossRaid" && back.boss.active && back.boss.hp == 21 && back.raid.kingHits == 2
+              && back.pieces.Count(p => p.minion) == 2 && MatchHash.Compute(back) == MatchHash.Compute(m), "MatchSnapshot: ボス・王将の被弾・手下が JSON で往復し、ハッシュも同じ");
     }
 
     // ------------------------------------------------------------
