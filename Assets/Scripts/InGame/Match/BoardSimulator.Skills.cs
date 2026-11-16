@@ -836,7 +836,7 @@ public static partial class BoardSimulator
         return result;
     }
 
-    // MagicKit.Band
+    // MagicKit.Band（並びは Prototype の band と同じ：x の大きい方から）
     static List<MatchSquare> Band(int x, int y, bool horizontal)
     {
         List<MatchSquare> result = new List<MatchSquare>();
@@ -846,7 +846,7 @@ public static partial class BoardSimulator
         {
             for (int b = -1; b <= 1; b++)
             {
-                result.Add(horizontal ? new MatchSquare(mx + b, a) : new MatchSquare(a, my + b));
+                result.Add(horizontal ? new MatchSquare(mx - b, a) : new MatchSquare(8 - a, my + b));
             }
         }
         return result;
