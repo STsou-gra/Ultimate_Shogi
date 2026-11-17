@@ -7,10 +7,10 @@ using TMPro;
 
 // 討伐任務のボス選択の画面（Prototype の src/scenes/BossSelectScene.js）。
 // ボスの定義（BossDefs.All）の数だけカードを並べ、一番右に選べない「coming soon！」のカードを 1 枚置く（ボスを足すと自動で並ぶ）。
-// まだ移植していないボス（BossDef.Implemented = false。大将軍）は、カードは出すが選べない（「準備中」）。
-// 対戦モードの画面（ModeSelectView）の「討伐任務」から、タイトルの上に重ねて開く（シーンに置かなくてよい。Canvas は実行時に作る）。
+// まだ移植していないボス（BossDef.Implemented = false）があれば、カードは出すが選べない（「準備中」。今は赤鬼王・大将軍とも選べる）。
+// タイトル画面（TitleView）の「討伐任務」から、タイトルの上に重ねて開く（シーンに置かなくてよい。Canvas は実行時に作る）。
 // ボスを選ぶと編成の画面（FormationView）へ進む。結果画面の「ボス選択へ」は、タイトルのシーンを読み込んでからここを開く（OpenAfterLoadingTitle）。
-// 操作：マウス、またはキーボード（← → で選ぶ・Enter で決定・Esc で戻る）
+// 操作：マウス、またはキーボード（← → で選ぶ・Enter で決定・Esc で戻る）。「◀ タイトルに戻る」（Esc）でタイトル画面へ戻る
 public class BossSelectView : MonoBehaviour
 {
     const string TitleScene = "GameTitle";
@@ -31,6 +31,9 @@ public class BossSelectView : MonoBehaviour
     int shakeIndex = -1;
 
     static BossSelectView open;
+
+    // 開いているか（タイトル画面は、この画面が開いている間キーを読まない）
+    public static bool IsOpen => open != null;
 
     // タイトルの上に開く（もう開いていれば何もしない）
     public static void Open()
@@ -121,10 +124,10 @@ public class BossSelectView : MonoBehaviour
         if (notice != null) notice.text = message;
     }
 
-    // 対戦モードの画面へ戻る
+    // タイトル画面へ戻る（この画面を閉じる。タイトル画面は下に残っている。なければ開く）
     void Back()
     {
-        ModeSelectView.Open();
+        if (SceneManager.GetActiveScene().name == TitleView.SceneName) TitleView.Open();
         Destroy(gameObject);
     }
 
@@ -172,11 +175,11 @@ public class BossSelectView : MonoBehaviour
         notice = RuntimeUi.CreateText("Notice", box.transform, "", 26f, RuntimeUi.Hex(0xffe082), TextAlignmentOptions.Center, font);
         Place(notice.rectTransform, new Vector2(200f, -410f), new Vector2(1100f, 50f));
 
-        Button back = RuntimeUi.CreateButton("Back", box.transform, RuntimeUi.GrayButton, "◀ 対戦モードに戻る", 28f, font, out _);
+        Button back = RuntimeUi.CreateButton("Back", box.transform, RuntimeUi.GrayButton, "◀ タイトルに戻る", 28f, font, out _);
         Place((RectTransform)back.transform, new Vector2(-670f, -410f), new Vector2(360f, 70f));
         back.onClick.AddListener(Back);
 
-        TextMeshProUGUI keys = RuntimeUi.CreateText("Keys", canvas.transform, "← → で選んで Enter／クリック　　Esc：戻る", 26f, new Color(1f, 1f, 1f, 0.7f), TextAlignmentOptions.Center, font);
+        TextMeshProUGUI keys = RuntimeUi.CreateText("Keys", canvas.transform, "← → で選んで Enter／クリック　　Esc：タイトルに戻る", 26f, new Color(1f, 1f, 1f, 0.7f), TextAlignmentOptions.Center, font);
         Place(keys.rectTransform, new Vector2(0f, -510f), new Vector2(1400f, 44f));
     }
 
@@ -190,11 +193,11 @@ public class BossSelectView : MonoBehaviour
         band.raycastTarget = false;
         Place(band.rectTransform, new Vector2(0f, 180f), new Vector2(CardW - 8f, 252f));
 
-        // 絵（赤鬼王は盤上と同じ絵。まだ絵のないボスは頭文字）
-        if (def.Id == BossDefs.Akaoni.Id)
+        // 絵（盤上と同じ絵。まだ遊べないボスは頭文字）
+        if (ready)
         {
             Image art = RuntimeUi.CreatePanel("Art", card.transform, Color.white, false);
-            art.sprite = MagicSprites.Akaoni;
+            art.sprite = MagicSprites.BossSprite(def.Id);
             art.preserveAspect = true;
             art.raycastTarget = false;
             Place(art.rectTransform, new Vector2(0f, 180f), new Vector2(230f, 230f));

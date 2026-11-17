@@ -20,6 +20,9 @@ public static class PieceNames
             case PieceType.Bird: return "鳥";
             case PieceType.Giant: return "巨人";
             case PieceType.Kooni: return "鬼";
+            case PieceType.GunFu: return "軍歩";
+            case PieceType.GunJu: return "銃";
+            case PieceType.Bouheki: return "壁";
             default: return type.ToString();
         }
     }
@@ -42,6 +45,9 @@ public static class PieceNames
             case PieceType.Bird: return "鳥";
             case PieceType.Giant: return "巨人";
             case PieceType.Kooni: return "小赤鬼";
+            case PieceType.GunFu: return "軍歩兵";
+            case PieceType.GunJu: return "軍銃兵";
+            case PieceType.Bouheki: return "防壁";
             default: return type.ToString();
         }
     }
@@ -51,5 +57,6 @@ public static class PieceNames
     {
         PieceType.Pawn, PieceType.Lance, PieceType.Knight, PieceType.SilverGeneral, PieceType.GoldGeneral,
         PieceType.Bishop, PieceType.Rook, PieceType.King, PieceType.Gunpowder, PieceType.Sniper, PieceType.Bird, PieceType.Giant, PieceType.Kooni,
+        PieceType.GunFu, PieceType.GunJu, PieceType.Bouheki,
     };
 }

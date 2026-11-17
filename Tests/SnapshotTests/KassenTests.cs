@@ -470,7 +470,7 @@ static partial class Program
         ["OU"] = PieceType.King, ["HI"] = PieceType.Rook, ["KA"] = PieceType.Bishop, ["KI"] = PieceType.GoldGeneral,
         ["GI"] = PieceType.SilverGeneral, ["KE"] = PieceType.Knight, ["KY"] = PieceType.Lance, ["FU"] = PieceType.Pawn,
         ["KAYAKU"] = PieceType.Gunpowder, ["SNIPER"] = PieceType.Sniper, ["TORI"] = PieceType.Bird, ["KYOJIN"] = PieceType.Giant,
-        ["KOONI"] = PieceType.Kooni,
+        ["KOONI"] = PieceType.Kooni, ["GUNFU"] = PieceType.GunFu, ["GUNJU"] = PieceType.GunJu, ["BOUHEKI"] = PieceType.Bouheki,
     };
 
     static string ProtoName(PieceType t) => ProtoPieces.First(kv => kv.Value == t).Key;
@@ -633,6 +633,25 @@ static partial class Program
             {
                 sb.Append(",[").Append(string.Join(",", mins.Select(p =>
                     $"[{p.y},{8 - p.x},{p.minionNext},{(p.minionHasTo ? $"[{p.minionToY},{8 - p.minionToX}]" : "null")}]"))).Append(']');
+            }
+            // 防壁の HP・軍銃兵の照準と次に撃つ時刻・ボスの攻撃（弓）の照準（hash.js の raidExtraParts。どれもなければ足さない）。
+            // 照準は [追う駒の id, [x, y], 固まったか]。駒の id は Unity の駒の番号（serial：作った順に 1 から）
+            string Aim(AimData a) => !a.active ? "null" : $"[{(a.target > 0 ? a.target.ToString() : "null")},{(a.hasCell ? $"[{a.y},{8 - a.x}]" : "null")},{(a.locked ? 1 : 0)}]";
+            List<SnapshotPiece> walls = s.pieces.Where(p => p.IsWallPiece).OrderBy(p => 8 - p.x).ThenBy(p => p.y).ToList();
+            List<SnapshotPiece> guns = s.pieces.Where(p => p.gunner).OrderBy(p => 8 - p.x).ThenBy(p => p.y).ToList();
+            bool bossAim = s.HasBoss && s.boss.ai.aim.active;
+            if (walls.Count > 0 || guns.Count > 0 || bossAim)
+            {
+                sb.Append(",[[").Append(string.Join(",", walls.Select(p => $"[{p.y},{8 - p.x},{p.hp}]"))).Append("],[")
+                  .Append(string.Join(",", guns.Select(p => $"[{p.y},{8 - p.x},{p.gunNext},{Aim(p.aim)}]"))).Append("],");
+                if (bossAim)
+                {
+                    BossAiState ai = s.boss.ai;
+                    sb.Append('[').Append(Aim(ai.aim)).Append(',')
+                      .Append(ai.hasCells ? "[" + string.Join(",", ai.cells.Select(c => $"[{c.y},{8 - c.x}]")) + "]" : "null").Append(']');
+                }
+                else sb.Append("null");
+                sb.Append(']');
             }
         }
         sb.Append(']');

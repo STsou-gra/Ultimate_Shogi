@@ -93,8 +93,8 @@ public class KifuGameOverPanel : MonoBehaviour
         if (messageText != null && message != null) messageText.text = message;
     }
 
-    // 棋譜を選んで、対局のシーンで最初から再生する。戻り値：始められなかった理由（キャンセルなら null）
-    static string ReplayFromFile()
+    // 棋譜を選んで、対局のシーンで最初から再生する。戻り値：始められなかった理由（キャンセルなら null）。タイトル画面（TitleView）からも使う
+    public static string ReplayFromFile()
     {
         string error;
         string text = KifuFileDialog.OpenJson("棋譜を読み込んで再生", out error);

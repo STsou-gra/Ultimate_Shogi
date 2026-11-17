@@ -5,11 +5,16 @@ using System.Collections.Generic;
 // 同じこのエンジンを使う（ルールは 1 か所。盤の読み書きだけを IBossHost で受け持つ）。MonoBehaviour に依存しない。
 //
 //  AI の状態機械（BossState.ai。毎 tick、対局の時間で進める。乱数は対局の乱数）
-//    cooldown（行動ペース）└ 期限 → 攻撃を選ぶ → 王将の方を向く → 範囲を確定 → telegraph
-//    telegraph（予告）     ├ 一発の攻撃：期限 → 当てる → cooldown
-//                          └ 続く行動（暴れ回り）：期限 → acting
-//    acting（毎 tick）→ 期限 → resting（休憩。行動ペースを数えない）→ 期限 → cooldown
-//  手下（小赤鬼）も、毎 tick ボスの AI の前に進める（現れた順）。停止世界の間・勝敗がついたあと・HP 0 のあとは進めない（呼ぶ側と Tick が見る）
+//    cooldown（行動ペース）└ 期限 → 攻撃を選ぶ → 向きを決める（王将の方。向きを固定するボスはその向き）→ 範囲を確定 → telegraph
+//                            （予告の秒数が 0 の攻撃（守備）は予告なしで、すぐ下の「期限」の処理へ）
+//    telegraph（予告）     ├ 照準が駒を追う攻撃（弓）：期限の LockSecBefore 秒前まで毎 tick 範囲を直し、そこで固める
+//                          ├ 一発の攻撃：期限 → 当てる → cooldown
+//                          └ 続く行動（暴れ回り・守備）：期限 → acting
+//    acting（毎 tick）→ 期限 → resting（休憩。行動ペースを数えない。休憩のない行動は cooldown）→ 期限 → cooldown
+//  手下（ボスの席の駒）も、毎 tick ボスの AI の前に進める（現れた順）。動き方は駒の種類で決まる（MinionRules.PatternOf）：
+//    小赤鬼＝周り 8 マスで襲う・王将へ近づく ／ 軍歩兵＝前へ 1 マスずつ ／ 軍銃兵＝照準で追った駒のマスを撃つ ／ 防壁＝動かない。
+//  停止世界の間・勝敗がついたあとは進めない（呼ぶ側と Tick が見る）。ボスの HP が 0 になったあとは、手下が残っていると勝てないボス
+//  （BossDef.MinionsOutliveBoss：大将軍）だけ、手下が動き続ける（ボスの AI は止まる）
 //
 // 座標：状態（BossState・MinionData・通知のマス）は GamePiece と同じ（x = 段、y = 筋）。
 // ただし、マスを調べる順・並べる順は Prototype と同じにしている（乱数で選ぶ候補の並び・駒に当てる順が変わると、Prototype の棋譜と盤面がずれる）。
@@ -35,6 +40,7 @@ public interface IBossHost<TPiece> where TPiece : class
     bool HasShield(TPiece p);
     bool IsUndead(TPiece p);
     int HpOf(TPiece p);                        // 巨人の残りの HP
+    int SerialOf(TPiece p);                    // 駒の番号（作った順。照準が駒を選ぶ順・追う駒を指す。Prototype の駒の id）
     MinionData GetMinion(TPiece p);
     void SetMinion(TPiece p, MinionData d);
 
@@ -46,7 +52,7 @@ public interface IBossHost<TPiece> where TPiece : class
     void Smash(TPiece p);                      // 撃破：盤から消え、持ち主が駒の価値ぶんのエナジーを得る（誰の持ち駒にもならない）
     void Destroy(TPiece p);                    // 駒を盤から消す（押し出す先がないとき。エナジーなし）
     void Relocate(TPiece p, int x, int y);     // 駒を (x, y) へ動かし、入ったマスの効果を受けさせる（押し出し・手下の 1 歩。巨人は中央のマス）
-    TPiece SpawnMinion(PieceType type, int x, int y);   // ボスの席（後手）の駒を (x, y) に置く
+    TPiece SpawnMinion(PieceType type, int x, int y);   // ボスの席（後手）の駒を (x, y) に置く（防壁なら HP を WallRules.MaxHp にする）
 
     // ---- 通知（演出）
     void Emit(BossEvent e);
@@ -139,12 +145,50 @@ public static class BossEngine<TPiece> where TPiece : class
     public static void Tick(IBossHost<TPiece> h)
     {
         BossState b = h.Boss;
-        if (b == null || !b.active || h.IsOver || b.hp <= 0) return;
+        if (b == null || !b.active || h.IsOver) return;
+        // ボスの HP が 0 になったあとも手下が残っていると勝てないボス（大将軍）は、手下だけ動き続ける
+        if (b.hp <= 0 && !MinionsOutliveBoss(b)) return;
         TickMinions(h);
         if (b.hp <= 0 || h.IsOver) return;
-        if (b.ai.phase == BossAiState.Acting) ActingTick(h);
+        if (b.ai.phase == BossAiState.Telegraph) TelegraphTick(h);
+        else if (b.ai.phase == BossAiState.Acting) ActingTick(h);
         if (b.hp <= 0 || h.IsOver) return;
         if (h.Now >= b.ai.until) Expire(h);
+    }
+
+    // ボスの HP が 0 になっても手下が動き続けるか（勝つのに手下を全部倒す必要があるボス。Prototype の minionsOutliveBoss）
+    public static bool MinionsOutliveBoss(BossState b)
+    {
+        BossDef def = b != null ? b.Def : null;
+        return def != null && def.MinionsOutliveBoss;
+    }
+
+    // ボスの勝ちの条件で、まだ盤上に残っていてはいけない手下の数（Prototype の remainingRequiredMinions）
+    public static int RequiredMinionsLeft(IBossHost<TPiece> h)
+    {
+        BossState b = h.Boss;
+        BossDef def = b != null ? b.Def : null;
+        if (def == null || !def.MinionsOutliveBoss) return 0;
+        int n = 0;
+        List<TPiece> seen = new List<TPiece>();
+        foreach (MatchSquare c in BoardOrder())
+        {
+            TPiece q = h.PieceAt(c.x, c.y);
+            if (q == null || seen.Contains(q)) continue;
+            seen.Add(q);
+            if (h.OwnerOf(q) == PlayerType.Player2 && def.IsRequiredMinion(h.TypeOf(q))) n++;
+        }
+        return n;
+    }
+
+    // 防壁の後ろの守り（WallRules.IsShielded）：(x, y) のボスの席の駒が、同じ筋で手前にある防壁に守られているか
+    public static bool IsShieldedByWall(IBossHost<TPiece> h, int x, int y)
+    {
+        return WallRules.IsShielded((px, py) =>
+        {
+            TPiece q = h.PieceAt(px, py);
+            return q != null ? h.TypeOf(q) : (PieceType?)null;
+        }, x, y);
     }
 
     // フェーズを変える
@@ -170,6 +214,7 @@ public static class BossEngine<TPiece> where TPiece : class
         ai.nextAt = -1;
         ai.hasNext = false;
         ai.next = MatchSquare.None;
+        ai.aim = default;
     }
 
     // 期限になった
@@ -185,8 +230,8 @@ public static class BossEngine<TPiece> where TPiece : class
                 string id = ChooseAttack(h);
                 BossAttackDef atk = BossAttacks.ById(id);
                 if (atk == null) { Enter(h, BossAiState.Cooldown, def != null ? def.CooldownSec : 5f); return; }
-                FaceToward(h, FindKing(h, PlayerType.Player1));
-                ClearData(ai);
+                DecideFacing(h);
+                ClearData(ai); // 範囲を決めるとき（AttackCells）に、攻撃が途中のデータ（照準）を入れられる
                 List<MatchSquare> cells = AttackCells(h, atk);
                 ai.attack = id;
                 ai.hasCells = cells != null;
@@ -211,9 +256,10 @@ public static class BossEngine<TPiece> where TPiece : class
             case BossAiState.Acting:
             {
                 BossAttackDef atk = BossAttacks.ById(ai.attack);
-                // 暴れ回りの終わり：次の 1 歩の表示を消す
+                // 続く行動の終わり（暴れ回り：次の 1 歩の表示を消す ／ 守備：構えを解く）
                 ClearData(ai);
-                h.Emit(new BossEvent { Type = BossEventType.StepWarn, Cells = new List<MatchSquare>(), Sec = 0f });
+                if (atk != null && atk.Invulnerable) h.Emit(new BossEvent { Type = BossEventType.GuardEnd, Attack = atk.Id });
+                else h.Emit(new BossEvent { Type = BossEventType.StepWarn, Cells = new List<MatchSquare>(), Sec = 0f });
                 ai.last = ai.attack;
                 if (atk != null && atk.RestSec > 0f)
                 {
@@ -243,7 +289,9 @@ public static class BossEngine<TPiece> where TPiece : class
         if (atk.IsLasting)
         {
             Enter(h, BossAiState.Acting, atk.DurationSec);
-            PlanRampageStep(h, atk); // 続く行動の始め（暴れ回り：最初の 1 歩を決めて表示する）
+            // 続く行動の始め（暴れ回り：最初の 1 歩を決めて表示する ／ 守備：構える）
+            if (atk.Invulnerable) h.Emit(new BossEvent { Type = BossEventType.GuardStart, Attack = atk.Id, Sec = atk.DurationSec, Until = ai.until });
+            else PlanRampageStep(h, atk);
             return;
         }
         ApplyAttack(h, atk, ai.cells ?? new List<MatchSquare>());
@@ -274,6 +322,117 @@ public static class BossEngine<TPiece> where TPiece : class
             if (r < 0) return a.Id;
         }
         return list[list.Count - 1].Id;
+    }
+
+    // 攻撃を選んだときの向き：向きを固定するボス（BossDef.HasFixedFacing。動かない・向きを変えないボス）はその向き。それ以外は王将の方
+    static void DecideFacing(IBossHost<TPiece> h)
+    {
+        BossState b = h.Boss;
+        BossDef def = b.Def;
+        if (def != null && def.HasFixedFacing)
+        {
+            b.facingX = def.FixedFacingX;
+            b.facingY = def.FixedFacingY;
+            return;
+        }
+        FaceToward(h, FindKing(h, PlayerType.Player1));
+    }
+
+    // 予告の毎 tick：照準が駒を追う攻撃（弓）は、期限の LockSecBefore 秒前まで範囲を直し、そこで固める（Prototype の PHASES.telegraph.onTick）
+    static void TelegraphTick(IBossHost<TPiece> h)
+    {
+        BossAiState ai = h.Boss.ai;
+        BossAttackDef atk = BossAttacks.ById(ai.attack);
+        if (atk == null || !atk.Retarget || ai.aim.locked) return;
+        if (h.Now >= ai.until - Ticks(atk.LockSecBefore))
+        {
+            ai.aim.locked = true;
+            h.Emit(new BossEvent { Type = BossEventType.TelegraphUpdate, Attack = ai.attack, Cells = new List<MatchSquare>(ai.cells), Locked = true });
+            return;
+        }
+        if (!ai.aim.active || !FollowAim(h, ref ai.aim)) return;
+        ai.hasCells = true;
+        ai.cells = new List<MatchSquare> { ai.aim.Cell };
+        h.Emit(new BossEvent { Type = BossEventType.TelegraphUpdate, Attack = ai.attack, Cells = new List<MatchSquare>(ai.cells), Locked = false });
+    }
+
+    // ------------------------------------------------------------
+    //  照準（Prototype の src/core/boss/aim.js）。乱数は対局の乱数。追っていた駒が消えたら、残っている駒からまた選ぶ
+    // ------------------------------------------------------------
+
+    // 照準の候補：盤上のプレイヤーの駒（王将も含む。駒の番号の順）
+    public static List<TPiece> AimCandidates(IBossHost<TPiece> h)
+    {
+        List<TPiece> res = new List<TPiece>();
+        foreach (MatchSquare c in BoardOrder())
+        {
+            TPiece q = h.PieceAt(c.x, c.y);
+            if (q != null && h.OwnerOf(q) == PlayerType.Player1 && !res.Contains(q)) res.Add(q);
+        }
+        // 番号の順（同じ番号は盤の順のまま：List.Sort は安定でないので、添字も比べる）
+        List<int> order = new List<int>();
+        for (int i = 0; i < res.Count; i++) order.Add(i);
+        order.Sort((a, c) =>
+        {
+            int d = h.SerialOf(res[a]).CompareTo(h.SerialOf(res[c]));
+            return d != 0 ? d : a.CompareTo(c);
+        });
+        List<TPiece> sorted = new List<TPiece>(res.Count);
+        foreach (int i in order) sorted.Add(res[i]);
+        return sorted;
+    }
+
+    // 駒を 1 枚ランダムに選ぶ（いなければ null。そのときは乱数を引かない）
+    static TPiece PickAimTarget(IBossHost<TPiece> h)
+    {
+        List<TPiece> list = AimCandidates(h);
+        return list.Count > 0 ? list[Pick(h, list.Count)] : null;
+    }
+
+    // 新しい照準（駒を 1 枚選んで、その駒のマスを狙う）
+    public static AimData CreateAim(IBossHost<TPiece> h)
+    {
+        TPiece t = PickAimTarget(h);
+        AimData aim = new AimData { active = true };
+        if (t != null)
+        {
+            aim.target = h.SerialOf(t);
+            aim.hasCell = true;
+            aim.x = h.XOf(t);
+            aim.y = h.YOf(t);
+        }
+        return aim;
+    }
+
+    // 番号 serial のプレイヤーの駒（盤上にいなければ null）
+    static TPiece FindBySerial(IBossHost<TPiece> h, int serial)
+    {
+        if (serial <= 0) return null;
+        foreach (MatchSquare c in BoardOrder())
+        {
+            TPiece q = h.PieceAt(c.x, c.y);
+            if (q != null && h.SerialOf(q) == serial && h.IsAlive(q)) return q;
+        }
+        return null;
+    }
+
+    // 照準を追わせる（固まっていれば何もしない）。追っていた駒が消えたら選び直す。照準のマスが変わったら true
+    public static bool FollowAim(IBossHost<TPiece> h, ref AimData aim)
+    {
+        if (aim.locked) return false;
+        TPiece t = FindBySerial(h, aim.target);
+        if (t == null)
+        {
+            t = PickAimTarget(h);
+            aim.target = t != null ? h.SerialOf(t) : 0;
+        }
+        if (t == null) return false; // 選べる駒がない（照準のマスはそのまま）
+        int tx = h.XOf(t), ty = h.YOf(t);
+        if (aim.hasCell && aim.x == tx && aim.y == ty) return false;
+        aim.hasCell = true;
+        aim.x = tx;
+        aim.y = ty;
+        return true;
     }
 
     // ボスを王将の方へ向ける：ボスの中心から王将への差の大きい軸（同じなら段の方向）の上下左右。王将がいなければプレイヤー側（Prototype の faceToward）
@@ -428,14 +587,81 @@ public static class BossEngine<TPiece> where TPiece : class
                 }
                 return res;
             }
+            case "bow":
+            {
+                // 弓：駒を 1 枚選んで照準を合わせる（照準は ai.aim に入れ、予告の間その駒を追う）
+                b.ai.aim = CreateAim(h);
+                List<MatchSquare> res = new List<MatchSquare>();
+                if (b.ai.aim.hasCell) res.Add(b.ai.aim.Cell);
+                return res;
+            }
+            case "greatsword":
+            {
+                // 大剣斬り：正面に接する 横（ボスの幅 ＋ 左右 1 マス）× 奥行き GreatswordDepth マス（手前の列から。各列は Prototype の並び）
+                List<MatchSquare> res = new List<MatchSquare>();
+                for (int k = 0; k < BossAttacks.GreatswordDepth; k++)
+                {
+                    if (b.facingX != 0)
+                    {
+                        int x = b.facingX > 0 ? b.x + b.h + k : b.x - 1 - k;
+                        for (int y = b.y - 1; y <= b.y + b.w; y++)
+                        {
+                            if (In(x, y)) res.Add(new MatchSquare(x, y));
+                        }
+                    }
+                    else
+                    {
+                        int y = b.facingY > 0 ? b.y + b.w + k : b.y - 1 - k;
+                        for (int x = b.x + b.h; x >= b.x - 1; x--)
+                        {
+                            if (In(x, y)) res.Add(new MatchSquare(x, y));
+                        }
+                    }
+                }
+                return res;
+            }
+            case "deploy":
+            {
+                // 出陣命令：正面に接する 1 列（盤の端から端まで）
+                List<MatchSquare> res = new List<MatchSquare>();
+                if (b.facingX != 0)
+                {
+                    int x = b.facingX > 0 ? b.x + b.h : b.x - 1;
+                    for (int y = 0; y < BoardCells.Size; y++)
+                    {
+                        if (In(x, y)) res.Add(new MatchSquare(x, y));
+                    }
+                }
+                else
+                {
+                    int y = b.facingY > 0 ? b.y + b.w : b.y - 1;
+                    for (int x = BoardCells.Size - 1; x >= 0; x--)
+                    {
+                        if (In(x, y)) res.Add(new MatchSquare(x, y));
+                    }
+                }
+                return res;
+            }
             default:
-                return null; // 暴れ回り：範囲を出さない
+                return null; // 暴れ回り・守備：範囲を出さない
         }
     }
 
     // 一発の攻撃を当てる
     static void ApplyAttack(IBossHost<TPiece> h, BossAttackDef atk, List<MatchSquare> cells)
     {
+        if (atk.Id == "deploy")
+        {
+            // 出陣命令：駒に攻撃は当てない。列の空いたマス（駒・ボス・破壊マス・壁がない）に兵を置く
+            List<MatchSquare> spawned = new List<MatchSquare>();
+            foreach (MatchSquare c in cells)
+            {
+                if (h.PieceAt(c.x, c.y) != null || h.IsBlocked(c.x, c.y) || h.Boss.Covers(c.x, c.y)) continue;
+                if (Spawn(h, BossAttacks.DeployPiece, c.x, c.y, atk.Id) != null) spawned.Add(c);
+            }
+            h.Emit(new BossEvent { Type = BossEventType.Deployed, Attack = atk.Id, Cells = spawned });
+            return;
+        }
         HitCells(h, cells, atk.Id);
         if (atk.Id != "summon") return;
 
@@ -502,11 +728,17 @@ public static class BossEngine<TPiece> where TPiece : class
         if (h.IsUndead(q)) { h.VanishUndead(q); return result; }
         if (PieceRules.IsGiant(type))
         {
-            if (h.DamageGiant(q, BossAttacks.NameOf(attack))) h.Smash(q); // 巨人：1 回の攻撃（HP が 0 になったら撃破）
+            if (h.DamageGiant(q, AttackName(attack))) h.Smash(q); // 巨人：1 回の攻撃（HP が 0 になったら撃破）
             return result;
         }
         h.Smash(q);
         return result;
+    }
+
+    // 攻撃の名前（ボスの攻撃は BossAttacks、手下の攻撃は MinionRules。なければ「ボスの攻撃」）
+    public static string AttackName(string attack)
+    {
+        return MinionRules.AttackName(attack) ?? BossAttacks.NameOf(attack);
     }
 
     // ------------------------------------------------------------
@@ -556,7 +788,8 @@ public static class BossEngine<TPiece> where TPiece : class
         BossState b = h.Boss;
         BossAiState ai = b.ai;
         BossAttackDef atk = BossAttacks.ById(ai.attack);
-        if (atk == null || !ai.hasData || ai.nextAt < 0 || h.Now < ai.nextAt) return;
+        if (atk == null || atk.Invulnerable) return; // 守備：毎 tick の処理はない
+        if (!ai.hasData || ai.nextAt < 0 || h.Now < ai.nextAt) return;
         if (ai.hasNext && CanBossStand(h, ai.next.x, ai.next.y)) MoveBoss(h, ai.next.x - b.x, ai.next.y - b.y, atk.Id);
         if (h.Now + Ticks(atk.StepSec) <= ai.until) PlanRampageStep(h, atk);
         else
@@ -680,18 +913,55 @@ public static class BossEngine<TPiece> where TPiece : class
     }
 
     // ------------------------------------------------------------
-    //  手下（小赤鬼。Prototype の minions.js の chase）
+    //  手下（ボスの席の駒。Prototype の minions.js）。動き方は MinionRules.PatternOf
     // ------------------------------------------------------------
 
-    // 手下を (x, y) に呼び出す。最初の 1 歩は StepSec 秒後
-    public static TPiece Spawn(IBossHost<TPiece> h, PieceType type, int x, int y, string attack = null)
+    // ボスの席の駒を (x, y) に置く（通知なし。討伐任務の初期配置・呼び出しの共通部分。Prototype の placeMinion）。動き方ごとの状態を作る：
+    // 一定の間隔で動く手下の最初の 1 歩は StepSec 秒後。軍銃兵は置いたときに照準を選ぶ（対局の乱数）。防壁は番号だけ
+    public static TPiece PlaceMinion(IBossHost<TPiece> h, PieceType type, int x, int y)
     {
         TPiece q = h.SpawnMinion(type, x, y);
         if (q == null) return null;
         RaidState raid = h.Raid;
-        h.SetMinion(q, new MinionData { Active = true, Serial = raid != null ? raid.minionSerial++ : 0, Next = h.Now + Ticks(MinionRules.StepSec) });
+        MinionData d = new MinionData { Serial = raid != null ? raid.minionSerial++ : 0 };
+        switch (MinionRules.PatternOf(type))
+        {
+            case MinionPattern.Chase:
+            case MinionPattern.Forward:
+                d.Active = true;
+                d.Next = h.Now + Ticks(MinionRules.StepSec);
+                break;
+            case MinionPattern.Gunner:
+                d.Gunner = true;
+                d.GunNext = h.Now + Ticks(MinionRules.GunnerOffsetSec + MinionRules.GunnerIntervalSec);
+                d.Aim = CreateAim(h);
+                break;
+        }
+        h.SetMinion(q, d);
+        return q;
+    }
+
+    // 手下を (x, y) に呼び出す（通知つき。小赤鬼号令・出陣命令）
+    public static TPiece Spawn(IBossHost<TPiece> h, PieceType type, int x, int y, string attack = null)
+    {
+        TPiece q = PlaceMinion(h, type, x, y);
+        if (q == null) return null;
         h.Emit(new BossEvent { Type = BossEventType.MinionSpawned, Piece = q, At = new MatchSquare(x, y), Attack = attack });
         return q;
+    }
+
+    // ボスの定義の初期配置の駒（陣）を置く（討伐任務の準備。定義の順：乱数を引く順になる）
+    public static void PlaceEnemies(IBossHost<TPiece> h, BossDef def)
+    {
+        if (def == null || def.Enemies == null) return;
+        foreach (BossEnemy e in def.Enemies) PlaceMinion(h, e.Type, e.X, e.Y);
+    }
+
+    // 手下が動いている途中で止めるか（勝敗がついた・ボスが倒れた。ボスが倒れても手下が残っていると勝てないボスは続ける）
+    static bool ShouldStop(IBossHost<TPiece> h)
+    {
+        BossState b = h.Boss;
+        return h.IsOver || (b.hp <= 0 && !MinionsOutliveBoss(b));
     }
 
     // 手下を 1 tick 進める（現れた順）
@@ -700,20 +970,26 @@ public static class BossEngine<TPiece> where TPiece : class
         foreach (TPiece m in Minions(h))
         {
             if (!h.IsAlive(m)) continue;
-            TickStepper(h, m);
-            if (h.IsOver || h.Boss.hp <= 0) return;
+            switch (MinionRules.PatternOf(h.TypeOf(m)))
+            {
+                case MinionPattern.Chase: TickStepper(h, m, false); break;
+                case MinionPattern.Forward: TickStepper(h, m, true); break;
+                case MinionPattern.Gunner: TickGunner(h, m); break;
+                default: continue; // 防壁：動かない
+            }
+            if (ShouldStop(h)) return;
         }
     }
 
-    // 行き先を WarnSec 秒前に決め、StepSec 秒ごとに動く
-    static void TickStepper(IBossHost<TPiece> h, TPiece m)
+    // 一定の間隔で動く手下：行き先を WarnSec 秒前に決め、StepSec 秒ごとに動く（forward なら前へ、そうでなければ周り 8 マス）
+    static void TickStepper(IBossHost<TPiece> h, TPiece m, bool forward)
     {
         MinionData st = h.GetMinion(m);
         if (!st.Active) return;
         int now = h.Now;
         if (!st.Planned && now >= st.Next - Ticks(MinionRules.WarnSec))
         {
-            MatchSquare? to = PlanMinionStep(h, m);
+            MatchSquare? to = forward ? PlanForwardStep(h, m) : PlanMinionStep(h, m);
             st.Planned = true;
             st.HasTo = to.HasValue;
             st.ToX = to.HasValue ? to.Value.x : -1;
@@ -734,8 +1010,85 @@ public static class BossEngine<TPiece> where TPiece : class
             st.ToX = -1;
             st.ToY = -1;
             h.SetMinion(m, st);
-            StepMinion(h, m, to);
+            StepMinion(h, m, to, forward);
         }
+    }
+
+    // 前へ進む手下が (x, y) へ進めるか：盤内・破壊マス・壁でない・ボスでない・ボスの席の駒（防壁・兵）がいない（プレイヤーの駒は「攻撃」として進める）
+    static bool CanAdvance(IBossHost<TPiece> h, int x, int y)
+    {
+        if (!In(x, y) || h.IsBlocked(x, y) || h.Boss.Covers(x, y)) return false;
+        TPiece q = h.PieceAt(x, y);
+        return q == null || h.OwnerOf(q) == PlayerType.Player1;
+    }
+
+    // 前へ進む手下の次のマス（プレイヤー側へ 1 マス。進めなければ null。いちばん手前の段にいれば盤の外なので止まる）
+    public static MatchSquare? PlanForwardStep(IBossHost<TPiece> h, TPiece m)
+    {
+        int x = h.XOf(m) - 1, y = h.YOf(m);
+        return CanAdvance(h, x, y) ? new MatchSquare(x, y) : (MatchSquare?)null;
+    }
+
+    // 軍銃兵を 1 tick 進める：撃つ時刻なら撃って次の周期（新しい照準）、撃つ LockSecBefore 秒前で照準を固め、それまでは駒を追う
+    static void TickGunner(IBossHost<TPiece> h, TPiece m)
+    {
+        MinionData g = h.GetMinion(m);
+        if (!g.Gunner) return;
+        int now = h.Now;
+        if (now >= g.GunNext)
+        {
+            FireGunner(h, m, g);
+            if (!h.IsAlive(m)) return; // 撃った先の火薬の爆発に巻き込まれた
+            g.GunNext = now + Ticks(MinionRules.GunnerIntervalSec);
+            g.Aim = CreateAim(h);
+            h.SetMinion(m, g);
+            EmitGunnerAim(h, m, g.Aim);
+            return;
+        }
+        if (!g.Aim.active)
+        {
+            g.Aim = CreateAim(h);
+            h.SetMinion(m, g);
+            EmitGunnerAim(h, m, g.Aim);
+            return;
+        }
+        if (!g.Aim.locked && now >= g.GunNext - Ticks(MinionRules.GunnerLockSecBefore))
+        {
+            g.Aim.locked = true;
+            h.SetMinion(m, g);
+            EmitGunnerAim(h, m, g.Aim);
+            return;
+        }
+        if (FollowAim(h, ref g.Aim))
+        {
+            h.SetMinion(m, g);
+            EmitGunnerAim(h, m, g.Aim);
+        }
+        else h.SetMinion(m, g); // 追う駒を選び直しただけ（マスは同じ）でも、選んだ駒は残す
+    }
+
+    static void EmitGunnerAim(IBossHost<TPiece> h, TPiece m, AimData aim)
+    {
+        h.Emit(new BossEvent
+        {
+            Type = BossEventType.GunnerAim, Piece = m, From = new MatchSquare(h.XOf(m), h.YOf(m)),
+            HasTo = aim.hasCell, To = aim.Cell, Locked = aim.locked,
+        });
+    }
+
+    // 軍銃兵の照準のマスを撃つ：プレイヤーの駒がいれば、ボスの攻撃を受ける（防壁・ほかの駒にはさえぎられない。ボスの席の駒には当たらない）
+    static void FireGunner(IBossHost<TPiece> h, TPiece m, MinionData g)
+    {
+        if (!g.Aim.active || !g.Aim.hasCell) return;
+        MatchSquare cell = g.Aim.Cell;
+        TPiece q = h.PieceAt(cell.x, cell.y);
+        bool hit = q != null && h.OwnerOf(q) == PlayerType.Player1;
+        h.Emit(new BossEvent
+        {
+            Type = BossEventType.GunnerShot, Piece = m, From = new MatchSquare(h.XOf(m), h.YOf(m)), At = cell,
+            Target = hit ? q : null, Hits = hit ? 1 : 0, Attack = MinionRules.GunshotAttackId,
+        });
+        if (hit) HitPiece(h, q, MinionRules.GunshotAttackId);
     }
 
     // 手下が (x, y) へ動けるか（プレイヤーの駒のマスは「襲う」として動ける）
@@ -769,19 +1122,21 @@ public static class BossEngine<TPiece> where TPiece : class
         return closest[Pick(h, closest.Count)];
     }
 
-    // 手下 m を行き先へ動かす。プレイヤーの駒がいれば襲い、消えたら進む（行き先を決めたあとに押し出されて隣でなくなったら動かない）
-    static void StepMinion(IBossHost<TPiece> h, TPiece m, MatchSquare? target)
+    // 手下 m を行き先へ動かす。プレイヤーの駒がいれば襲い、消えたら進む（行き先を決めたあとに押し出されて隣でなくなったら動かない）。
+    // forward（軍歩兵）は、行き先の判定が CanAdvance（炎上・落とし穴のマスへも進む）
+    static void StepMinion(IBossHost<TPiece> h, TPiece m, MatchSquare? target, bool forward)
     {
         if (!target.HasValue) return;
         MatchSquare to = target.Value;
         int mx = h.XOf(m), my = h.YOf(m);
-        if (System.Math.Max(System.Math.Abs(to.x - mx), System.Math.Abs(to.y - my)) != 1 || !CanStep(h, to.x, to.y, false)) return;
+        bool CanGo() => forward ? CanAdvance(h, to.x, to.y) : CanStep(h, to.x, to.y, false);
+        if (System.Math.Max(System.Math.Abs(to.x - mx), System.Math.Abs(to.y - my)) != 1 || !CanGo()) return;
         TPiece q = h.PieceAt(to.x, to.y);
         if (q != null)
         {
             h.Emit(new BossEvent { Type = BossEventType.MinionStrike, Piece = m, Target = q, At = to });
-            HitPiece(h, q, MinionRules.AttackId);
-            if (!h.IsAlive(m) || h.PieceAt(to.x, to.y) != null || !CanStep(h, to.x, to.y, false)) return; // 爆発に巻き込まれた・駒が残った
+            HitPiece(h, q, MinionRules.AttackIdOf(h.TypeOf(m)));
+            if (!h.IsAlive(m) || h.PieceAt(to.x, to.y) != null || !CanGo()) return; // 爆発に巻き込まれた・駒が残った
         }
         h.Emit(new BossEvent { Type = BossEventType.MinionStep, Piece = m, From = new MatchSquare(mx, my), To = to });
         h.Relocate(m, to.x, to.y);
@@ -791,11 +1146,24 @@ public static class BossEngine<TPiece> where TPiece : class
     //  ボスへのダメージ（Prototype の damage.js の damageBoss のうち、時間停止の予定でない分）
     // ------------------------------------------------------------
 
-    // ボスにダメージを与える（HP を減らして通知する）。与えたダメージを返す
+    // ボスが今ダメージを受けないか：続く行動（acting）の攻撃が Invulnerable（守備）のあいだ（Prototype の isBossInvulnerable）
+    public static bool IsInvulnerable(BossState b)
+    {
+        if (b == null || !b.active || b.ai == null || b.ai.phase != BossAiState.Acting) return false;
+        BossAttackDef atk = BossAttacks.ById(b.ai.attack);
+        return atk != null && atk.Invulnerable;
+    }
+
+    // ボスにダメージを与える（HP を減らして通知する）。与えたダメージを返す（守りの間は 0：ここ 1 か所で止める）
     public static int Damage(IBossHost<TPiece> h, BossHit hit, MatchSquare at)
     {
         BossState b = h.Boss;
         if (b == null || !b.active || b.hp <= 0) return 0;
+        if (IsInvulnerable(b))
+        {
+            h.Emit(new BossEvent { Type = BossEventType.Guarded, Source = hit, At = at });
+            return 0;
+        }
         int amount = System.Math.Min(b.hp, RaidRules.BossDamage(b.Def, hit));
         if (amount <= 0) return 0;
         b.hp -= amount;
@@ -809,17 +1177,18 @@ public static class BossEngine<TPiece> where TPiece : class
 public enum RaidOutcome
 {
     None,       // まだ決まっていない
-    Cleared,    // ボスの HP 0：討伐成功（先手の勝ち）
+    Cleared,    // ボスの HP 0（大将軍は兵の全滅も）：討伐成功（先手の勝ち）
     KingLost,   // 王将が倒れた：討伐失敗
     KingHits,   // 王将の被弾がボスの上限に達した：討伐失敗
 }
 
 public static class RaidResults
 {
-    // ボスの HP 0 → 討伐成功 ／ 王将が倒れた・王将の被弾が上限 → 討伐失敗（この順に見る）
-    public static RaidOutcome Of(BossState boss, RaidState raid, bool kingAlive)
+    // ボスの HP 0（手下を全滅させる必要があるボスは、その種類の手下も盤上に 1 体もいない：requiredMinionsLeft = 0）→ 討伐成功 ／
+    // 王将が倒れた・王将の被弾が上限 → 討伐失敗（この順に見る）
+    public static RaidOutcome Of(BossState boss, RaidState raid, bool kingAlive, int requiredMinionsLeft = 0)
     {
-        if (boss != null && boss.active && boss.hp <= 0) return RaidOutcome.Cleared;
+        if (boss != null && boss.active && boss.hp <= 0 && requiredMinionsLeft <= 0) return RaidOutcome.Cleared;
         if (!kingAlive) return RaidOutcome.KingLost;
         BossDef def = boss != null ? boss.Def : null;
         int max = def != null ? def.KingMaxHits : 3;

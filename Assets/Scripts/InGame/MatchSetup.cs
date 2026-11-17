@@ -1,4 +1,4 @@
-// 対戦モードの設定（Prototype の src/scenes/ModeScene.js が Match に渡す設定）。タイトル → 対戦モードの画面（ModeSelectView）で決め、
+// 対戦モードの設定（Prototype の src/scenes/ModeScene.js が Match に渡す設定）。タイトル画面（TitleView）の「通常対局」→ 対戦モードの画面（ModeSelectView）で決め、
 // 編成画面（DeckSelectController）と対局（GameSystem・CpuPlayer）が読む。シーンをまたいで残すので static に持つ。
 // Board シーンを直接開いたときは既定（2人で対戦）
 public enum MatchMode

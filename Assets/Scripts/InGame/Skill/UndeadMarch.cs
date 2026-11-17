@@ -257,7 +257,8 @@ public class UndeadMarch : TurnEndAction
 
         PieceMoveStyle style = PieceMoveAnimator.StyleFor(p);
         float duration = style == PieceMoveStyle.Jump ? 0.35f : 0.28f;
-        bool boss = tl.BossAt(tx, ty); // 討伐任務：ボスへの攻撃（駒の種類のダメージ。跳ね返る）も移動として数え、攻撃したマスが敵陣なら成る
+        // 討伐任務：ボス・防壁への攻撃（跳ね返る）も移動として数え、攻撃したマスが敵陣なら成る
+        bool boss = tl.BossAt(tx, ty) || (target != null && target.player != p.player && SpecialContext.IsWallPiece(target));
         bool? alive = tl.Step(p, tx, ty, style, duration, false);
         if (alive == null && boss && tl.IsAlive(p))
         {

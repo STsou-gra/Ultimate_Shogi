@@ -20,6 +20,9 @@ public static class PieceValues
             case PieceType.Bird: return 1;      // Prototype の TORI の value
             case PieceType.Giant: return 5;     // Prototype の KYOJIN の value
             case PieceType.Kooni: return 0;     // ボスの手下（倒しても誰もエナジーを得ない）
+            case PieceType.GunFu: return 0;     // 大将軍の兵・防壁も同じ
+            case PieceType.GunJu: return 0;
+            case PieceType.Bouheki: return 0;
             default: return 0;
         }
     }

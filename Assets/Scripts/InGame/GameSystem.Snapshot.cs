@@ -60,7 +60,8 @@ public partial class GameSystem
             }
             s.Place(new SnapshotPiece
             {
-                hp = PieceRules.IsGiant(p) ? p.hp : 0,
+                hp = PieceRules.IsGiant(p) || PieceRules.IsWallPiece(p.type) ? p.hp : 0,
+                serial = p.serial,
                 type = p.type,
                 owner = (int)p.player,
                 x = x,

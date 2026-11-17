@@ -1014,6 +1014,19 @@ public partial class GameSystem : MonoBehaviour
             return ResolveKingLoss();
         }
         GamePiece targetPiece = gameBoard.GetPieceAt(targetX, targetY);
+        if (targetPiece != null && targetPiece != piece && targetPiece.player != piece.player && PieceRules.IsWallPiece(targetPiece.type))
+        {
+            // 討伐任務：防壁のマスへの移動は攻撃。防壁の HP を 1 減らして、元のマスへ跳ね返る（ボスと同じ）。
+            // 移動として数え、攻撃したマスが敵陣なら成る（Prototype の play.js の attackWall・movePiece）
+            float wallReach = MoveArrivalDelay(piece) * 0.55f;
+            if (magicFx != null) magicFx.Bounce(piece, targetX, targetY, wallReach);
+            captureFxDelay = wallReach;
+            HitWall(targetPiece, HandUIManager.GetJapaneseName(piece.type));
+            captureFxDelay = 0f;
+            if (promote) PromotePiece(piece);
+            CountMove(piece);
+            return ResolveKingLoss();
+        }
         RecordTimeStopMove(piece, targetX, targetY); // 時間停止中は 1 マスごとの移動を記録する（盾で押し戻すときに使う）
         // 火薬のマスに入ったら爆発する（鳥は爆発させずに火薬を取る：下の取りの処理へ）
         if (targetPiece != null && targetPiece != piece && PieceRules.Detonates(piece, targetPiece))
@@ -1082,6 +1095,17 @@ public partial class GameSystem : MonoBehaviour
         }
         List<GamePiece> occupants = PiecesIn(row);
         float reach = MoveArrivalDelay(p) * 0.55f;
+        // 討伐任務：先頭の 1 列に防壁があれば、どれも攻撃して跳ね返る（移動として数える。Prototype の play.js の moveGiant）
+        List<GamePiece> walls = occupants.FindAll(q => q.player != p.player && PieceRules.IsWallPiece(q.type));
+        if (walls.Count > 0)
+        {
+            if (magicFx != null) magicFx.Bounce(p, tx, ty, reach);
+            captureFxDelay = reach;
+            foreach (GamePiece w in walls) HitWall(w, HandUIManager.GetJapaneseName(p.type));
+            captureFxDelay = 0f;
+            CountMove(p);
+            return ResolveKingLoss();
+        }
         bool bounced = false;
         List<GamePiece> enemies = occupants.FindAll(q => q.player != p.player && !PieceRules.IsExplosive(q.type));
         if (enemies.Count > 0)
@@ -1301,7 +1325,8 @@ public partial class GameSystem : MonoBehaviour
             for (int y = 0; y < 9; y++)
             {
                 GamePiece q = gameBoard.GetPieceAt(x, y);
-                if (q != null && q.player != sniper.player && q.type != PieceType.King) targets.Add(new Vector2Int(x, y));
+                // 討伐任務：防壁に守られた駒は撃てない（防壁は撃てる）
+                if (q != null && q.player != sniper.player && q.type != PieceType.King && !IsShieldedByWall(x, y)) targets.Add(new Vector2Int(x, y));
             }
         }
         // 討伐任務：ボスのマスも撃てる
@@ -1457,9 +1482,11 @@ public partial class GameSystem : MonoBehaviour
         }
         if (HandUIManager.Instance != null)
         {
-            HandUIManager.Instance.SetStatusText(timeStop != null ? (explosive ? "【狙撃】 火薬を撃ち抜いた！（時間が動き出すと爆発する）" : $"【狙撃】 {targetName}を撃ち抜いた！（時間が動き出すと取れる）")
+            HandUIManager.Instance.SetStatusText(timeStop != null ? (explosive ? "【狙撃】 火薬を撃ち抜いた！（時間が動き出すと爆発する）"
+                    : PieceRules.IsWallPiece(target.type) ? $"【狙撃】 {targetName}を撃ち抜いた！（時間が動き出すと HP が 1 減る）" : $"【狙撃】 {targetName}を撃ち抜いた！（時間が動き出すと取れる）")
                 : explosive ? "【狙撃】 火薬を撃ち抜いた！ 大爆発！"
                 : captured ? $"【狙撃】 {targetName}を撃ち抜いた！"
+                : PieceRules.IsWallPiece(target.type) ? (target.hp > 0 ? $"【狙撃】 {targetName}に命中！（残り HP {target.hp}）" : $"【狙撃】 {targetName}を崩した！")
                 : PieceRules.IsGiant(target) ? $"【狙撃】 {targetName}に命中！（残り HP {target.hp}）"
                 : countered ? $"【狙撃】 {targetName}のカウンターが弾を無効にした！"
                 : $"【狙撃】 {targetName}の盾が弾を防いだ！（盾は割れた）");
@@ -1916,6 +1943,14 @@ public partial class GameSystem : MonoBehaviour
     {
         if (!IsOnBoard(piece)) return false;
 
+        // 討伐任務：防壁は取れない（HP が減る）。防壁に守られた駒は取れない（Prototype の effects.js の tryCapture）
+        if (PieceRules.IsWallPiece(piece.type))
+        {
+            HitWall(piece, attacker != null ? HandUIManager.GetJapaneseName(attacker.type) : null);
+            return false;
+        }
+        if (IsUntouchable(piece)) return false;
+
         // 巨人（Prototype の effects.js の tryCapture）：1 回の攻撃で HP -1。HP が残れば取れない（取ろうとした駒は跳ね返る）。
         // 0 になったら下の取りになる（盾・カウンターは付かない）。時間停止中は攻撃の予定にして跳ね返る
         if (PieceRules.IsGiant(piece))
@@ -2140,6 +2175,14 @@ public partial class GameSystem : MonoBehaviour
     {
         if (!IsOnBoard(piece)) return false;
 
+        // 討伐任務：防壁は HP が減る（消えたかは返さない）。防壁に守られた駒は消えない（Prototype の effects.js の vanish）
+        if (PieceRules.IsWallPiece(piece.type))
+        {
+            HitWall(piece, reason);
+            return false;
+        }
+        if (IsUntouchable(piece)) return false;
+
         // 巨人：1 回の攻撃で HP -1（0 になったら消失）。時間停止中は攻撃の予定にする（駒は盤に残す）
         if (PieceRules.IsGiant(piece))
         {
@@ -2218,6 +2261,9 @@ public partial class GameSystem : MonoBehaviour
     {
         BoardCells cells = Cells;
         if (cells == null) return false;
+        // 討伐任務：防壁・防壁に守られた駒のマスは壊さない（Prototype の effects.js の breakCell）
+        GamePiece guarded = gameBoard.GetPieceAt(x, y);
+        if (guarded != null && (PieceRules.IsWallPiece(guarded.type) || IsShieldedByWall(x, y))) return false;
         if (timeStop != null)
         {
             // 時間停止中は予定にする（時間が動き出してから破壊する）

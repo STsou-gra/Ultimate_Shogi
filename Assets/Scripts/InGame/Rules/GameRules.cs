@@ -43,6 +43,9 @@ public class BaseMoveRule : IGameRule
         // 討伐任務：ボスのマスには入れる（入ると攻撃して、元のマスへ跳ね返る）
         if (board.BossAt(toX, toY)) return true;
 
+        // 討伐任務：防壁に守られた相手の駒のマスには入れない（防壁そのもののマスは攻撃として選べる）
+        if (board.IsShieldedTarget(piece, toX, toY)) return false;
+
         // 移動先に自分の駒があるか（自分の火薬には入れる）
         GamePiece targetPiece = board.GetPieceAt(toX, toY);
         if (targetPiece == piece || !PieceRules.CanLandOn(piece, targetPiece))
@@ -477,6 +480,17 @@ public static class CheckRules
         return sim;
     }
 
+    // 討伐任務：配列 cells の上で、(x, y) のボスの席の駒が、同じ筋で手前にある防壁に守られているか（WallRules.IsShielded）
+    static bool IsShieldedByWall(GamePiece[] cells, int x, int y)
+    {
+        return WallRules.IsShielded((px, py) =>
+        {
+            int i = GameHelper.CalcPanelNum(px, py);
+            GamePiece q = i >= 0 ? cells[i] : null;
+            return q != null ? q.type : (PieceType?)null;
+        }, x, y);
+    }
+
     // 巨人 g が配列 cells の上で動ける先（GiantRules.Moves。blockers は仮の駒のマス：相手の駒として扱う）。時間停止中かは呼び出し側が見る。
     // 本編の移動（BaseMoveRule・GameSystem）もこれを使う
     // boss：討伐任務のボス（先頭の 1 列にボスのマスがあれば、そこまで＝攻撃して跳ね返る。なければ null）
@@ -491,6 +505,8 @@ public static class CheckRules
                 if (q == null) return IsBlocker(blockers, i) ? GiantRules.Occupant.Enemy : GiantRules.Occupant.Empty;
                 if (q == g) return GiantRules.Occupant.Empty;
                 if (PieceRules.IsExplosive(q.type)) return GiantRules.Occupant.Bomb;
+                // 討伐任務：防壁に守られた相手の駒のマスには入れない（味方の駒と同じ扱い）
+                if (boss != null && q.player != g.player && IsShieldedByWall(cells, x, y)) return GiantRules.Occupant.Own;
                 return q.player == g.player ? GiantRules.Occupant.Own : GiantRules.Occupant.Enemy;
             },
             (x, y) => PieceRules.IsBlockedFor(cellStates, g, x, y),

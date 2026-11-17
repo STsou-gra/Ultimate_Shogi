@@ -111,12 +111,14 @@ public partial class GameSystem
         resolvingTimeStop = null;
         gameBoard.TimeStop = null;
 
-        // データを戻して、駒を作り直す
+        // データを戻して、駒を作り直す（討伐任務の駒の番号は、読み込んだ番号を使う：作るときには振らない）
+        gameBoard.Raid = null;
         MatchSnapshotIO.Restore(snapshot, match, gameBoard.Cells, SpawnSnapshotPiece, out TimeStopState ts, out _);
         timeStop = ts;
         gameBoard.TimeStop = ts;
         // 討伐任務：ボスの状態は作り直されるので、盤からも引き直す。錬成できる駒は読み込んだ編成のもの（GameSystem.Boss.cs）
         gameBoard.Boss = match.HasBoss ? match.Boss : null;
+        gameBoard.Raid = match.HasBoss ? match.Raid : null;
         if (IsRaid && match.Formation != null) raidRecipes = BuildRaidRecipes(match.Formation);
         EndBossEffect();
         foreach (PlayerType owner in new[] { PlayerType.Player1, PlayerType.Player2 })

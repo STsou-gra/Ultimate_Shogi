@@ -86,11 +86,16 @@ public class SpecialContext
     {
         if (!InBounds(x, y) || IsBlockedFor(p, x, y)) return false;
         if (BossAt(x, y)) return true; // 討伐任務：ボスのマスにも入れる（入ると攻撃して跳ね返る）
+        if (Board.IsShieldedTarget(p, x, y)) return false; // 討伐任務：防壁に守られた相手の駒のマスには入れない
         return PieceRules.CanLandOn(p, PieceAt(x, y));
     }
 
     // 討伐任務：(x, y) がボスのマスか
     public bool BossAt(int x, int y) => GameSystem != null && GameSystem.BossAt(x, y);
+
+    // 討伐任務：駒が防壁か・(x, y) の駒が防壁に守られているか（守られた駒はプレイヤーの攻撃を受けない）
+    public static bool IsWallPiece(GamePiece q) => q != null && PieceRules.IsWallPiece(q.type);
+    public bool IsShieldedByWall(int x, int y) => Board != null && Board.IsShieldedByWall(x, y);
 
     // 討伐任務：範囲 cells がボスに重なれば、この必殺技・魔法で 1 回だけダメージを与える（Prototype の ctx.hitBoss）。当てたら true
     public bool HitBoss(IEnumerable<Vector2Int> cells)
@@ -188,6 +193,16 @@ public class SpecialContext
             GameSystem.AttackBossByStep(p, tx, ty, viaEffect);
             return null;
         }
+        if (target != null && target != p && target.player != p.player && IsWallPiece(target))
+        {
+            // 討伐任務：防壁へ入ろうとした → 防壁を攻撃して（HP -1）、元のマスに残る（Prototype の play.js の attackWall）
+            if (Fx != null) Fx.Bump(p, dir, Time);
+            Time = arrive;
+            HitTime = arrive;
+            HitDirection = dir;
+            GameSystem.HitWall(target, HandUIManager.GetJapaneseName(p.type));
+            return null;
+        }
         GameSystem.RecordTimeStopMove(p, tx, ty); // 時間停止中は 1 マスごとの移動を記録する（盾で押し戻すときに使う）
 
         if (target != null && target != p)
@@ -265,6 +280,17 @@ public class SpecialContext
             if (!Capture(q, dir) && Fx != null && IsAlive(q)) Fx.Bump(q, dir, Time);
             return;
         }
+
+        if (IsWallPiece(q))
+        {
+            // 防壁は押せない：HP が減る（残れば、ぶつかった演出）
+            HitTime = Time;
+            HitDirection = dir;
+            GameSystem.HitWall(q, Caster != null ? HandUIManager.GetJapaneseName(Caster.type) : null);
+            if (Fx != null && IsAlive(q)) Fx.Bump(q, dir, Time);
+            return;
+        }
+        if (IsShieldedByWall(q.X, q.Y)) return; // 防壁に守られた駒には効かない
 
         if (!InBounds(tx, ty))
         {

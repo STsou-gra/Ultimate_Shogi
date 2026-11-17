@@ -121,7 +121,11 @@ public static class MatchSnapshotIO
         return new PieceSnapshot
         {
             minion = m.Active,
-            minionSerial = m.Active ? m.Serial : 0,
+            minionSerial = PieceRules.IsMinion(piece.type) ? m.Serial : 0,
+            gunner = m.Gunner,
+            gunNext = m.Gunner ? m.GunNext : 0,
+            aim = m.Gunner ? m.Aim : default,
+            serial = piece.serial,
             minionNext = m.Active ? m.Next : 0,
             minionPlanned = m.Active && m.Planned,
             minionHasTo = m.Active && m.HasTo,
@@ -141,7 +145,7 @@ public static class MatchSnapshotIO
             wing = piece.hasWing,
             counter = piece.hasCounter,
             held = held,
-            hp = PieceRules.IsGiant(piece.type) ? piece.hp : 0,
+            hp = PieceRules.IsGiant(piece.type) || PieceRules.IsWallPiece(piece.type) ? piece.hp : 0,
             cooldownUntil = piece.cooldownUntilTick,
         };
     }
@@ -240,6 +244,18 @@ public static class MatchSnapshotIO
             GamePiece piece = spawn != null ? spawn(ps) : null;
             if (piece != null) pieces[ps.id] = piece;
         }
+        // 討伐任務：駒の番号のない局面（番号を足す前に書き出したもの）は、読み込んだ順に振る（照準が駒を選べるように）
+        if (match.Raid != null && match.Raid.active)
+        {
+            if (match.Raid.nextPieceId <= 0) match.Raid.nextPieceId = 1;
+            foreach (PieceSnapshot ps in s.pieces)
+            {
+                GamePiece piece;
+                if (!pieces.TryGetValue(ps.id, out piece) || piece == null) continue;
+                if (piece.serial <= 0) piece.serial = match.Raid.nextPieceId++;
+                else if (piece.serial >= match.Raid.nextPieceId) match.Raid.nextPieceId = piece.serial + 1;
+            }
+        }
 
         timeStop = RestoreTimeStop(s, pieces);
     }
@@ -262,7 +278,9 @@ public static class MatchSnapshotIO
         piece.hasCounter = ps.counter;
         piece.cooldownUntilTick = ps.cooldownUntil;
         piece.minion = ps.Minion;
+        piece.serial = ps.serial;
         if (PieceRules.IsGiant(ps.type)) piece.hp = ps.hp > 0 ? System.Math.Min(ps.hp, GiantRules.MaxHp) : GiantRules.MaxHp;
+        if (PieceRules.IsWallPiece(ps.type)) piece.hp = ps.hp > 0 ? System.Math.Min(ps.hp, WallRules.MaxHp) : WallRules.MaxHp;
         piece.UpdateVisual();
     }
 
@@ -403,6 +421,8 @@ public static class MatchSnapshotIO
             if (!IsPlayer(p.owner)) return "駒の持ち主が正しくありません";
             if (!BoardCells.InBounds(p.x, p.y)) return $"盤の外に駒があります（{p.x}, {p.y}）";
             if (p.held && !timeStopped) return "時間停止中でないのに、予定の駒があります";
+            if (PieceRules.IsWallPiece(p.type) && (p.hp < 0 || p.hp > WallRules.MaxHp)) return $"防壁の HP が正しくありません（{p.hp}）";
+            if (p.serial < 0) return $"駒の番号が正しくありません（{p.serial}）";
             if (PieceRules.IsGiant(p.type))
             {
                 // 巨人は 3×3 マス（中央が x・y）。占めるマスが全部盤内で、ほかの駒と重ならないこと。予定の駒にはならない

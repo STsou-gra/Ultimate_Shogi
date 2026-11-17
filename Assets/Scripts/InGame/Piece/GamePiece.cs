@@ -3,7 +3,8 @@ using UnityEngine;
 // 末尾に足していく（シーン・プレハブ・通信では数値で保存しているため、途中に入れると既存の値がずれる）
 // Gunpowder（火薬）・Sniper（狙撃手）・Bird（鳥）・Giant（巨人）は錬成で作るオリジナル駒（Prototype の src/defs/pieces.js の KAYAKU・SNIPER・TORI・KYOJIN）
 // Kooni（小赤鬼）は討伐任務のボスの手下（Prototype の KOONI。ボスの席＝後手の駒。編成・錬成・持ち駒にはならない。PieceRules.IsMinion）
-public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn, Gunpowder, Sniper, Bird, Giant, Kooni }
+// GunFu（軍歩兵）・GunJu（軍銃兵）・Bouheki（防壁）は大将軍の陣の駒（Prototype の GUNFU・GUNJU・BOUHEKI。ボスの席の駒。PieceRules.IsMinion・IsWallPiece）
+public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn, Gunpowder, Sniper, Bird, Giant, Kooni, GunFu, GunJu, Bouheki }
 public enum PlayerType { Player1, Player2 }
 public abstract class GamePiece : MonoBehaviour
 {
@@ -33,11 +34,16 @@ public abstract class GamePiece : MonoBehaviour
 
     // 巨人（Giant）の残りの HP（Prototype の p.hp。巨人以外は 0 のまま）。攻撃を受けるたびに 1 減り、0 になる攻撃で倒れる（GameSystem.HitGiant）。
     // 巨人は 3×3 マスを占め、X・Y は中央のマス（GameBoard は占めるマス全部に同じ駒を入れる。GiantRules）
+    // 防壁（Bouheki）も同じ項目に残りの HP を持つ（置いたときは WallRules.MaxHp。プレイヤーの攻撃 1 回につき 1 減り、0 で崩れる。GameSystem.HitWall）
     [System.NonSerialized] public int hp = 0;
 
-    // 討伐任務：ボスの手下（小赤鬼）の状態（次に動く時刻・決めた行き先。Prototype の p.minion）。手下でない駒は Active = false のまま。
+    // 討伐任務：ボスの席の駒（手下）の状態（次に動く時刻・決めた行き先・軍銃兵の照準。Prototype の p.minion・p.gunner）。手下でない駒は初期値のまま。
     // 進めるのは Match/BossEngine.cs（GameSystem.Boss.cs から）
     [System.NonSerialized] public MinionData minion;
+
+    // 討伐任務：駒の番号（作った順に 1 から。RaidState.nextPieceId から GameBoard.SpawnPiece が振る。Prototype の駒の id）。
+    // ボスの弓・軍銃兵の照準が、駒を選ぶ順と追う駒を指すのに使う。討伐任務でなければ 0 のまま
+    [System.NonSerialized] public int serial = 0;
 
     [Header("Tick Effects")]
     public bool isSpecialReady = false; // 必殺技を発動できる（オーラが光り、光の粒が立ち上る）。moveCount から GameSystem が設定する

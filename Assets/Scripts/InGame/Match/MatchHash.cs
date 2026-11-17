@@ -15,6 +15,8 @@ using System.Text;
 //   （Prototype の hash.js の extraParts の [mode, ruleset, bossId]・clock・cds）・
 //   討伐任務だけ、その次に [ボスの Id, x, y, HP, 向き x, 向き y, フェーズ, 期限, 攻撃, 前回の攻撃] [王将の被弾の数]、
 //   手下がいるときだけ [[x, y, 次に動く時刻, 行き先 [x, y] か null], …]（段 → 筋の順）（Prototype の extraParts の boss・raid・mins。
+//   防壁・軍銃兵・弓の照準のどれかがあるときだけ、さらに [[防壁 [x, y, HP]…], [軍銃兵 [x, y, 次に撃つ時刻, 照準]…], 弓の照準 [照準, 範囲] か null]
+//   （照準 = [追う駒の番号, [x, y], 固まったか]。Prototype の raidExtraParts。赤鬼王の棋譜のハッシュは変わらない）
 //   基本対戦のハッシュは変えない）・
 //   巨人の HP（盤上に巨人がいるときだけ、いちばん最後に [[x, y, HP], …]（段 → 筋の順）。Prototype の hash.js の giantPart）
 // 巨人は盤の駒の 9 マス全部に同じ駒の値が入る（Prototype の board と同じ）。持ち駒の巨人は、持っているプレイヤーの分だけ入れる
@@ -262,6 +264,64 @@ public static class MatchHash
                     }
                     sb.Append(']');
                 }
+
+                // 防壁の HP・軍銃兵の照準と次に撃つ時刻・ボスの攻撃（弓）の照準（Prototype の hash.js の raidExtraParts）。
+                // どれもなければ何も足さない（赤鬼王の今までの棋譜のハッシュを変えない）。
+                //  [[防壁 [x, y, HP], …], [軍銃兵 [x, y, 次に撃つ時刻, 照準], …], ボスの照準 [照準, [範囲のマス…]] か null]
+                //  照準 = [追う駒の番号か null, [x, y] か null, 固まったか 0/1]（照準がなければ null）
+                List<PieceSnapshot> walls = new List<PieceSnapshot>();
+                List<PieceSnapshot> guns = new List<PieceSnapshot>();
+                if (s.pieces != null)
+                {
+                    foreach (PieceSnapshot p in s.pieces)
+                    {
+                        if (p == null || p.held) continue;
+                        if (PieceRules.IsWallPiece(p.type)) walls.Add(p);
+                        if (p.gunner) guns.Add(p);
+                    }
+                }
+                bool bossAim = ai.aim.active;
+                if (walls.Count > 0 || guns.Count > 0 || bossAim)
+                {
+                    System.Comparison<PieceSnapshot> byPos = (a, c) => a.x != c.x ? a.x.CompareTo(c.x) : a.y.CompareTo(c.y);
+                    walls.Sort(byPos);
+                    guns.Sort(byPos);
+                    sb.Append(",[[");
+                    for (int i = 0; i < walls.Count; i++)
+                    {
+                        if (i > 0) sb.Append(',');
+                        sb.Append('[').Append(walls[i].x).Append(',').Append(walls[i].y).Append(',').Append(walls[i].hp).Append(']');
+                    }
+                    sb.Append("],[");
+                    for (int i = 0; i < guns.Count; i++)
+                    {
+                        if (i > 0) sb.Append(',');
+                        sb.Append('[').Append(guns[i].x).Append(',').Append(guns[i].y).Append(',').Append(guns[i].gunNext).Append(',');
+                        AppendAim(sb, guns[i].aim);
+                        sb.Append(']');
+                    }
+                    sb.Append("],");
+                    if (bossAim)
+                    {
+                        sb.Append('[');
+                        AppendAim(sb, ai.aim);
+                        sb.Append(',');
+                        if (ai.hasCells && ai.cells != null)
+                        {
+                            sb.Append('[');
+                            for (int i = 0; i < ai.cells.Count; i++)
+                            {
+                                if (i > 0) sb.Append(',');
+                                sb.Append('[').Append(ai.cells[i].x).Append(',').Append(ai.cells[i].y).Append(']');
+                            }
+                            sb.Append(']');
+                        }
+                        else sb.Append("null");
+                        sb.Append(']');
+                    }
+                    else sb.Append("null");
+                    sb.Append(']');
+                }
             }
         }
 
@@ -279,6 +339,20 @@ public static class MatchHash
         }
         sb.Append(']');
         return sb.ToString();
+    }
+
+    // 照準（AimData）をハッシュの値にする：[追う駒の番号か null, [x, y] か null, 固まったか]（照準がなければ null）
+    static void AppendAim(StringBuilder sb, AimData a)
+    {
+        if (!a.active)
+        {
+            sb.Append("null");
+            return;
+        }
+        sb.Append('[').Append(a.target > 0 ? a.target.ToString() : "null").Append(',');
+        if (a.hasCell) sb.Append('[').Append(a.x).Append(',').Append(a.y).Append(']');
+        else sb.Append("null");
+        sb.Append(',').Append(a.locked ? '1' : '0').Append(']');
     }
 
     static string Bool(bool b) => b ? "true" : "false";

@@ -344,6 +344,9 @@ public class TimeStopView : MonoBehaviour
                 case TimeStopKind.Boss:
                     Badge(e.At, 0, "撃", Hex(0xff1744)); // 討伐任務：ボスへのダメージ（時間が動き出したら入る）
                     break;
+                case TimeStopKind.Wall:
+                    Badge(e.At, 1, "撃", Hex(0x8d6e63)); // 討伐任務：防壁への攻撃（時間が動き出したら HP が 1 減る）
+                    break;
                 case TimeStopKind.Cell:
                 {
                     // Prototype の Game.js の予定の印（穴・壁・壊・炎）

@@ -25,7 +25,8 @@ using UnityEngine;
 //                     世界の終わりの発動時刻（PlayerSnapshot.worldEndSince。対局の時間）・停止世界の経過（TimeStopSnapshot.elapsed。tick）も時間で入る
 //  mode             … モード（GameModeDef.Id。"versus" = 基本対戦 ／ "bossRaid" = 討伐任務。版 1 のまま足した項目：ない JSON は基本対戦）
 //  boss / raid      … 討伐任務だけ（BossState・RaidState。それ以外は active = false）：ボスの位置・HP・向き・AI のフェーズと期限・予告の範囲・
-//                     暴れ回りの次の 1 歩、王将の被弾の数・手下の番号。手下（小赤鬼）の動き（次に動く時刻・行き先）は PieceSnapshot の minion〜
+//                     暴れ回りの次の 1 歩・弓の照準、王将の被弾の数・手下の番号・駒の番号。手下の動き（小赤鬼・軍歩兵：次に動く時刻・行き先 ／
+//                     軍銃兵：次に撃つ時刻・照準）と防壁の HP は PieceSnapshot の minion〜・gunner〜・hp
 //  formation        … 討伐任務の編成（自陣に並べた駒・錬成駒。錬成できる駒はここから決まる）
 //
 // 座標は GamePiece の X・Y と同じ（x = 段、y = 筋。Prototype とは x と y が逆）。
@@ -219,7 +220,7 @@ public class PieceSnapshot
     public bool wing;       // 翼状態（通常魔法「翼」。鳥は駒の種類で決まるので入れない）
     public bool counter;    // カウンター状態（通常魔法「カウンター」）
     public bool held;       // 時間停止の予定の駒（盤のデータから外して、その場に残している）
-    public int hp;          // 巨人の残りの HP（巨人以外は 0。巨人の x・y は 3×3 の中央のマス）
+    public int hp;          // 巨人・防壁の残りの HP（それ以外は 0。巨人の x・y は 3×3 の中央のマス）
     public int cooldownUntil; // 合戦将棋型：連打の間隔が終わる tick（GamePiece.cooldownUntilTick。0 = 動いたことがない）
     // 討伐任務：ボスの手下（小赤鬼）の状態（MinionData。手下でない駒は minion = false のまま）
     public bool minion;       // 手下の状態を持つか
@@ -229,8 +230,18 @@ public class PieceSnapshot
     public bool minionHasTo;  // 行き先があるか
     public int minionToX = -1;
     public int minionToY = -1;
+    // 討伐任務（大将軍）：軍銃兵の状態（次に撃つ時刻・照準）と、駒の番号（作った順。照準が追う駒を指す。GamePiece.serial）。
+    // 防壁は minion・gunner とも false で、minionSerial（置いた順）と hp だけ持つ。版 1 のまま足した項目：ない JSON は 0・false
+    public bool gunner;       // 照準で撃つ手下（軍銃兵）の状態を持つか
+    public int gunNext;       // 次に撃つ対局の時間（tick）
+    public AimData aim;       // 軍銃兵の照準
+    public int serial;        // 駒の番号（討伐任務でなければ 0）
 
-    public MinionData Minion => new MinionData { Active = minion, Serial = minionSerial, Next = minionNext, Planned = minionPlanned, HasTo = minionHasTo, ToX = minionToX, ToY = minionToY };
+    public MinionData Minion => new MinionData
+    {
+        Active = minion, Serial = minionSerial, Next = minionNext, Planned = minionPlanned, HasTo = minionHasTo, ToX = minionToX, ToY = minionToY,
+        Gunner = gunner, GunNext = gunNext, Aim = aim,
+    };
 }
 
 // 通常でないマス 1 つ（BoardCell）
