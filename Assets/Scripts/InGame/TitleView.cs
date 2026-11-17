@@ -102,9 +102,9 @@ public class TitleView : MonoBehaviour
     // シーンに元からある Canvas（古いタイトル：「ゲームスタート」のボタン）を隠す。実行時に作る画面の Canvas は、画面のオブジェクトの子なので残る
     void HideLegacyCanvases()
     {
-        foreach (Canvas c in FindObjectsByType<Canvas>(FindObjectsSortMode.None))
+        foreach (GameObject obj in gameObject.scene.GetRootGameObjects())
         {
-            if (c != null && c.transform.parent == null && c.gameObject.scene == gameObject.scene) c.gameObject.SetActive(false);
+            if (obj != null && obj != gameObject && obj.GetComponent<Canvas>() != null) obj.SetActive(false);
         }
     }
 

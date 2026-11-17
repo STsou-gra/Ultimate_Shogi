@@ -1482,7 +1482,8 @@ public partial class GameSystem : MonoBehaviour
         }
         if (HandUIManager.Instance != null)
         {
-            HandUIManager.Instance.SetStatusText(timeStop != null ? (explosive ? "【狙撃】 火薬を撃ち抜いた！（時間が動き出すと爆発する）" : $"【狙撃】 {targetName}を撃ち抜いた！（時間が動き出すと取れる）")
+            HandUIManager.Instance.SetStatusText(timeStop != null ? (explosive ? "【狙撃】 火薬を撃ち抜いた！（時間が動き出すと爆発する）"
+                    : PieceRules.IsWallPiece(target.type) ? $"【狙撃】 {targetName}を撃ち抜いた！（時間が動き出すと HP が 1 減る）" : $"【狙撃】 {targetName}を撃ち抜いた！（時間が動き出すと取れる）")
                 : explosive ? "【狙撃】 火薬を撃ち抜いた！ 大爆発！"
                 : captured ? $"【狙撃】 {targetName}を撃ち抜いた！"
                 : PieceRules.IsWallPiece(target.type) ? (target.hp > 0 ? $"【狙撃】 {targetName}に命中！（残り HP {target.hp}）" : $"【狙撃】 {targetName}を崩した！")
