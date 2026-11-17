@@ -62,8 +62,9 @@ public static partial class BoardSimulator
     }
 
     // 行動のあと（GameSystem.AfterRealtimeAction・Prototype の afterRealtimeAction）。piece は動いた駒（移動・必殺技・狙撃。なければ null）
-    static void AfterRealtimeAction(BoardSnapshot s, SnapshotPiece piece, bool forge)
+    static void AfterRealtimeAction(BoardSnapshot s, SnapshotPiece piece, MatchActionType type, PlayerType me)
     {
+        bool forge = type == MatchActionType.Forge;
         s.moveNumber++;
         int cd = PieceCooldownTicks(s);
         if (cd > 0 && piece != null && s.Contains(piece)) piece.cooldownUntil = s.clockTick + cd;
@@ -76,13 +77,21 @@ public static partial class BoardSimulator
                 s.timeStopJustStarted = false;
                 s.timeStopReleasable = true;
             }
-            else if (!forge)
+            else if (!forge && s.Mode.TimeStopLimitsMoves)
             {
+                // 討伐任務は行動回数の上限がない（TimeStopSec 秒だけ止まる）
                 s.timeStopRemaining--;
                 if (s.timeStopRemaining <= 0) ClearTimeStop(s);
             }
         }
         if (ResolveKingLoss(s)) return;
+        // 討伐任務：盤上の駒の移動・必殺技（ボスへの攻撃を含む）ごとに +2 エナジー（打つ・魔法・錬成・狙撃は対象外）
+        int moveEnergy = s.Mode.MoveEnergy;
+        if (moveEnergy > 0 && (type == MatchActionType.Move || type == MatchActionType.Special))
+        {
+            AddEnergy(s, me, moveEnergy);
+            if (ResolveKingLoss(s)) return;
+        }
         if (s.skillsKnown) CheckTranscendentUnlock(s);
     }
 
@@ -92,7 +101,8 @@ public static partial class BoardSimulator
     //  3. 毎秒：エナジー +EnergyPerSec（両者）
     //  4. 期限の来た炎上の鎮火
     //  5. 世界の終わり（WorldEndIntervalSec 秒ごと）・ファランクスとアンデッドの自動行動（AutoActSec 秒ごと。先手 → 後手）
-    //  6. 超常魔法の解放の判定（UnlockCheckSec 秒ごと）
+    //  6. 討伐任務：手下 → ボスの AI（BoardSimulator.Boss.cs）→ 勝敗
+    //  7. 超常魔法の解放の判定（UnlockCheckSec 秒ごと）
     public static void Tick(BoardSnapshot s)
     {
         if (!s.IsRealtime || s.gameOver) return;
@@ -112,30 +122,42 @@ public static partial class BoardSimulator
         RulesetDurations d = Durations(s);
         if (IsEvery(s, 1f))
         {
-            AddEnergy(s, PlayerType.Player1, s.Ruleset.EnergyPerSec);
-            AddEnergy(s, PlayerType.Player2, s.Ruleset.EnergyPerSec);
+            // 時間でエナジーが増えるのはプレイヤーの席だけ（討伐任務の後手の席はボス）
+            foreach (PlayerType side in new[] { PlayerType.Player1, PlayerType.Player2 })
+            {
+                if (s.Mode.GainsEnergy(side)) AddEnergy(s, side, s.Ruleset.EnergyPerSec);
+            }
         }
         ExtinguishExpired(s, s.clockTime);
 
-        if (!s.skillsKnown) return; // 自動行動・世界の終わり・解放は、必殺技・魔法を知っているスナップショットだけ
-
-        if (IsEvery(s, d.WorldEndIntervalSec))
+        // 自動行動・世界の終わり・解放は、必殺技・魔法を知っているスナップショットだけ
+        if (s.skillsKnown)
         {
-            int n = WorldEndCellsThisRound(s);
-            if (n > 0) WorldEndCollapse(s, n);
-            if (ResolveKingLoss(s)) return;
-        }
-        if (IsEvery(s, d.AutoActSec))
-        {
-            foreach (PlayerType side in new[] { PlayerType.Player1, PlayerType.Player2 })
+            if (IsEvery(s, d.WorldEndIntervalSec))
             {
-                RunPhalanx(s, side);
-                if (ResolveKingLoss(s)) return;
-                RunUndead(s, side);
+                int n = WorldEndCellsThisRound(s);
+                if (n > 0) WorldEndCollapse(s, n);
                 if (ResolveKingLoss(s)) return;
             }
+            if (IsEvery(s, d.AutoActSec))
+            {
+                foreach (PlayerType side in new[] { PlayerType.Player1, PlayerType.Player2 })
+                {
+                    RunPhalanx(s, side);
+                    if (ResolveKingLoss(s)) return;
+                    RunUndead(s, side);
+                    if (ResolveKingLoss(s)) return;
+                }
+            }
         }
-        if (IsEvery(s, d.UnlockCheckSec)) CheckTranscendentUnlock(s);
+
+        // 討伐任務：手下 → ボスの AI（Prototype のモードの onTick）→ 勝敗
+        if (s.HasBoss)
+        {
+            TickBoss(s);
+            if (ResolveKingLoss(s)) return;
+        }
+        if (s.skillsKnown && IsEvery(s, d.UnlockCheckSec)) CheckTranscendentUnlock(s);
     }
 
     // n tick 進める（終局したら止める）

@@ -11,6 +11,7 @@ using TMPro;
 //  ・画面の左：先手（下）・後手（上）の席のパネル。キーの割り当て・エナジー・魔法（キーとコスト。今使えない魔法は暗い）・その席の最後の案内文。
 //    操作中の席（スキルボタン・錬成ボタンが指す席）は枠が明るくなる
 //  ・止めている間（一時停止・ルール説明を開いている・ウィンドウが非アクティブ）は画面を暗くして理由を出す
+//  ・討伐任務は先手（プレイヤー）の席のパネルだけ（後手の席の位置には BossView がボスのパネルを出す）
 // 合戦将棋型の対局で GameSystem が自動で追加する（シーンに置かなくてよい）
 public class RealtimeHudView : MonoBehaviour
 {
@@ -93,7 +94,7 @@ public class RealtimeHudView : MonoBehaviour
 
         SeatKeys k = gameSystem.KeysOf(owner);
         bool cpu = gameSystem.SeatController(owner) != null;
-        string name = owner == PlayerType.Player1 ? "☗ 先手" : "☖ 後手";
+        string name = gameSystem.IsRaid ? "☗ プレイヤー" : owner == PlayerType.Player1 ? "☗ 先手" : "☖ 後手";
         string energy = $"エナジー {gameSystem.Match.Energy.Get(owner)}";
         IRealtimeSeatController ctrl = gameSystem.SeatController(owner);
         string state = ctrl is RealtimeReplayController ? "（棋譜の再生）" : cpu ? "（CPU）" : focus ? "（操作中）" : "";
@@ -109,7 +110,9 @@ public class RealtimeHudView : MonoBehaviour
         }
         else if (!cpu)
         {
-            string forge = string.Join("・", System.Linq.Enumerable.Range(0, k.Forge.Length).Select(i => SeatKeys.Label(k.Forge, i)));
+            // 錬成のキーが多い席（討伐任務）は「Z〜;（錬成パネルの順）」とまとめる
+            string forge = k.Forge.Length > 4 ? $"{SeatKeys.Label(k.Forge, 0)}〜{SeatKeys.Label(k.Forge, k.Forge.Length - 1)}（錬成パネルの順）"
+                : string.Join("・", System.Linq.Enumerable.Range(0, k.Forge.Length).Select(i => SeatKeys.Label(k.Forge, i)));
             sb.Append($"<size=85%>移動 {SeatKeys.Labels(k.Up, k.Left, k.Down, k.Right)}　決定 {SeatKeys.Label(k.Ok)}　取消 {SeatKeys.Label(k.Cancel)}　持ち駒 {SeatKeys.Label(k.Hand)}\n");
             sb.Append($"必殺技 {SeatKeys.Label(k.Special)}　狙撃 {SeatKeys.Label(k.Snipe)}　向き {SeatKeys.Label(k.Orient)}　解除 {SeatKeys.Label(k.Release)}　錬成 {forge}</size>\n");
         }
@@ -173,7 +176,8 @@ public class RealtimeHudView : MonoBehaviour
         pause.onClick.AddListener(() => gameSystem.TogglePause());
 
         // 左：後手（上）・先手（下）の席
-        panels.Add(CreateSeatPanel(PlayerType.Player2, root, new Vector2(0f, 1f), new Vector2(16f, -80f)));
+        // 討伐任務：後手の席はボス（その位置には BossView がボスのパネルを出す）
+        if (!gameSystem.IsRaid) panels.Add(CreateSeatPanel(PlayerType.Player2, root, new Vector2(0f, 1f), new Vector2(16f, -80f)));
         panels.Add(CreateSeatPanel(PlayerType.Player1, root, new Vector2(0f, 0f), new Vector2(16f, 110f)));
 
         // 止めている間の暗幕（クリックは通す：「再開」ボタンを押せるように、暗幕はボタンより奥）

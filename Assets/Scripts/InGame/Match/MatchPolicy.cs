@@ -21,11 +21,32 @@ public class MatchPolicy
 
     public BattleRuleset Ruleset { get; }
 
-    public MatchPolicy(BattleRuleset ruleset, MatchState match)
+    // モード（基本対戦・討伐任務。Match/GameMode.cs）
+    public GameModeDef Mode { get; }
+
+    public MatchPolicy(BattleRuleset ruleset, MatchState match, GameModeDef mode = null)
     {
         Ruleset = ruleset ?? BattleRulesets.Honshogi;
+        Mode = mode ?? GameModes.Versus;
         this.match = match;
     }
+
+    // ------------------------------------------------------------
+    //  モード（討伐任務：後手の席はボス）
+    // ------------------------------------------------------------
+
+    // 討伐任務か（後手の席がボス）
+    public bool IsRaid => Mode.BossSeat;
+    // owner の席がプレイヤーの席か（討伐任務の後手の席はボスで、行動できない）
+    public bool IsPlayerSeat(PlayerType owner) => Mode.IsPlayerSeat(owner);
+    // 時間・手番でエナジーが増える席か
+    public bool GainsEnergy(PlayerType owner) => Mode.GainsEnergy(owner);
+    // 停止世界に行動回数の上限があるか（討伐任務はなし：TimeStopSec 秒だけ止まる）
+    public bool TimeStopLimitsMoves => Mode.TimeStopLimitsMoves;
+    // 超常魔法を対局の開始時点から解放済みにするか（討伐任務）
+    public bool TranscendentUnlockedFromStart => Mode.TranscendentUnlockedFromStart;
+    // 盤上の駒の移動・必殺技ごとに得るエナジー（討伐任務は +2）
+    public int MoveEnergy => Mode.MoveEnergy;
 
     // 手番がなく、時間で進む戦闘型か
     public bool IsRealtime => Ruleset.Realtime;

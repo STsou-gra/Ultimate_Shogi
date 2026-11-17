@@ -37,6 +37,11 @@ public static class MatchSnapshotIO
                 s.clock.tick = match.Clock.Tick;
                 s.clock.time = match.Clock.Time;
             }
+            // モード・ボス・討伐任務（写しを入れる）
+            s.mode = match.Mode.Id;
+            s.boss = match.Boss != null ? match.Boss.Clone() : new BossState();
+            s.raid = match.Raid != null ? match.Raid.Clone() : new RaidState();
+            s.formation = match.Formation != null ? match.Formation.Clone() : new RaidFormation();
         }
 
         foreach (PlayerType owner in new[] { PlayerType.Player1, PlayerType.Player2 })
@@ -112,8 +117,16 @@ public static class MatchSnapshotIO
 
     public static PieceSnapshot CapturePiece(GamePiece piece, int id, bool held)
     {
+        MinionData m = piece.minion;
         return new PieceSnapshot
         {
+            minion = m.Active,
+            minionSerial = m.Active ? m.Serial : 0,
+            minionNext = m.Active ? m.Next : 0,
+            minionPlanned = m.Active && m.Planned,
+            minionHasTo = m.Active && m.HasTo,
+            minionToX = m.Active && m.HasTo ? m.ToX : -1,
+            minionToY = m.Active && m.HasTo ? m.ToY : -1,
             id = id,
             type = piece.type,
             owner = (int)piece.player,
@@ -175,6 +188,7 @@ public static class MatchSnapshotIO
                 cellEffect = e.CellEffect,
                 cellOwner = (int)e.CellOwner,
                 turns = e.Turns,
+                bossHit = e.BossHit,
             });
         }
         return t;
@@ -218,8 +232,8 @@ public static class MatchSnapshotIO
             match.RestoreFallenInitial(owner, fallen);
         }
 
+        match.RestoreRaid(s.boss, s.raid, s.formation);
         if (cells != null) cells.Restore(s.cells);
-
         pieces = new Dictionary<int, GamePiece>();
         foreach (PieceSnapshot ps in s.pieces)
         {
@@ -247,6 +261,7 @@ public static class MatchSnapshotIO
         piece.hasWing = ps.wing;
         piece.hasCounter = ps.counter;
         piece.cooldownUntilTick = ps.cooldownUntil;
+        piece.minion = ps.Minion;
         if (PieceRules.IsGiant(ps.type)) piece.hp = ps.hp > 0 ? System.Math.Min(ps.hp, GiantRules.MaxHp) : GiantRules.MaxHp;
         piece.UpdateVisual();
     }
@@ -293,6 +308,7 @@ public static class MatchSnapshotIO
                 CellEffect = e.cellEffect,
                 CellOwner = (PlayerType)e.cellOwner,
                 Turns = e.turns,
+                BossHit = e.bossHit,
             });
         }
         foreach (PieceSnapshot ps in s.pieces)
@@ -354,6 +370,22 @@ public static class MatchSnapshotIO
         if (ruleset.Realtime && (s.clock == null || !s.clock.active)) return "合戦将棋型の局面に、対局の時間がありません";
         if (ruleset.Realtime && (s.clock.tick < 0 || s.clock.time < 0 || s.clock.time > s.clock.tick)) return "対局の時間が正しくありません";
         if (s.turnNumber < 0 || s.moveNumber < 1) return "ターン数・手数が正しくありません";
+        if (s.Mode.Id != (string.IsNullOrEmpty(s.mode) ? GameModes.Versus.Id : s.mode)) return $"知らないモードです（{s.mode}）";
+        if (s.Mode.BossSeat)
+        {
+            // 討伐任務：ボスが定義にあって盤に収まり、戦闘型が合戦将棋型であること
+            if (s.boss == null || !s.boss.active || s.raid == null || !s.raid.active) return "討伐任務の局面に、ボスの状態がありません";
+            BossDef def = s.boss.Def;
+            if (def == null) return $"知らないボスです（{s.boss.id}）";
+            if (!ruleset.Realtime) return "討伐任務の局面の戦闘型が合戦将棋型ではありません";
+            if (s.boss.w <= 0 || s.boss.h <= 0 || s.boss.x < 0 || s.boss.y < 0 || s.boss.x + s.boss.h > BoardCells.Size || s.boss.y + s.boss.w > BoardCells.Size)
+            {
+                return "ボスが盤からはみ出しています";
+            }
+            if (s.boss.hp < 0 || s.boss.hp > s.boss.maxHp) return $"ボスの HP が正しくありません（{s.boss.hp}）";
+            if (s.raid.kingHits < 0) return "王将の被弾の数が正しくありません";
+        }
+        else if ((s.boss != null && s.boss.active) || (s.raid != null && s.raid.active)) return "基本対戦の局面に、ボスの状態があります";
         if (s.gameOver && !s.draw && !IsPlayer(s.winner)) return "勝者が正しくありません";
         if (s.players == null || s.players.Count != 2 || s.Player(PlayerType.Player1) == null || s.Player(PlayerType.Player2) == null)
         {
@@ -419,6 +451,16 @@ public static class MatchSnapshotIO
     public static string RulesetMismatch(MatchSnapshot s, MatchState match)
     {
         BattleRuleset r = s != null ? s.Ruleset : null;
+        // モード（基本対戦・討伐任務）とボスも対局の始めに決めるので、違う局面は読み込めない
+        if (s != null && match != null && s.Mode.Id != match.Mode.Id)
+        {
+            return $"{s.Mode.Name}の局面です（今の対局は{match.Mode.Name}。{s.Mode.Name}で始めた対局で読み込んでください）";
+        }
+        if (s != null && match != null && s.HasBoss && match.HasBoss && s.boss.id != match.Boss.id)
+        {
+            BossDef other = s.boss.Def;
+            return $"{(other != null ? other.Name : s.boss.id)}の局面です（今の対局のボスは{(match.Boss.Def != null ? match.Boss.Def.Name : match.Boss.id)}）";
+        }
         if (r == null || match == null || r.Id == match.Ruleset.Id) return null;
         return $"{r.Name}の局面です（今の対局は{match.Ruleset.Name}。編成画面で{r.Name}を選んで始めた対局で読み込んでください）";
     }

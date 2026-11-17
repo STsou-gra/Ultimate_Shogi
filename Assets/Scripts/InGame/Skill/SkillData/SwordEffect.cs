@@ -22,7 +22,9 @@ public class SwordEffect : SkillEffect
   public override bool IsValidTarget(SkillContext context, Vector2Int pos)
   {
     GamePiece piece = context.PieceAt(pos);
-    return MagicKit.IsOwnPiece(context, piece) && MagicKit.FrontEnemies(context.GameBoard, piece).Count > 0;
+    // 討伐任務：前方 1×3 にボスがいても使える
+    return MagicKit.IsOwnPiece(context, piece)
+        && (MagicKit.FrontEnemies(context.GameBoard, piece).Count > 0 || MagicKit.FrontHasBoss(context.GameBoard, piece));
   }
 
   // カーソルの自分の駒の前方 1×3
@@ -37,7 +39,7 @@ public class SwordEffect : SkillEffect
   public override List<Vector2Int> GetAreaBlockers(SkillContext context, Vector2Int cursor, List<Vector2Int> area)
   {
     GamePiece piece = context.PieceAt(cursor);
-    if (piece != null && MagicKit.FrontEnemies(context.GameBoard, piece).Count > 0) return new List<Vector2Int>();
+    if (piece != null && (MagicKit.FrontEnemies(context.GameBoard, piece).Count > 0 || MagicKit.FrontHasBoss(context.GameBoard, piece))) return new List<Vector2Int>();
     return new List<Vector2Int>(area);
   }
 
@@ -56,6 +58,7 @@ public class SwordEffect : SkillEffect
     int forward = SpecialContext.Forward(caster.player);
     if (context.Fx != null) context.Fx.SwordSlash(caster, forward, inRange, tl.Time);
     tl.Wait(WindUp + SweepTime);
+    tl.HitBoss(MagicKit.FrontSquares(context.GameBoard, caster)); // 討伐任務：前方 1×3 がボスに重なれば斬る
 
     foreach (GamePiece q in inRange)
     {

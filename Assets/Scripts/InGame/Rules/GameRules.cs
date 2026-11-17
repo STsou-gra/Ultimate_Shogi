@@ -23,7 +23,7 @@ public class BaseMoveRule : IGameRule
         if (PieceRules.IsGiant(piece))
         {
             if (board.TimeStop != null) return false;
-            return CheckRules.GiantMoves(board.GetBoardData(), board.Cells, piece, null).Contains(new MatchSquare(toX, toY));
+            return CheckRules.GiantMoves(board.GetBoardData(), board.Cells, piece, null, board.Boss).Contains(new MatchSquare(toX, toY));
         }
 
         // 基本の動き（各駒の CanMove。破壊マス・壁には行けない）
@@ -36,7 +36,12 @@ public class BaseMoveRule : IGameRule
             {
                 return false;
             }
+            // 討伐任務：走り駒はボスで止まる（ボスのマスの先へは行けない）
+            if (board.PathCrossesBoss(piece.X, piece.Y, toX, toY)) return false;
         }
+
+        // 討伐任務：ボスのマスには入れる（入ると攻撃して、元のマスへ跳ね返る）
+        if (board.BossAt(toX, toY)) return true;
 
         // 移動先に自分の駒があるか（自分の火薬には入れる）
         GamePiece targetPiece = board.GetPieceAt(toX, toY);
@@ -72,11 +77,11 @@ public class EmptyCellDropRule : IGameRule
             return GiantRules.CanDropAt(player, toX, toY, (x, y) =>
             {
                 BoardCell c = board.Cells.At(x, y);
-                return !board.HasPieceAt(x, y) && c != null && c.State == CellState.Normal && !c.HasTrap
+                return !board.HasPieceAt(x, y) && c != null && c.State == CellState.Normal && !c.HasTrap && !board.BossAt(x, y)
                     && !(board.TimeStop != null && board.TimeStop.IsHeldSquare(x, y));
             }, false);
         }
-        return !board.HasPieceAt(toX, toY);
+        return !board.HasPieceAt(toX, toY) && !board.BossAt(toX, toY); // 討伐任務：ボスのマスにも打てない
     }
 }
 
@@ -474,11 +479,13 @@ public static class CheckRules
 
     // 巨人 g が配列 cells の上で動ける先（GiantRules.Moves。blockers は仮の駒のマス：相手の駒として扱う）。時間停止中かは呼び出し側が見る。
     // 本編の移動（BaseMoveRule・GameSystem）もこれを使う
-    public static List<MatchSquare> GiantMoves(GamePiece[] cells, BoardCells cellStates, GamePiece g, int[] blockers)
+    // boss：討伐任務のボス（先頭の 1 列にボスのマスがあれば、そこまで＝攻撃して跳ね返る。なければ null）
+    public static List<MatchSquare> GiantMoves(GamePiece[] cells, BoardCells cellStates, GamePiece g, int[] blockers, BossState boss = null)
     {
         return GiantRules.Moves(g.player, g.X, g.Y,
             (x, y) =>
             {
+                if (boss != null && boss.Covers(x, y)) return GiantRules.Occupant.Enemy;
                 int i = GameHelper.CalcPanelNum(x, y);
                 GamePiece q = cells[i];
                 if (q == null) return IsBlocker(blockers, i) ? GiantRules.Occupant.Enemy : GiantRules.Occupant.Empty;

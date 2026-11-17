@@ -1,0 +1,819 @@
+{
+ "format": "ultimate-shogi-kifu",
+ "version": 2,
+ "createdAt": "2026-11-06T17:49:03.374Z",
+ "seed": 17,
+ "config": {
+  "mode": "bossRaid",
+  "ruleset": "kassen",
+  "bossId": "akaoni"
+ },
+ "setup": {
+  "formation": [
+   {
+    "type": "OU",
+    "x": 4,
+    "y": 8
+   },
+   {
+    "type": "FU",
+    "x": 0,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 1,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 2,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 3,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 4,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 5,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 6,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 7,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 8,
+    "y": 6
+   },
+   {
+    "type": "KI",
+    "x": 3,
+    "y": 8
+   },
+   {
+    "type": "KI",
+    "x": 5,
+    "y": 8
+   },
+   {
+    "type": "GI",
+    "x": 2,
+    "y": 8
+   },
+   {
+    "type": "GI",
+    "x": 6,
+    "y": 8
+   },
+   {
+    "type": "HI",
+    "x": 7,
+    "y": 7
+   },
+   {
+    "type": "KE",
+    "x": 1,
+    "y": 8
+   }
+  ],
+  "forgePicks": [
+   "KAYAKU",
+   "SNIPER"
+  ]
+ },
+ "loadouts": [
+  {
+   "normal": [
+    "shield",
+    "sword",
+    "test_spark"
+   ],
+   "ultimate": "cannon",
+   "transcendent": null
+  },
+  null
+ ],
+ "actions": [
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 8
+   },
+   "to": {
+    "x": 2,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 20,
+   "hash": "14ec738d"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 8,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 36,
+   "hash": "4c6a3441"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 8,
+    "y": 6
+   },
+   "to": {
+    "x": 8,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 37,
+   "hash": "e61e5fcd"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 6
+   },
+   "to": {
+    "x": 6,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 50,
+   "hash": "bfaa1132"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 6
+   },
+   "to": {
+    "x": 2,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 54,
+   "hash": "713fc721"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 7,
+    "y": 7
+   },
+   "to": {
+    "x": 8,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 55,
+   "hash": "25319132"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 0,
+    "y": 6
+   },
+   "to": {
+    "x": 0,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 56,
+   "hash": "76f5be1f"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 8
+   },
+   "to": {
+    "x": 5,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 96,
+   "hash": "9192bd7e"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 7
+   },
+   "to": {
+    "x": 2,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 98,
+   "hash": "4e8b2d6d"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 5
+   },
+   "to": {
+    "x": 6,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 114,
+   "hash": "ec4c12c5"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 6
+   },
+   "to": {
+    "x": 5,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 133,
+   "hash": "eef110d5"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 8
+   },
+   "to": {
+    "x": 3,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 135,
+   "hash": "1744175d"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 6
+   },
+   "to": {
+    "x": 1,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 149,
+   "hash": "f7ef5461"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 4
+   },
+   "to": {
+    "x": 6,
+    "y": 3
+   },
+   "owner": 0,
+   "t": 161,
+   "hash": "22615df2"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 7
+   },
+   "to": {
+    "x": 2,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 166,
+   "hash": "8bdfb20f"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 6
+   },
+   "to": {
+    "x": 1,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 171,
+   "hash": "ee9374d8"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 8,
+    "y": 7
+   },
+   "to": {
+    "x": 8,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 185,
+   "hash": "831733a5"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 6
+   },
+   "to": {
+    "x": 3,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 189,
+   "hash": "46de9b78"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 7
+   },
+   "to": {
+    "x": 6,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 196,
+   "hash": "41575cf8"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 6
+   },
+   "to": {
+    "x": 7,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 209,
+   "hash": "2955c133"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 7
+   },
+   "to": {
+    "x": 3,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 213,
+   "hash": "8840b537"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 8
+   },
+   "to": {
+    "x": 6,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 224,
+   "hash": "37f8b8f4"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 5
+   },
+   "to": {
+    "x": 2,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 228,
+   "hash": "eb47c690"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 8
+   },
+   "to": {
+    "x": 0,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 238,
+   "hash": "f63e0718"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 7,
+    "y": 5
+   },
+   "to": {
+    "x": 7,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 243,
+   "hash": "881b792c"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 5
+   },
+   "to": {
+    "x": 1,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 246,
+   "hash": "95adb07f"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 5,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 255,
+   "hash": "ee2e121b"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 6
+   },
+   "to": {
+    "x": 1,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 260,
+   "hash": "2c1a03c6"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 6
+   },
+   "to": {
+    "x": 2,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 268,
+   "hash": "405c1226"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 7
+   },
+   "to": {
+    "x": 6,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 270,
+   "hash": "73d1c0dd"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 4
+   },
+   "to": {
+    "x": 1,
+    "y": 3
+   },
+   "owner": 0,
+   "t": 297,
+   "hash": "9ff8f197"
+  },
+  {
+   "type": "special",
+   "from": {
+    "x": 2,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 300,
+   "hash": "6d08e2af"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 0
+   },
+   "to": {
+    "x": 3,
+    "y": 0
+   },
+   "owner": 0,
+   "t": 317,
+   "hash": "f2510a63"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 6
+   },
+   "to": {
+    "x": 6,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 318,
+   "hash": "a826550a"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 7,
+    "y": 6
+   },
+   "to": {
+    "x": 7,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 320,
+   "hash": "baf78015"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 0
+   },
+   "to": {
+    "x": 3,
+    "y": 0
+   },
+   "owner": 0,
+   "t": 340,
+   "hash": "656952f1"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 5
+   },
+   "to": {
+    "x": 2,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 344,
+   "hash": "9ca02073"
+  },
+  {
+   "type": "special",
+   "from": {
+    "x": 1,
+    "y": 3
+   },
+   "owner": 0,
+   "t": 347,
+   "hash": "aedddc9e"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 5
+   },
+   "to": {
+    "x": 6,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 350,
+   "hash": "ce6e6bf8"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 0
+   },
+   "to": {
+    "x": 3,
+    "y": 0
+   },
+   "owner": 0,
+   "t": 357,
+   "hash": "c09c894b"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 5
+   },
+   "to": {
+    "x": 5,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 361,
+   "hash": "c3ee9994"
+  },
+  {
+   "type": "special",
+   "from": {
+    "x": 5,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 372,
+   "hash": "5e8922df"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 0
+   },
+   "to": {
+    "x": 1,
+    "y": 1
+   },
+   "owner": 0,
+   "t": 374,
+   "hash": "91050a70"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 3
+   },
+   "to": {
+    "x": 5,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 386,
+   "hash": "0fec02b5"
+  },
+  {
+   "type": "magic",
+   "skill": "sword",
+   "target": {
+    "x": 5,
+    "y": 3
+   },
+   "owner": 0,
+   "t": 390,
+   "hash": "4ba2d0d1"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 3
+   },
+   "to": {
+    "x": 5,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 395,
+   "hash": "8930e844"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 0
+   },
+   "to": {
+    "x": 3,
+    "y": 0
+   },
+   "owner": 0,
+   "t": 399,
+   "hash": "ea3d1a35"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 0
+   },
+   "to": {
+    "x": 3,
+    "y": 0
+   },
+   "owner": 0,
+   "t": 415,
+   "hash": "8e8bd3e9"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 1
+   },
+   "to": {
+    "x": 1,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 426,
+   "hash": "70869120"
+  },
+  {
+   "type": "magic",
+   "skill": "cannon",
+   "target": {
+    "x": 6,
+    "y": 5
+   },
+   "orient": "v",
+   "owner": 0,
+   "t": 429,
+   "hash": "e572ca77"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 0
+   },
+   "to": {
+    "x": 3,
+    "y": 0
+   },
+   "owner": 0,
+   "t": 432,
+   "hash": "7dbbd13f"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 0
+   },
+   "to": {
+    "x": 3,
+    "y": 0
+   },
+   "owner": 0,
+   "t": 443,
+   "hash": "910785ef"
+  }
+ ],
+ "endTick": 443
+}

@@ -341,6 +341,9 @@ public class TimeStopView : MonoBehaviour
                 case TimeStopKind.Promote:
                     if (e.Piece != null) Badge(new Vector2Int(e.Piece.X, e.Piece.Y), 3, "成", Hex(0xc62828));
                     break;
+                case TimeStopKind.Boss:
+                    Badge(e.At, 0, "撃", Hex(0xff1744)); // 討伐任務：ボスへのダメージ（時間が動き出したら入る）
+                    break;
                 case TimeStopKind.Cell:
                 {
                     // Prototype の Game.js の予定の印（穴・壁・壊・炎）
@@ -592,10 +595,11 @@ public class TimeStopView : MonoBehaviour
         }
         shownRemaining = ts.Remaining;
         shownSecLeft = gameSystem.Policy.TimeStopSecLeft(ts);
-        countText.text = shownSecLeft >= 0 ? $"残り {ts.Remaining} 回\n<size=70%>あと {shownSecLeft} 秒</size>" : $"残り {ts.Remaining} 回";
+        countText.text = ts.IsUnlimited ? $"あと {Mathf.Max(0, shownSecLeft)} 秒" // 討伐任務：回数の上限なし
+            : shownSecLeft >= 0 ? $"残り {ts.Remaining} 回\n<size=70%>あと {shownSecLeft} 秒</size>" : $"残り {ts.Remaining} 回";
         // 解除のキーは発動した席のキー（合戦将棋型：先手 Q・後手 U）
         if (releaseLabel != null) releaseLabel.text = $"解除  [{SeatKeys.Label(gameSystem.KeysOf(ts.Owner).Release)}]";
-        pieFill.fillAmount = ts.Total > 0 ? (float)ts.Remaining / ts.Total : 0f;
+        pieFill.fillAmount = ts.IsUnlimited ? 1f : ts.Total > 0 ? (float)ts.Remaining / ts.Total : 0f;
         if (bump)
         {
             RectTransform rt = countText.rectTransform;

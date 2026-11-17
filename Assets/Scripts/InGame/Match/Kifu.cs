@@ -6,9 +6,10 @@ using UnityEngine;
 // 棋譜の再生で盤面がずれたら、何手目でずれたか分かる。JsonUtility でそのまま JSON にする：
 //
 //  {
-//    "format": "ultimate-shogi-unity-kifu", "version": 1, "createdAt": "2026-11-12T12:34:56Z", "app": "0.1",
+//    "format": "ultimate-shogi-unity-kifu", "version": 2, "createdAt": "2026-11-12T12:34:56Z", "app": "0.1",
 //    "seed": 123456789,
-//    "config": { "mode": "versus", "ruleset": "honshogi", "firstPlayer": 0 },
+//    "config": { "mode": "versus", "ruleset": "honshogi", "boss": "", "firstPlayer": 0 },   … 討伐任務は mode "bossRaid"・ruleset "kassen"・boss "akaoni"
+//    "setup": { "pieces": [{ "type": 7, "x": 0, "y": 4 }, ...], "forgePicks": [9, 12] },   … 討伐任務の編成（基本対戦は空。版 2 から）
 //    "loadouts": [{ "skills": ["Shield", "Sword", "Pitfall", "Meteor", "TimeStop"] }, { ... }],   … 枠の順（空き枠は ""）
 //    "endTick": -1,                                                  … 合戦将棋型：保存した時点の tick（本将棋型は -1）
 //    "actions": [{ "type": 0, "owner": 0, "t": -1, "from": { "x": 2, "y": 6 }, "to": { "x": 3, "y": 6 }, ..., "hash": "1a2b3c4d" }, ...]
@@ -23,9 +24,11 @@ using UnityEngine;
 [System.Serializable]
 public class KifuConfig
 {
-    // 基本対戦（versus）× 戦闘型（BattleRuleset.Id：本将棋型 honshogi・合戦将棋型 kassen）。Prototype の config（討伐任務は Unity にない）
+    // モード（GameModeDef.Id：基本対戦 versus・討伐任務 bossRaid）× 戦闘型（BattleRuleset.Id：本将棋型 honshogi・合戦将棋型 kassen）。Prototype の config
     public string mode = "versus";
     public string ruleset = "honshogi";
+    // 討伐任務：ボス（BossDef.Id。基本対戦は ""。版 2 から）
+    public string boss = "";
 
     public BattleRuleset Ruleset => BattleRulesets.ById(ruleset);
     public int firstPlayer = (int)MatchConfig.FirstPlayer;
@@ -105,7 +108,9 @@ public class KifuEntry : MatchAction
 public class KifuFile
 {
     public const string Format = "ultimate-shogi-unity-kifu";
-    public const int Version = 1;
+    // 版 2：討伐任務（config.boss と setup）を足した。版 1（基本対戦だけ）も読める
+    public const int Version = 2;
+    public const int OldestVersion = 1;
 
     public string format = Format;
     public int version = Version;
@@ -113,7 +118,9 @@ public class KifuFile
     public string app = "";         // 記録したゲームの版（Application.version。参考）
     public uint seed;               // 対局の乱数のシード（MatchState.Rng）
     public KifuConfig config = new KifuConfig();
-    public List<KifuLoadout> loadouts = new List<KifuLoadout>();   // [先手, 後手]
+    public List<KifuLoadout> loadouts = new List<KifuLoadout>();   // [先手, 後手]（討伐任務の後手はボスの席なので空）
+    // 討伐任務の編成（Prototype の棋譜の setup：自陣に並べた駒と、錬成駒の編成。基本対戦は空）
+    public RaidFormation setup = new RaidFormation();
     // デバッグキー（CellDebugTool）でマスを変えた対局（再生しても同じ盤面にならない）
     public bool debugEdited;
     // 合戦将棋型：保存した時点の tick（Prototype の endTick。本将棋型は -1）
@@ -121,11 +128,13 @@ public class KifuFile
     public List<KifuEntry> actions = new List<KifuEntry>();
 
     // 新しい対局の棋譜（行動はまだない。Prototype の createKifu）
-    public static KifuFile Create(uint seed, SkillDeck deck1, SkillDeck deck2, BattleRuleset ruleset = null)
+    public static KifuFile Create(uint seed, SkillDeck deck1, SkillDeck deck2, BattleRuleset ruleset = null,
+                                  GameModeDef mode = null, string bossId = null, RaidFormation formation = null)
     {
         return new KifuFile
         {
-            config = new KifuConfig { ruleset = (ruleset ?? BattleRulesets.Honshogi).Id },
+            config = new KifuConfig { mode = (mode ?? GameModes.Versus).Id, ruleset = (ruleset ?? BattleRulesets.Honshogi).Id, boss = bossId ?? "" },
+            setup = formation != null ? formation.Clone() : new RaidFormation(),
             createdAt = System.DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture),
             app = Application.version,
             seed = seed,
@@ -150,7 +159,7 @@ public class KifuFile
         if (header.format == MatchSnapshot.Format) throw new KifuFormatException("局面のファイルです（「局面を読み込む」で開いてください）");
         if (header.format == "ultimate-shogi-kifu") throw new KifuFormatException("Prototype（Web 版）の棋譜は Unity 版では再生できません（座標・魔法の名前が違うため）");
         if (header.format != Format) throw new KifuFormatException("この対局の棋譜ファイルではありません");
-        if (header.version != Version) throw new KifuFormatException($"対応していない棋譜の版です（version {header.version}）");
+        if (header.version < OldestVersion || header.version > Version) throw new KifuFormatException($"対応していない棋譜の版です（version {header.version}）");
 
         KifuFile k;
         try
@@ -167,9 +176,23 @@ public class KifuFile
         }
         if (k.config == null) k.config = new KifuConfig();
         if (string.IsNullOrEmpty(k.config.ruleset)) k.config.ruleset = BattleRulesets.Honshogi.Id;
-        if (k.config.mode != "versus" || k.config.Ruleset == null)
+        if (string.IsNullOrEmpty(k.config.mode)) k.config.mode = GameModes.Versus.Id;
+        if (k.config.boss == null) k.config.boss = "";
+        if (k.setup == null) k.setup = new RaidFormation();
+        if (k.setup.pieces == null) k.setup.pieces = new List<RaidPlacement>();
+        if (k.setup.forgePicks == null) k.setup.forgePicks = new List<PieceType>();
+        if (GameModes.ById(k.config.mode) == null || k.config.Ruleset == null)
         {
             throw new KifuFormatException($"Unity 版にはまだない対局の設定です（{k.config.mode} × {k.config.ruleset}）");
+        }
+        if (k.config.mode == GameModes.BossRaid.Id)
+        {
+            // 討伐任務：ボスと編成が要る（ボスの戦闘型・編成の決まりに合わないものは再生できない）
+            BossDef boss = BossDefs.ById(k.config.boss);
+            if (boss == null || !boss.Implemented) throw new KifuFormatException($"Unity 版にはまだないボスの棋譜です（{k.config.boss}）");
+            if (k.config.ruleset != boss.RulesetId) throw new KifuFormatException($"討伐任務の棋譜の戦闘型が違います（{k.config.ruleset}）");
+            List<string> errors = RaidRules.Validate(k.setup, boss, out _);
+            if (errors.Count > 0) throw new KifuFormatException("討伐任務の棋譜の編成が正しくありません（" + errors[0] + "）");
         }
         foreach (KifuLoadout l in k.loadouts)
         {

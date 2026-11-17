@@ -63,6 +63,7 @@ public partial class GameSystem
     void SetupCpu()
     {
         if (!MatchSetup.IsVsCpu) return;
+        if (IsRaid) return; // 討伐任務（棋譜の再生など）：CPU は使わない（後手の席はボス）
         if (IsOnlineMatch)
         {
             Debug.LogWarning("オンライン対戦では CPU と対戦できないので、2人で対戦として始めます");

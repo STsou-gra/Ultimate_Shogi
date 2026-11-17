@@ -11,6 +11,17 @@ public class GameResultDisplay : MonoBehaviour
         KifuGameOverPanel.Ensure();
 
         TextMeshProUGUI resultText = GetComponent<TextMeshProUGUI>();
+        // 討伐任務：討伐成功（クリアタイム）／討伐失敗
+        RaidResultInfo raid = GameResult.Raid;
+        if (raid != null)
+        {
+            resultText.richText = true;
+            resultText.text = raid.Cleared
+                ? $"討伐成功!\n<size=55%>{raid.BossName}を倒した　クリアタイム {raid.TimeLabel}</size>"
+                : $"討伐失敗…\n<size=55%>{(raid.Outcome == RaidOutcome.KingLost ? "王将が倒れた" : "王将がボスの攻撃に耐えきれなかった")}" +
+                  $"（{raid.BossName}の残り HP {raid.BossHp} / {raid.BossMaxHp}・{raid.TimeLabel}）</size>";
+            return;
+        }
         if (GameResult.IsDraw)
         {
             resultText.text = "引き分け!";

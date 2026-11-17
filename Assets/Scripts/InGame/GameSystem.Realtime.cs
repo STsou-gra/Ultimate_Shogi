@@ -140,12 +140,15 @@ public partial class GameSystem
     void SetupRealtime()
     {
         // CPU と対戦：人の席はキーボード全体を使う（SeatKeys.KassenSolo）。CPU の席のキーは使わない
+        // 討伐任務：プレイヤーは先手の 1 人。キーボード全体を使う（SeatKeys.RaidSolo。錬成のキーが多い）。後手の席はボス（キーは使わない）
         realtimeSeats = new[]
         {
-            new InputSeat(PlayerType.Player1, HasCpu ? (IsCpuSide(PlayerType.Player1) ? SeatKeys.KassenSente : SeatKeys.KassenSolo("先手")) : SeatKeys.KassenSente),
+            new InputSeat(PlayerType.Player1, IsRaid ? SeatKeys.RaidSolo("プレイヤー")
+                : HasCpu ? (IsCpuSide(PlayerType.Player1) ? SeatKeys.KassenSente : SeatKeys.KassenSolo("先手")) : SeatKeys.KassenSente),
             new InputSeat(PlayerType.Player2, HasCpu ? (IsCpuSide(PlayerType.Player2) ? SeatKeys.KassenGote : SeatKeys.KassenSolo("後手")) : SeatKeys.KassenGote),
         };
         if (HasCpu) focusSide = BoardZones.Opponent(cpuSide.Value); // 操作中の席は人の席
+        if (IsRaid) focusSide = PlayerType.Player1;
 
         // 先手の席はシーンのカーソル、後手の席は複製したカーソル（色を変える）
         sceneCursor.Bind(this, realtimeSeats[0]);
@@ -157,6 +160,7 @@ public partial class GameSystem
         TintCursor(goteCursor, new Color(1f, 0.55f, 0.6f, 1f));    // 後手：赤み
         sceneCursor.SetPosition(2, 4);
         goteCursor.SetPosition(6, 4);
+        if (IsRaid) goteCursor.gameObject.SetActive(false); // 討伐任務：後手の席（ボス）のカーソルは出さない
         seat = realtimeSeats[(int)focusSide];
 
         // 案内文（「決定: F / 取消: Space」など）を、操作中の席のキーに読み替えて出す
@@ -164,7 +168,11 @@ public partial class GameSystem
         if (HandUIManager.Instance != null) HandUIManager.Instance.SeatMode = true;
 
         if (FindAnyObjectByType<RealtimeHudView>() == null) gameObject.AddComponent<RealtimeHudView>();
-        if (HasCpu)
+        if (IsRaid)
+        {
+            Debug.Log($"討伐任務（{Policy.Ruleset.Name}）：{RealtimeKeyHint(realtimeSeats[0].Keys)} で操作する");
+        }
+        else if (HasCpu)
         {
             InputSeat human = realtimeSeats[(int)focusSide];
             Debug.Log($"{Policy.Ruleset.Name}：あなた（{human.Keys.Name}）は {RealtimeKeyHint(human.Keys)} で操作する。CPU は {CpuLevels.Label(MatchSetup.CpuLevel)}");
@@ -194,7 +202,11 @@ public partial class GameSystem
         foreach (InputSeat s in realtimeSeats)
         {
             UseSeat(s.Owner.Value);
-            s.Status = IsCpuSide(s.Owner.Value)
+            s.Status = IsRaid
+                ? (Policy.IsPlayerSeat(s.Owner.Value)
+                    ? $"【討伐任務】 {(BossDefinition != null ? BossDefinition.Name : "ボス")}を倒せ！ 駒をボスのマスへ動かすと攻撃（駒は元のマスへ戻る）。赤く光るマスからは逃げよう（{RealtimeKeyHint(s.Keys)}）"
+                    : "【ボス】")
+                : IsCpuSide(s.Owner.Value)
                 ? $"【CPU】 {CpuLevels.Label(MatchSetup.CpuLevel)}が {Policy.Ruleset.CpuIntervalSec[CpuLevels.Clamp(MatchSetup.CpuLevel)]:0.0} 秒ごとに動く"
                 : $"【{Policy.Ruleset.Name}】 手番なし。いつでも自分の駒を動かせる（{RealtimeKeyHint(s.Keys)}）";
         }
@@ -312,6 +324,7 @@ public partial class GameSystem
             return;
         }
         AttachRealtimeCpu();
+        AttachBossSeat(); // 討伐任務：後手の席はボス（キーで操作できない。GameSystem.Boss.cs）
     }
 
     // 局面を読み込む前（GameSystem.State.cs の ImportState から）：両方の席の選択とキューをやめる
@@ -536,8 +549,9 @@ public partial class GameSystem
                 TimeStopUpdated?.Invoke(ts, false);
                 ShowSeatNotice(ts.Owner, TimeStopStatusText);
             }
-            else if (!ts.Ending && plan.Action.type != MatchActionType.Forge)
+            else if (!ts.Ending && plan.Action.type != MatchActionType.Forge && Policy.TimeStopLimitsMoves)
             {
+                // 討伐任務は行動回数の上限がない（TimeStopSec 秒だけ止まる）
                 ts.Remaining--;
                 if (ts.Remaining <= 0) ts.Ending = true;
                 TimeStopUpdated?.Invoke(ts, true);
@@ -546,6 +560,14 @@ public partial class GameSystem
             if (ts.Ending && timeStop == ts) ResolveTimeStopAndReset();
         }
         if (ResolveKingLoss()) return;
+        // 討伐任務：盤上の駒の移動・必殺技（ボスへの攻撃を含む）ごとに +2 エナジー（打つ・魔法・錬成・狙撃は対象外。時間停止中も入る）
+        int moveEnergy = Policy.MoveEnergy;
+        if (moveEnergy > 0 && (plan.Action.type == MatchActionType.Move || plan.Action.type == MatchActionType.Special))
+        {
+            match.Energy.Gain(plan.Owner, moveEnergy, false);
+            UpdateActivePlayerSkillUI();
+            if (ResolveKingLoss()) return;
+        }
         CheckTranscendentUnlock();
         UpdateActivePlayerSkillUI();
     }
@@ -587,9 +609,10 @@ public partial class GameSystem
         c.Time++;
         if (Policy.IsEverySecond)
         {
+            // 時間でエナジーが増えるのはプレイヤーの席だけ（討伐任務の後手の席はボス）
             int e = Policy.EnergyPerSec;
-            AddPoint(PlayerType.Player1, e, true);
-            AddPoint(PlayerType.Player2, e, true);
+            if (Policy.GainsEnergy(PlayerType.Player1)) AddPoint(PlayerType.Player1, e, true);
+            if (Policy.GainsEnergy(PlayerType.Player2)) AddPoint(PlayerType.Player2, e, true);
             if (HandUIManager.Instance != null) HandUIManager.Instance.SetTurnInfo(Policy.ProgressLabel);
         }
 
@@ -625,6 +648,13 @@ public partial class GameSystem
                     if (ResolveKingLoss()) return; // 自動行動で王将を取った・巻き込んだ
                 }
             }
+        }
+
+        // 討伐任務：手下 → ボスの AI（Prototype のモードの onTick。GameSystem.Boss.cs）→ 勝敗
+        if (IsRaid)
+        {
+            TickBoss();
+            if (ResolveKingLoss()) return;
         }
 
         if (Policy.IsEveryUnlockCheck) CheckTranscendentUnlock();
@@ -675,6 +705,7 @@ public partial class GameSystem
         int fromX = caster.X;
         pendingActionFxTime = 0f;
         ActiveSpecial = context;
+        BeginBossEffect(BossHit.OfSpecial(caster.type)); // 討伐任務：この技がボスに当たるのは 1 回だけ（技のダメージ）
         try
         {
             move.Apply(context);
@@ -686,6 +717,7 @@ public partial class GameSystem
         finally
         {
             ActiveSpecial = null;
+            EndBossEffect();
         }
 
         if (IsOnBoard(caster))
@@ -729,6 +761,7 @@ public partial class GameSystem
         context.Fx = magicFx;
         pendingActionFxTime = 0f;
         ActiveSpecial = context.Timeline;
+        BeginBossEffect(BossHit.OfMagic(skill.Id)); // 討伐任務：この魔法がボスに当たるのは 1 回だけ（魔法ごとのダメージ）
         try
         {
             skill.Use(context);
@@ -740,6 +773,7 @@ public partial class GameSystem
         finally
         {
             ActiveSpecial = null;
+            EndBossEffect();
         }
         RunCounters(context.Timeline); // 剣などの取りがカウンターに無効にされたら反撃される
         pendingActionFxTime = 0f;

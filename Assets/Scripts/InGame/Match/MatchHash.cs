@@ -12,7 +12,10 @@ using System.Text;
 //   マス（[状態, 炎上が終わるターン, 落とし穴の持ち主]）・超常魔法の使用・解放・世界の終わり・倒された初期配置の駒の種類・
 //   時間停止（[発動したプレイヤー, 残り回数, 予定の [種類, x, y, 処理済み]]）・
 //   合戦将棋型（本将棋型でない戦闘型）だけ、時間停止の次に [対局の設定] [tick, 対局の時間] [連打の間隔 [[x, y, 終わる tick], …]（段 → 筋の順）]
-//   （Prototype の hash.js の extraParts の [mode, ruleset, bossId]・clock・cds。ボス・討伐任務の項目は Unity にないので入れない）・
+//   （Prototype の hash.js の extraParts の [mode, ruleset, bossId]・clock・cds）・
+//   討伐任務だけ、その次に [ボスの Id, x, y, HP, 向き x, 向き y, フェーズ, 期限, 攻撃, 前回の攻撃] [王将の被弾の数]、
+//   手下がいるときだけ [[x, y, 次に動く時刻, 行き先 [x, y] か null], …]（段 → 筋の順）（Prototype の extraParts の boss・raid・mins。
+//   基本対戦のハッシュは変えない）・
 //   巨人の HP（盤上に巨人がいるときだけ、いちばん最後に [[x, y, HP], …]（段 → 筋の順）。Prototype の hash.js の giantPart）
 // 巨人は盤の駒の 9 マス全部に同じ駒の値が入る（Prototype の board と同じ）。持ち駒の巨人は、持っているプレイヤーの分だけ入れる
 // （Prototype の handPart。巨人がいない局面のハッシュは、巨人を足す前と同じ）
@@ -202,9 +205,12 @@ public static class MatchHash
 
         // 合戦将棋型：対局の設定・時間・駒の連打の間隔（本将棋型のハッシュは変えない）
         BattleRuleset ruleset = s.Ruleset ?? BattleRulesets.Honshogi;
+        bool raidMode = s.Mode.BossSeat && s.HasBoss;
         if (ruleset.Id != BattleRulesets.Honshogi.Id)
         {
-            sb.Append(",[\"versus\",\"").Append(ruleset.Id).Append("\",null]");
+            // 基本対戦は ["versus", 戦闘型, null]（今までと同じ）。討伐任務は ["bossRaid", 戦闘型, ボスの Id]
+            sb.Append(",[\"").Append(raidMode ? s.Mode.Id : GameModes.Versus.Id).Append("\",\"").Append(ruleset.Id).Append("\",")
+              .Append(raidMode ? Str(s.boss.id) : "null").Append(']');
             if (s.clock != null && s.clock.active) sb.Append(",[").Append(s.clock.tick).Append(',').Append(s.clock.time).Append(']');
             else sb.Append(",null");
             List<PieceSnapshot> cds = new List<PieceSnapshot>();
@@ -223,6 +229,40 @@ public static class MatchHash
                 sb.Append('[').Append(cds[i].x).Append(',').Append(cds[i].y).Append(',').Append(cds[i].cooldownUntil).Append(']');
             }
             sb.Append(']');
+
+            // 討伐任務：ボス・王将の被弾の数・手下の動き（基本対戦には足さない）
+            if (raidMode)
+            {
+                BossState b = s.boss;
+                BossAiState ai = b.ai ?? new BossAiState();
+                sb.Append(",[").Append(Str(b.id)).Append(',').Append(b.x).Append(',').Append(b.y).Append(',').Append(b.hp).Append(',')
+                  .Append(b.facingX).Append(',').Append(b.facingY).Append(',').Append(Str(ai.phase)).Append(',').Append(ai.until).Append(',')
+                  .Append(Str(ai.attack)).Append(',').Append(Str(ai.last)).Append(']');
+                sb.Append(",[").Append(s.IsRaid ? s.raid.kingHits : 0).Append(']');
+                List<PieceSnapshot> mins = new List<PieceSnapshot>();
+                if (s.pieces != null)
+                {
+                    foreach (PieceSnapshot p in s.pieces)
+                    {
+                        if (p != null && !p.held && p.minion) mins.Add(p);
+                    }
+                }
+                if (mins.Count > 0)
+                {
+                    mins.Sort((a, c) => a.x != c.x ? a.x.CompareTo(c.x) : a.y.CompareTo(c.y));
+                    sb.Append(",[");
+                    for (int i = 0; i < mins.Count; i++)
+                    {
+                        if (i > 0) sb.Append(',');
+                        PieceSnapshot m = mins[i];
+                        sb.Append('[').Append(m.x).Append(',').Append(m.y).Append(',').Append(m.minionNext).Append(',');
+                        if (m.minionHasTo) sb.Append('[').Append(m.minionToX).Append(',').Append(m.minionToY).Append(']');
+                        else sb.Append("null");
+                        sb.Append(']');
+                    }
+                    sb.Append(']');
+                }
+            }
         }
 
         // 巨人の HP（盤上にいるときだけ）
@@ -242,6 +282,7 @@ public static class MatchHash
     }
 
     static string Bool(bool b) => b ? "true" : "false";
+    static string Str(string v) => string.IsNullOrEmpty(v) ? "null" : "\"" + v + "\"";
     static char Flag(bool b) => b ? '1' : '0';
     static string Int(int v) => v >= 0 ? v.ToString() : "null";
     static string Player(int v) => v == (int)PlayerType.Player1 || v == (int)PlayerType.Player2 ? v.ToString() : "null";

@@ -28,7 +28,7 @@ public static class MagicKit
     // 駒がいない通常状態（破壊・炎上・落とし穴・壁がない）のマスか（Prototype の emptyNormalSquares・kit.js の空きマス）
     public static bool IsEmptyNormal(GameBoard board, Vector2Int pos)
     {
-        if (!BoardCells.InBounds(pos.x, pos.y) || board.HasPieceAt(pos.x, pos.y)) return false;
+        if (!BoardCells.InBounds(pos.x, pos.y) || board.HasPieceAt(pos.x, pos.y) || board.BossAt(pos.x, pos.y)) return false; // ボスのマスも除く
         // 時間停止中、予定の駒が残っているマス・マスの変化の予定があるマスは空きマスにしない
         TimeStopState ts = board.TimeStop;
         if (ts != null && (ts.IsHeldSquare(pos.x, pos.y) || ts.HasPendingCell(pos.x, pos.y))) return false;
@@ -90,9 +90,17 @@ public static class MagicKit
         return result;
     }
 
+    // 駒 p の前方 1×3 マスにボスがいるか（討伐任務。Prototype の frontHasBoss）
+    public static bool FrontHasBoss(GameBoard board, GamePiece p)
+    {
+        return p != null && board.BossOverlap(FrontSquares(board, p)).HasValue;
+    }
+
     // 帯状の範囲（Prototype の band。範囲を選ぶ魔法用）：
     // horizontal なら 9 筋 × 3 段（x を中央の段とする連続 3 段）、そうでなければ 3 筋 × 9 段（y を中央の筋とする連続 3 筋）。
-    // 盤の端では、盤からはみ出さないように内側へずらす
+    // 盤の端では、盤からはみ出さないように内側へずらす。
+    // 並びは Prototype の band と同じ（Prototype の段 y = 0（後手の奥）から＝ Unity の x の大きい方から）。
+    // 範囲の駒を消す順（倒された初期配置の駒の記録の順）がこの並びになる（Prototype の討伐任務の棋譜と照らし合わせて直した）
     public static List<Vector2Int> Band(int x, int y, bool horizontal)
     {
         List<Vector2Int> result = new List<Vector2Int>();
@@ -102,7 +110,7 @@ public static class MagicKit
         {
             for (int b = -1; b <= 1; b++)
             {
-                result.Add(horizontal ? new Vector2Int(mx + b, a) : new Vector2Int(a, my + b));
+                result.Add(horizontal ? new Vector2Int(mx - b, a) : new Vector2Int(8 - a, my + b));
             }
         }
         return result;

@@ -14,6 +14,9 @@ using TMPro;
 //                 （GameSystem.BeginSpecial。キーボードなら E）。効果の対象がないときは押せない。
 //                 対象を選ぶ技（天馬跳躍）の対象を選んでいる間は「必殺技をやめる」になる
 //
+// 討伐任務は錬成できる駒が多い（初期配置に置いた駒の種類 ＋ 錬成駒。最大 11 種）ので、6 種以上ならボタンを低く・文字を小さくして並べる
+// （キーは Z・X・C・V・B・N・M・,・.・/・;。SeatKeys.RaidSolo）。局面を読み込んで錬成できる駒が変わったら作り直す
+//
 // スキルボタンのパネル（5 枠）は埋まっているので、画面の右上に実行時にパネルを作って並べる。
 // シーンに置かなくても GameSystem が自動で追加する
 public class ForgePanelView : MonoBehaviour
@@ -46,6 +49,8 @@ public class ForgePanelView : MonoBehaviour
 
     private readonly List<ForgeButton> forgeButtons = new List<ForgeButton>();
     private RectTransform panel;
+    private float rowHeight;        // 錬成ボタン 1 つの高さ（駒の種類が多いときは低くする）
+    private float rowFontSize = 26f;
     private Button snipeButton;
     private Image snipeImage;
     private TextMeshProUGUI snipeLabel;
@@ -62,11 +67,30 @@ public class ForgePanelView : MonoBehaviour
 
         Build();
         gameSystem.Forged += OnForged;
+        gameSystem.StateImported += OnStateImported;
     }
 
     void OnDestroy()
     {
-        if (gameSystem != null) gameSystem.Forged -= OnForged;
+        if (gameSystem != null)
+        {
+            gameSystem.Forged -= OnForged;
+            gameSystem.StateImported -= OnStateImported;
+        }
+    }
+
+    // 局面を読み込んだ：錬成できる駒が変わっていたら（討伐任務の編成が違う局面）作り直す
+    void OnStateImported()
+    {
+        if (panel == null) return;
+        IReadOnlyList<ForgeRecipe> recipes = gameSystem.ForgeRecipes;
+        bool same = recipes.Count == forgeButtons.Count;
+        for (int i = 0; same && i < recipes.Count; i++) same = forgeButtons[i].recipe == recipes[i];
+        if (same) return;
+        Destroy(panel.gameObject);
+        panel = null;
+        forgeButtons.Clear();
+        Build();
     }
 
     void Update()
@@ -200,9 +224,14 @@ public class ForgePanelView : MonoBehaviour
         line.effectColor = WithAlpha(PanelLineColor, 0.7f);
         line.effectDistance = new Vector2(3f, -3f);
 
+        IReadOnlyList<ForgeRecipe> recipes = gameSystem.ForgeRecipes;
+        bool compact = recipes.Count > 5; // 討伐任務：駒の種類が多い
+        rowHeight = compact ? Mathf.Clamp(600f / recipes.Count, 46f, buttonHeight) : buttonHeight;
+        rowFontSize = compact ? 21f : 26f;
+
         VerticalLayoutGroup layout = panelObj.AddComponent<VerticalLayoutGroup>();
         layout.padding = new RectOffset(14, 14, 10, 14);
-        layout.spacing = 10f;
+        layout.spacing = compact ? 6f : 10f;
         layout.childAlignment = TextAnchor.UpperCenter;
         layout.childControlWidth = true;
         layout.childControlHeight = true;
@@ -214,7 +243,6 @@ public class ForgePanelView : MonoBehaviour
         TextMeshProUGUI title = CreateText("Title", panel, "駒錬成", 30f, Hex(0xffd180), TextAlignmentOptions.Center);
         AddLayout(title.gameObject, 40f);
 
-        IReadOnlyList<ForgeRecipe> recipes = gameSystem.ForgeRecipes;
         for (int i = 0; i < recipes.Count; i++)
         {
             ForgeRecipe recipe = recipes[i];
@@ -254,11 +282,11 @@ public class ForgePanelView : MonoBehaviour
     {
         Image image;
         Button button = CreateButton($"Forge_{recipe.pieceType}", panel, ForgeButtonColor, out image);
-        AddLayout(button.gameObject, buttonHeight);
+        AddLayout(button.gameObject, rowHeight);
         RectTransform rt = button.GetComponent<RectTransform>();
 
         // 左：駒の画像
-        float iconSize = buttonHeight - 16f;
+        float iconSize = rowHeight - (rowHeight < buttonHeight ? 8f : 16f);
         if (recipe.icon != null)
         {
             GameObject iconObj = new GameObject("Icon", typeof(RectTransform));
@@ -278,9 +306,9 @@ public class ForgePanelView : MonoBehaviour
         // 中央：「火薬を錬成 [Z]」／右：コスト
         float left = recipe.icon != null ? iconSize + 18f : 14f;
         string keyLabel = string.IsNullOrEmpty(key) ? "" : $"  [{key}]";
-        TextMeshProUGUI label = CreateText("Label", rt, $"{recipe.label}を錬成{keyLabel}", 26f, Color.white, TextAlignmentOptions.Left);
+        TextMeshProUGUI label = CreateText("Label", rt, $"{recipe.label}を錬成{keyLabel}", rowFontSize, Color.white, TextAlignmentOptions.Left);
         Stretch(label.rectTransform, new Vector2(left, 0f), new Vector2(-84f, 0f));
-        TextMeshProUGUI cost = CreateText("Cost", rt, $"{recipe.cost} Pt", 26f, Hex(0xffe082), TextAlignmentOptions.Right);
+        TextMeshProUGUI cost = CreateText("Cost", rt, $"{recipe.cost} Pt", rowFontSize, Hex(0xffe082), TextAlignmentOptions.Right);
         cost.rectTransform.anchorMin = new Vector2(1f, 0f);
         cost.rectTransform.anchorMax = new Vector2(1f, 1f);
         cost.rectTransform.pivot = new Vector2(1f, 0.5f);

@@ -30,6 +30,11 @@ public static class SpecialKit
         for (int x = p.X + f; SpecialContext.InBounds(x, y); x += f)
         {
             if (ctx.IsBlockedFor(p, x, y)) break;                // 破壊マス・壁の手前で止まる（翼の駒は破壊マスを通り抜ける）
+            if (ctx.BossAt(x, y))
+            {
+                path.Add(new Vector2Int(x, y));                   // ボスに突っ込む → 攻撃して跳ね返る（討伐任務）
+                break;
+            }
             GamePiece q = ctx.PieceAt(x, y);
             if (q == null)
             {
@@ -76,6 +81,7 @@ public static class SpecialKit
         public Vector2Int Direction;
         public Vector2Int? End;   // 光線が届く最後のマス（盤の端・駒・破壊マス・壁）
         public GamePiece Hit;     // 当たって取る駒（相手の駒か火薬。なければ null）
+        public bool HitsBoss;     // 討伐任務：ボスに当たって止まった（End がそのマス）
     }
 
     // 指定方向へ光線を撃ったときの着弾
@@ -93,6 +99,11 @@ public static class SpecialKit
                 if (ctx.IsWall(x, y)) break;                     // 壁に当たって止まる
                 GamePiece q = ctx.PieceAt(x, y);
                 if (ctx.IsBroken(x, y) && q == null) break;      // 破壊マスに吸い込まれて止まる（破壊マスの上の翼の駒には当たる）
+                if (ctx.BossAt(x, y))
+                {
+                    beam.HitsBoss = true;                         // ボスに当たって止まる（討伐任務）
+                    break;
+                }
                 if (q != null)
                 {
                     if (q.player != p.player || SpecialContext.IsExplosive(q)) beam.Hit = q;
@@ -110,7 +121,7 @@ public static class SpecialKit
     {
         foreach (Beam b in BeamPlan(ctx, p, dirs))
         {
-            if (b.Hit != null) return true;
+            if (b.Hit != null || b.HitsBoss) return true;
         }
         return false;
     }
@@ -130,6 +141,11 @@ public static class SpecialKit
         List<GamePiece> hit = new List<GamePiece>(); // 巨人は複数の光線に当たっても 1 回
         foreach (Beam b in plan)
         {
+            if (b.HitsBoss)
+            {
+                if (b.End.HasValue) ctx.HitBoss(new[] { b.End.Value }); // 討伐任務：ボスに当たった光線（何本当たっても 1 回）
+                continue;
+            }
             if (!ctx.IsAlive(b.Hit) || hit.Contains(b.Hit)) continue; // 先の爆発で消えた
             hit.Add(b.Hit);
             if (SpecialContext.IsExplosive(b.Hit)) ctx.Explode(b.Hit.X, b.Hit.Y);

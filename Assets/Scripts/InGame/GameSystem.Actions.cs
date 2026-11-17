@@ -106,6 +106,11 @@ public partial class GameSystem
             return null;
         }
         PlayerType me = actor.Value;
+        if (!Policy.IsPlayerSeat(me))
+        {
+            reason = "ボスの席は行動できません"; // 討伐任務：後手の席はボス（行動するのは BossEngine）
+            return null;
+        }
         if (timeStop != null && timeStop.Owner != me)
         {
             reason = "相手の時間停止中は動けません"; // 本将棋型では、時間停止中の手番は必ず発動した人
@@ -472,6 +477,7 @@ public partial class GameSystem
         List<MatchAction> res = new List<MatchAction>();
         if (!IsInTurn || match == null || gameBoard == null || IsBusy) return res;
         if (player != CurrentSide) return res;
+        if (!Policy.IsPlayerSeat(player)) return res; // 討伐任務：後手の席はボス
         if (IsOnlineMatch && player != NetworkManager.Instance.MyPlayerType) return res;
         if (timeStop != null && timeStop.Owner != player) return res; // 相手の時間停止中（合戦将棋型）
 

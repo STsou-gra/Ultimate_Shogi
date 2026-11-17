@@ -1,0 +1,694 @@
+{
+ "format": "ultimate-shogi-kifu",
+ "version": 2,
+ "createdAt": "2026-11-06T17:49:03.202Z",
+ "seed": 2,
+ "config": {
+  "mode": "bossRaid",
+  "ruleset": "kassen",
+  "bossId": "akaoni"
+ },
+ "setup": {
+  "formation": [
+   {
+    "type": "OU",
+    "x": 4,
+    "y": 8
+   },
+   {
+    "type": "FU",
+    "x": 0,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 1,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 2,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 3,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 4,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 5,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 6,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 7,
+    "y": 6
+   },
+   {
+    "type": "FU",
+    "x": 8,
+    "y": 6
+   },
+   {
+    "type": "KI",
+    "x": 3,
+    "y": 8
+   },
+   {
+    "type": "KI",
+    "x": 5,
+    "y": 8
+   },
+   {
+    "type": "GI",
+    "x": 2,
+    "y": 8
+   },
+   {
+    "type": "GI",
+    "x": 6,
+    "y": 8
+   },
+   {
+    "type": "HI",
+    "x": 7,
+    "y": 7
+   },
+   {
+    "type": "KE",
+    "x": 1,
+    "y": 8
+   }
+  ],
+  "forgePicks": [
+   "KAYAKU",
+   "SNIPER"
+  ]
+ },
+ "loadouts": [
+  {
+   "normal": [
+    "shield",
+    "sword",
+    "test_spark"
+   ],
+   "ultimate": "meteor",
+   "transcendent": null
+  },
+  null
+ ],
+ "actions": [
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 8
+   },
+   "to": {
+    "x": 6,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 4,
+   "hash": "118d3e2f"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 8
+   },
+   "to": {
+    "x": 3,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 17,
+   "hash": "248cbeb6"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 8,
+    "y": 6
+   },
+   "to": {
+    "x": 8,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 22,
+   "hash": "70048264"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 0,
+    "y": 6
+   },
+   "to": {
+    "x": 0,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 27,
+   "hash": "8051c543"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 1,
+    "y": 8
+   },
+   "owner": 0,
+   "t": 32,
+   "hash": "15ba7ab6"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 6,
+    "y": 8
+   },
+   "owner": 0,
+   "t": 37,
+   "hash": "53201544"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 6
+   },
+   "to": {
+    "x": 2,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 40,
+   "hash": "8c40d9d6"
+  },
+  {
+   "type": "magic",
+   "skill": "shield",
+   "target": {
+    "x": 6,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 41,
+   "hash": "3620cd3d"
+  },
+  {
+   "type": "forge",
+   "piece": "FU",
+   "owner": 0,
+   "t": 48,
+   "hash": "e851deac"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 6
+   },
+   "to": {
+    "x": 1,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 52,
+   "hash": "364bfed7"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 7,
+    "y": 6
+   },
+   "to": {
+    "x": 7,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 53,
+   "hash": "dee3dc5b"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 8
+   },
+   "to": {
+    "x": 0,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 63,
+   "hash": "92ba3850"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 6,
+    "y": 8
+   },
+   "owner": 0,
+   "t": 64,
+   "hash": "9f0a5af1"
+  },
+  {
+   "type": "magic",
+   "skill": "test_spark",
+   "target": {
+    "x": 6,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 65,
+   "hash": "9e845355"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 8
+   },
+   "to": {
+    "x": 2,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 79,
+   "hash": "ea29f912"
+  },
+  {
+   "type": "magic",
+   "skill": "meteor",
+   "target": {
+    "x": 2,
+    "y": 8
+   },
+   "orient": null,
+   "owner": 0,
+   "t": 81,
+   "hash": "0fd2688a"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 7,
+    "y": 7
+   },
+   "to": {
+    "x": 7,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 101,
+   "hash": "94c9347d"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 8
+   },
+   "to": {
+    "x": 7,
+    "y": 7
+   },
+   "owner": 0,
+   "t": 103,
+   "hash": "93bce2d5"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 7,
+    "y": 5
+   },
+   "to": {
+    "x": 7,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 104,
+   "hash": "bae6d931"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 0,
+    "y": 6
+   },
+   "to": {
+    "x": 1,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 108,
+   "hash": "88f04a84"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 6
+   },
+   "to": {
+    "x": 6,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 109,
+   "hash": "713e3e60"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 1,
+    "y": 4
+   },
+   "to": {
+    "x": 2,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 127,
+   "hash": "f76031fa"
+  },
+  {
+   "type": "special",
+   "from": {
+    "x": 2,
+    "y": 2
+   },
+   "target": {
+    "x": 0,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 143,
+   "hash": "16eda918"
+  },
+  {
+   "type": "special",
+   "from": {
+    "x": 7,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 154,
+   "hash": "df66c5c0"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 6,
+    "y": 7
+   },
+   "to": {
+    "x": 6,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 173,
+   "hash": "56597bba"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 6
+   },
+   "to": {
+    "x": 5,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 176,
+   "hash": "bc9b2dc5"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 7,
+    "y": 6
+   },
+   "to": {
+    "x": 7,
+    "y": 3
+   },
+   "owner": 0,
+   "t": 183,
+   "hash": "46c3d533"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 7,
+    "y": 7
+   },
+   "to": {
+    "x": 8,
+    "y": 6
+   },
+   "owner": 0,
+   "t": 190,
+   "hash": "a596fc3e"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 7,
+    "y": 3
+   },
+   "to": {
+    "x": 2,
+    "y": 3
+   },
+   "owner": 0,
+   "t": 193,
+   "hash": "ef88d30d"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 6
+   },
+   "to": {
+    "x": 3,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 217,
+   "hash": "f163cfab"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 2,
+    "y": 3
+   },
+   "to": {
+    "x": 5,
+    "y": 3
+   },
+   "owner": 0,
+   "t": 221,
+   "hash": "37731e64"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 5
+   },
+   "to": {
+    "x": 3,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 231,
+   "hash": "14ab7381"
+  },
+  {
+   "type": "special",
+   "from": {
+    "x": 5,
+    "y": 3
+   },
+   "owner": 0,
+   "t": 241,
+   "hash": "1b845d82"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 8,
+    "y": 6
+   },
+   "to": {
+    "x": 7,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 244,
+   "hash": "dc68cd17"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 3
+   },
+   "to": {
+    "x": 5,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 252,
+   "hash": "35852573"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 4,
+    "y": 6
+   },
+   "to": {
+    "x": 4,
+    "y": 5
+   },
+   "owner": 0,
+   "t": 255,
+   "hash": "e94118e0"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 3
+   },
+   "to": {
+    "x": 4,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 266,
+   "hash": "7b7b70bb"
+  },
+  {
+   "type": "special",
+   "from": {
+    "x": 3,
+    "y": 4
+   },
+   "owner": 0,
+   "t": 292,
+   "hash": "c351ba3f"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 3
+   },
+   "to": {
+    "x": 3,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 302,
+   "hash": "680794a4"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 3
+   },
+   "to": {
+    "x": 4,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 322,
+   "hash": "3dc75a10"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 3
+   },
+   "to": {
+    "x": 5,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 328,
+   "hash": "c823df18"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 3,
+    "y": 3
+   },
+   "to": {
+    "x": 4,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 338,
+   "hash": "fc6ff94c"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 3
+   },
+   "to": {
+    "x": 5,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 342,
+   "hash": "785d479f"
+  },
+  {
+   "type": "move",
+   "from": {
+    "x": 5,
+    "y": 3
+   },
+   "to": {
+    "x": 4,
+    "y": 2
+   },
+   "owner": 0,
+   "t": 353,
+   "hash": "bccec34e"
+  }
+ ],
+ "endTick": 353
+}

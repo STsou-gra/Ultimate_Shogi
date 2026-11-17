@@ -203,6 +203,9 @@ public class RulesOverlayView : MonoBehaviour
                 src.CpuLevel = gameSystem.Cpu.Level;
             }
             src.Ruleset = gameSystem.Match != null ? gameSystem.Match.Ruleset : null;
+            // 討伐任務：この対局のボスと、プレイヤーの席の錬成のキー（Z〜;）
+            src.Boss = gameSystem.BossDefinition;
+            if (gameSystem.IsRaid) src.ForgeKeyLabel = i => SeatKeys.Label(gameSystem.KeysOf(PlayerType.Player1).Forge, i);
         }
         else
         {

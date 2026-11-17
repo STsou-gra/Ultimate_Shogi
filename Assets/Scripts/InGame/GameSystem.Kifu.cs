@@ -130,7 +130,9 @@ public partial class GameSystem
             return;
         }
         // 合戦将棋型も記録する（行動に owner と t が付く。再生は RealtimeReplayController）
-        KifuSession.SetCurrent(KifuFile.Create(seed, GetSkillDeck(PlayerType.Player1), GetSkillDeck(PlayerType.Player2), match.Ruleset), null);
+        // 討伐任務は、ボスと編成も残す（版 2 の config.boss・setup）
+        KifuSession.SetCurrent(KifuFile.Create(seed, GetSkillDeck(PlayerType.Player1), GetSkillDeck(PlayerType.Player2), match.Ruleset,
+            match.Mode, IsRaid ? match.Boss.id : null, IsRaid ? match.Formation : null), null);
     }
 
     // シーンを離れる（GameSystem.OnDestroy から）
@@ -375,6 +377,7 @@ public partial class GameSystem
         }
         r.Cancel();
         AttachRealtimeCpu();
+        AttachBossSeat(); // 討伐任務：後手の席はボスに戻す
     }
 
     void EndReplay(ReplayResult result)

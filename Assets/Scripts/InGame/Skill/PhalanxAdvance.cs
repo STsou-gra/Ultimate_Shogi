@@ -53,7 +53,7 @@ public class PhalanxAdvance : TurnEndAction
             if (!context.Timeline.IsAlive(p)) continue; // 先に動いた駒の爆発などで消えた
             Act(context, p);
             context.GameSystem.ResolveCounters(context.Timeline);
-            if (AnyKingLost(context.Board)) return;      // 王将を取った・巻き込んだ（勝敗は GameSystem が判定する）
+            if (context.GameSystem.IsMatchDecided()) return; // 王将を取った・巻き込んだ・ボスを倒した（勝敗は GameSystem が判定する）
         }
         context.Timeline.Wait(0.2f);
     }
@@ -73,11 +73,12 @@ public class PhalanxAdvance : TurnEndAction
 
         GamePiece q = SpecialContext.InBounds(tx, ty) ? tl.PieceAt(tx, ty) : null;
         // 盤外・破壊マス（翼の駒は除く）・壁・駒で塞がっていれば前進しない（鳥は火薬のマスでも止まる＝爆発させない）
-        if (SpecialContext.InBounds(tx, ty) && !tl.IsBlockedFor(p, tx, ty) && (q == null || PieceRules.Detonates(p, q)))
+        // 討伐任務：ボスの前では前進しない（槍でボスを突く）
+        if (SpecialContext.InBounds(tx, ty) && !tl.IsBlockedFor(p, tx, ty) && !tl.BossAt(tx, ty) && (q == null || PieceRules.Detonates(p, q)))
         {
             Debug.Log($"{TurnEndAction.SideName(p.player)}：ファランクスの{name}が ({fromX}, {fromY}) → ({tx}, {ty}) へ前進{(q != null ? "（火薬に突入！）" : "")}");
             tl.Afterimage(p, PhalanxColor);
-            bool? alive = tl.Step(p, tx, ty, PieceMoveStyle.Normal, MoveTime);
+            bool? alive = tl.Step(p, tx, ty, PieceMoveStyle.Normal, MoveTime, false);
             if (alive != true) return; // 炎上・落とし穴・火薬で消失した
             tl.Landed(p, 3);
             // 敵陣に入る・出ると成る（Prototype の tryPromote。自動で成る）
@@ -100,6 +101,12 @@ public class PhalanxAdvance : TurnEndAction
     static void Strike(TurnEndContext context, GamePiece p)
     {
         SpecialContext tl = context.Timeline;
+        // 討伐任務：前方 1×3 にボスがいれば槍のダメージ
+        if (MagicKit.FrontHasBoss(context.Board, p))
+        {
+            if (context.Fx != null) context.Fx.PhalanxThrust(p, new List<GamePiece>(), tl.Time);
+            context.GameSystem.HitBossCells(MagicKit.FrontSquares(context.Board, p), BossHit.Phalanx);
+        }
         List<GamePiece> targets = MagicKit.FrontEnemies(context.Board, p);
         if (targets.Count == 0) return;
 
@@ -122,17 +129,5 @@ public class PhalanxAdvance : TurnEndAction
             if (tl.IsAlive(q) && SpecialContext.IsExplosive(q)) tl.Explode(q.X, q.Y);
         }
         tl.Wait(0.2f);
-    }
-
-    static bool AnyKingLost(GameBoard board)
-    {
-        bool p1 = false, p2 = false;
-        foreach (GamePiece q in board.Pieces())
-        {
-            if (q == null || q.type != PieceType.King) continue;
-            if (q.player == PlayerType.Player1) p1 = true;
-            else p2 = true;
-        }
-        return !p1 || !p2;
     }
 }

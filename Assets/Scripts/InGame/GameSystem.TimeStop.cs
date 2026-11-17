@@ -54,8 +54,10 @@ public partial class GameSystem
 
     // 時間停止中の案内文（Prototype の PlayerPanel.js の timeStopInfo）
     string TimeStopStatusText =>
-        $"【時間停止中】 あと {timeStop.Remaining} 回{TimeStopSecText}行動できる（移動・打つ・魔法・必殺技・狙撃。錬成は数えない）\n" +
-        "取り・爆発・成り・マスの変化は、時間が動き出してからまとめて起こる（解除: Q）";
+        (timeStop.IsUnlimited
+            ? $"【時間停止中】 {TimeStopSecText.Trim('（', '）')}のあいだ、何回でも行動できる（ボス・小赤鬼は止まっている）\n"
+            : $"【時間停止中】 あと {timeStop.Remaining} 回{TimeStopSecText}行動できる（移動・打つ・魔法・必殺技・狙撃。錬成は数えない）\n") +
+        "取り・爆発・成り・マスの変化・ボスへのダメージは、時間が動き出してからまとめて起こる（解除: Q）";
 
     // 合戦将棋型：「・あと N 秒」（回数か秒数の早いほうで解除。本将棋型は ""）
     string TimeStopSecText
@@ -76,8 +78,11 @@ public partial class GameSystem
     {
         if (timeStop != null || gameBoard == null || moves <= 0) return;
         timeStop = new TimeStopState(owner, moves);
+        if (!Policy.TimeStopLimitsMoves) timeStop.Remaining = -1; // 討伐任務：行動回数の上限なし（TimeStopSec 秒だけ止まる。Prototype の bossRaid の timeStopLimitsMoves）
         gameBoard.TimeStop = timeStop;
-        Debug.Log($"時が止まった！ {TurnEndAction.SideName(owner)}は {moves} 回まで続けて行動できる（取り・エナジー・爆発などは時間が動き出したときにまとめて起こる）");
+        Debug.Log(timeStop.IsUnlimited
+            ? $"時が止まった！ {Policy.Ruleset.Durations.TimeStopSec:0} 秒のあいだ、何回でも行動できる（取り・爆発・ボスへのダメージなどは時間が動き出したときにまとめて起こる）"
+            : $"時が止まった！ {TurnEndAction.SideName(owner)}は {moves} 回まで続けて行動できる（取り・エナジー・爆発などは時間が動き出したときにまとめて起こる）");
         TimeStopStarted?.Invoke(timeStop);
     }
 
@@ -97,7 +102,7 @@ public partial class GameSystem
             return true;
         }
 
-        if (!ts.Ending)
+        if (!ts.Ending && !ts.IsUnlimited)
         {
             ts.Remaining--;
             if (ts.Remaining <= 0) ts.Ending = true;
@@ -546,6 +551,13 @@ public partial class GameSystem
                 tl.Wait(0.12f);
                 return;
             }
+
+            case TimeStopKind.Boss:
+                // 討伐任務：時間停止中にボスへ与えたダメージ
+                tl.MarkHit(Vector2Int.zero);
+                DamageBoss(e.BossHit, e.At);
+                tl.Wait(0.12f);
+                return;
 
             case TimeStopKind.Promote:
                 if (p == null || !IsOnBoard(p) || p.isPromoted) return;

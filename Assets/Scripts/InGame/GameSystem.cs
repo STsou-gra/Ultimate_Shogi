@@ -142,6 +142,7 @@ public partial class GameSystem : MonoBehaviour
     {
         get
         {
+            if (raidRecipes != null) return raidRecipes; // 討伐任務：編成から決まる（初期配置に置いた駒の種類 ＋ 錬成駒。GameSystem.Boss.cs）
             if (forgeRecipeBook == null) forgeRecipeBook = ForgeRecipeBook.LoadDefault();
             return forgeRecipeBook != null ? forgeRecipeBook.recipes : NoRecipes;
         }
@@ -319,6 +320,7 @@ public partial class GameSystem : MonoBehaviour
         currentState = GameState.Preparation;
         GameResult.Winner = null;
         GameResult.IsDraw = false;
+        GameResult.Raid = null;
 
         gameBoard = Object.FindObjectsByType<GameBoard>(FindObjectsSortMode.None)[0];
         gameCamera = Object.FindObjectsByType<GameCamera>(FindObjectsSortMode.None)[0];
@@ -419,7 +421,12 @@ public partial class GameSystem : MonoBehaviour
         // 戦闘型（本将棋型・合戦将棋型）は編成画面で選んだもの（MatchSetup。CPU と対戦も）。
         // オンライン対戦は本将棋型だけ（合戦将棋型は通信に乗せていない）。棋譜の再生は棋譜の戦闘型（GameSystem.Kifu.cs）
         BattleRuleset ruleset = IsOnlineMatch ? BattleRulesets.Honshogi : IsReplaying ? ReplayRuleset : MatchSetup.Ruleset;
-        match = new MatchState(MatchConfig.FirstPlayer, seed, ruleset);
+        // モード（基本対戦・討伐任務）。討伐任務ならボスと編成（棋譜の再生なら棋譜のもの）。戦闘型はボスの定義のもの（合戦将棋型。GameSystem.Boss.cs）
+        BossDef raidBoss;
+        RaidFormation raidFormation;
+        GameModeDef mode = DecideStartMode(out raidBoss, out raidFormation);
+        if (raidBoss != null) ruleset = BattleRulesets.ById(raidBoss.RulesetId) ?? BattleRulesets.Kassen;
+        match = new MatchState(MatchConfig.FirstPlayer, seed, ruleset, mode);
         // エナジーの増減の「+N エナジー」（BasicMoveFx は Start で作られる。対局の準備の前に作られていなければ探す）
         match.Energy.Changed += (player, value, delta) =>
         {
@@ -450,6 +457,7 @@ public partial class GameSystem : MonoBehaviour
             player2.SetSkillDeck(DeckTransferManager.Player2SelectedDeck);
         }
         ApplyRequestedDecks();        // 棋譜の再生では、その編成を使う
+        if (raidBoss != null) SetupRaid(raidBoss, raidFormation); // 討伐任務：ボスを置き、編成を自陣に並べる（後手の席は魔法を持たない）
         BeginKifuRecording(seed);     // 棋譜の記録（KifuSession.Current）
 
         // CPU と対戦（MatchSetup。オンライン対戦では使わない）
@@ -995,6 +1003,16 @@ public partial class GameSystem : MonoBehaviour
     bool MovePieceCore(GamePiece piece, int targetX, int targetY, bool promote)
     {
         if (PieceRules.IsGiant(piece)) return MoveGiant(piece, targetX, targetY); // 巨人：前へまっすぐ（移動先は先頭の 1 列の中央）
+        if (BossAt(targetX, targetY))
+        {
+            // 討伐任務：ボスのマスへの移動は攻撃。駒の種類のダメージを与えて、元のマスへ跳ね返る。
+            // 移動として数え（必殺技のチャージ）、攻撃したマスが敵陣なら成る（Prototype の play.js の attackBoss・movePiece）
+            if (magicFx != null) magicFx.Bounce(piece, targetX, targetY, MoveArrivalDelay(piece) * 0.55f);
+            DamageBoss(BossHit.OfPiece(piece.type, piece.isPromoted), new Vector2Int(targetX, targetY));
+            if (promote) PromotePiece(piece);
+            CountMove(piece);
+            return ResolveKingLoss();
+        }
         GamePiece targetPiece = gameBoard.GetPieceAt(targetX, targetY);
         RecordTimeStopMove(piece, targetX, targetY); // 時間停止中は 1 マスごとの移動を記録する（盾で押し戻すときに使う）
         // 火薬のマスに入ったら爆発する（鳥は爆発させずに火薬を取る：下の取りの処理へ）
@@ -1053,6 +1071,15 @@ public partial class GameSystem : MonoBehaviour
     {
         Vector2Int to = GiantRules.CenterAfter(p.player, new MatchSquare(tx, ty));
         List<MatchSquare> row = GiantRules.FrontRow(p.player, to.x, to.y);
+        // 討伐任務：先頭の 1 列にボスがいれば、攻撃して跳ね返る（移動として数える）
+        foreach (MatchSquare c in row)
+        {
+            if (!BossAt(c.x, c.y)) continue;
+            if (magicFx != null) magicFx.Bounce(p, tx, ty, MoveArrivalDelay(p) * 0.55f);
+            DamageBoss(BossHit.OfPiece(p.type, false), new Vector2Int(c.x, c.y));
+            CountMove(p);
+            return ResolveKingLoss();
+        }
         List<GamePiece> occupants = PiecesIn(row);
         float reach = MoveArrivalDelay(p) * 0.55f;
         bool bounced = false;
@@ -1248,6 +1275,9 @@ public partial class GameSystem : MonoBehaviour
             }
         }
 
+        // 討伐任務：範囲がボスに重なれば、1 回の爆発につき 1 回ダメージ
+        if (Boss != null) HitBossCells(MagicKit.SquareArea(cx, cy, r), BossHit.Explosion);
+
         // 誘爆（MatchConfig.ChainExplosion のときだけ）
         foreach (Vector2Int c in chain)
         {
@@ -1272,6 +1302,17 @@ public partial class GameSystem : MonoBehaviour
             {
                 GamePiece q = gameBoard.GetPieceAt(x, y);
                 if (q != null && q.player != sniper.player && q.type != PieceType.King) targets.Add(new Vector2Int(x, y));
+            }
+        }
+        // 討伐任務：ボスのマスも撃てる
+        if (Boss != null && Boss.IsAlive)
+        {
+            for (int x = 0; x < 9; x++)
+            {
+                for (int y = 0; y < 9; y++)
+                {
+                    if (BossAt(x, y)) targets.Add(new Vector2Int(x, y));
+                }
             }
         }
         return targets;
@@ -1373,6 +1414,22 @@ public partial class GameSystem : MonoBehaviour
     void ExecuteSnipe(GamePiece sniper, int tx, int ty)
     {
         GamePiece target = gameBoard.GetPieceAt(tx, ty);
+        if (sniper != null && IsOnBoard(sniper) && BossAt(tx, ty))
+        {
+            // 討伐任務：ボスを撃つ
+            string bossName = BossDefinition != null ? BossDefinition.Name : "ボス";
+            Debug.Log($"狙撃！ ({sniper.X}, {sniper.Y}) → ({tx}, {ty}) の{bossName}");
+            pendingActionFxTime = Mathf.Max(pendingActionFxTime, SnipeImpactDelay + SnipeAfterDelay);
+            Sniped?.Invoke(new SnipeShot(sniper.player, sniper, new Vector2Int(sniper.X, sniper.Y), new Vector2Int(tx, ty), PieceType.Kooni, false, SnipeImpactDelay));
+            int dealt = DamageBoss(BossHit.Snipe, new Vector2Int(tx, ty));
+            if (HandUIManager.Instance != null)
+            {
+                HandUIManager.Instance.SetStatusText(timeStop != null ? $"【狙撃】 {bossName}を撃ち抜いた！（時間が動き出すと {dealt} ダメージ）" : $"【狙撃】 {bossName}に命中！（{dealt} ダメージ）");
+            }
+            if (ResolveKingLoss()) return;
+            EndActionTurn();
+            return;
+        }
         if (sniper == null || target == null || !IsOnBoard(sniper)) return;
 
         bool explosive = PieceRules.IsExplosive(target.type);
@@ -2298,6 +2355,8 @@ public partial class GameSystem : MonoBehaviour
     // 指し手・スキルのあとは GameSystem が呼ぶ。それ以外で駒を消したとき（マスの破壊など）は呼び出し側で呼ぶ
     public bool ResolveKingLoss()
     {
+        // 討伐任務：ボスの HP 0（討伐成功）・王将が倒れた・王将の被弾の上限（討伐失敗）。GameSystem.Boss.cs
+        if (match != null && match.Policy.IsRaid && match.HasBoss) return ResolveRaid();
         bool p1Alive = IsKingAlive(PlayerType.Player1);
         bool p2Alive = IsKingAlive(PlayerType.Player2);
         if (p1Alive && p2Alive) return false;
@@ -2312,6 +2371,13 @@ public partial class GameSystem : MonoBehaviour
             EndGame(p1Alive ? PlayerType.Player1 : PlayerType.Player2);
         }
         return true;
+    }
+
+    // 勝敗がもう決まっているか（対局を終える処理はしない。ターン終了時の自動行動を途中でやめる判定に使う）
+    public bool IsMatchDecided()
+    {
+        if (match != null && match.Policy.IsRaid && match.HasBoss) return RaidOutcomeNow != RaidOutcome.None;
+        return !IsKingAlive(PlayerType.Player1) || !IsKingAlive(PlayerType.Player2);
     }
 
     private void UpdateHandList()
@@ -2905,6 +2971,7 @@ public partial class GameSystem : MonoBehaviour
     void CheckTranscendentUnlock()
     {
         if (match == null || gameBoard == null || !IsInTurn) return;
+        if (Policy.TranscendentUnlockedFromStart) return; // 討伐任務：最初から解放済み（解放の演出は出さない）
         foreach (PlayerType owner in new[] { PlayerType.Player1, PlayerType.Player2 })
         {
             if (match.IsTranscendentUnlocked(owner) || !TranscendentRules.Progress(gameBoard, owner).Met) continue;
@@ -3072,6 +3139,8 @@ public partial class GameSystem : MonoBehaviour
         if (skill == null || skill.effect == null) return "効果が設定されていません";
         Player owner = PlayerOf(player);
         if (owner == null) return "プレイヤーがいません";
+        // 討伐任務：使える魔法は決まっている（相手の駒・王将を前提にした魔法は使えない。RaidRules.IsMagicUsable）
+        if (match != null && match.Policy.IsRaid && !RaidRules.IsMagicUsable(skill.Id)) return RaidRules.MagicBlockedText;
         if (skill.rank == SkillRank.Transcendent && match != null)
         {
             // 超常魔法：1 対局に 1 回だけ・解放条件を満たすまで使えない

@@ -77,6 +77,7 @@ public class CannonEffect : SkillEffect
       PlayerType side = q.player;
       if (tl.Vanish(q, Reason, new Vector2Int(f, 0))) lost[side == PlayerType.Player1 ? 0 : 1]++;
     }
+    tl.HitBoss(cells); // 討伐任務：帯がボスに重なれば当たる
     tl.Wait(0.25f);
 
     // 4. 範囲内のマスをすべて破壊状態にする（光線の進む向きに、術者の側から崩れていく）
@@ -88,7 +89,10 @@ public class CannonEffect : SkillEffect
       int step = c.x * f;
       if (prev != int.MinValue && step != prev) tl.Wait(0.035f);
       prev = step;
-      tl.ScheduleState(() => system.BreakCell(c.x, c.y));
+      tl.ScheduleState(() =>
+      {
+        if (!system.BossAt(c.x, c.y)) system.BreakCell(c.x, c.y); // ボスのいるマスは壊さない
+      });
     }
     if (context.Fx != null) context.Fx.CannonDone(cells, owner, tl.Time);
     Debug.Log($"破壊砲が筋 {cells[0].y}〜{cells[cells.Count - 1].y} を撃ち抜いた！ 駒 {lost[0] + lost[1]} 枚が消失（先手 {lost[0]}・後手 {lost[1]}）");

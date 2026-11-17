@@ -16,6 +16,8 @@ using TMPro;
 //  ・デバッグ用の魔法（SkillDefinition.debugOnly。魔力の火花）は候補に出さない（Prototype の RETIRED_SKILLS）
 // 選んだ魔法は枠の順に SkillDeck に入れて、DeckTransferManager で対局（GameSystem）に渡す
 // CPU と対戦（MatchSetup.IsVsCpu）のときは、人の分の枠だけを出し、CPU の分は CpuLoadout が選ぶ（Prototype と同じ）
+// 討伐任務（MatchSetup.IsBossRaid）のときは、プレイヤー（先手）の分の枠だけを出し、候補は討伐任務で使える魔法だけ（RaidRules.IsMagicUsable）。
+// 戦闘型はボスの定義のもの（合戦将棋型）なので、戦闘型の選択は出さない
 public class DeckSelectController : MonoBehaviour
 {
     [Header("Skill Database Reference")]
@@ -74,25 +76,32 @@ public class DeckSelectController : MonoBehaviour
         }
         // 戦闘型（本将棋型・合戦将棋型）の選択（画面の右上。シーンに置かれていなければ自動で追加する）。
         // CPU と対戦でも出す（合戦将棋型の CPU は RealtimeCpuPacer で一定の間隔ごとに動く。GameSystem.Cpu.cs）
-        if (FindAnyObjectByType<BattleRulesetPicker>() == null) gameObject.AddComponent<BattleRulesetPicker>();
+        // 討伐任務は戦闘型がボスで決まる（合戦将棋型）ので出さない
+        if (!MatchSetup.IsBossRaid && FindAnyObjectByType<BattleRulesetPicker>() == null) gameObject.AddComponent<BattleRulesetPicker>();
         InitializeSelectionPanel();
         RegisterSlotButtons();
         AutoFillLockedRanks(player1SelectedSkills);
-        AutoFillLockedRanks(player2SelectedSkills);
+        if (!MatchSetup.IsBossRaid) AutoFillLockedRanks(player2SelectedSkills);
         SetupCpuSlots();
+        SetupBossSlots();
         UpdateSlotDisplays();
     }
 
-    // CPU と対戦：CPU の分の魔法を選んで、CPU の枠を隠す（代わりに「CPU が自分で選びます」と出す）
-    void SetupCpuSlots()
+    // 討伐任務：後手の席はボス（魔法を持たない）。後手の枠を隠して、ボスの名前を出す
+    void SetupBossSlots()
     {
-        if (!MatchSetup.IsVsCpu) return;
-        PlayerType cpu = MatchSetup.CpuSide;
-        SkillDefinition[] picked = CpuLoadout.Choose(database != null ? database.allSkills : null, GameRng.NewSeed());
-        System.Array.Copy(picked, SlotsOf(cpu), SkillRanks.SlotCount);
-        Debug.Log($"CPU（{(cpu == PlayerType.Player1 ? "先手" : "後手")}）の編成：{CpuLoadout.Describe(picked)}");
+        if (!MatchSetup.IsBossRaid) return;
+        BossDef boss = MatchSetup.Boss;
+        string name = boss != null ? boss.Name : "ボス";
+        ReplaceSlotsWithLabel(PlayerType.Player2, "BossSeatLabel",
+            $"<size=120%>討伐任務：{name}</size>\n{BattleRulesets.ById(boss != null ? boss.RulesetId : null)?.Name ?? "合戦将棋型"}・プレイヤー 1 人（先手）\n" +
+            "<size=80%>魔法は討伐任務で使えるものだけが並びます（超常魔法は最初から解放済み）</size>");
+    }
 
-        Button[] buttons = cpu == PlayerType.Player1 ? player1SlotButtons : player2SlotButtons;
+    // side の枠を隠して、その位置に文を出す
+    void ReplaceSlotsWithLabel(PlayerType side, string objectName, string message)
+    {
+        Button[] buttons = side == PlayerType.Player1 ? player1SlotButtons : player2SlotButtons;
         Button first = null;
         if (buttons != null)
         {
@@ -105,7 +114,7 @@ public class DeckSelectController : MonoBehaviour
         }
         if (first == null || first.transform.parent == null) return;
 
-        GameObject label = new GameObject("CpuLoadoutLabel", typeof(RectTransform));
+        GameObject label = new GameObject(objectName, typeof(RectTransform));
         label.transform.SetParent(first.transform.parent, false);
         RectTransform src = (RectTransform)first.transform, dst = (RectTransform)label.transform;
         dst.anchorMin = src.anchorMin;
@@ -122,7 +131,19 @@ public class DeckSelectController : MonoBehaviour
             text.color = like.color;
         }
         text.alignment = TextAlignmentOptions.Center;
-        text.text = $"{MatchSetup.SideLabel(cpu)}\nCPU は魔法を自分で選びます";
+        text.richText = true;
+        text.text = message;
+    }
+
+    // CPU と対戦：CPU の分の魔法を選んで、CPU の枠を隠す（代わりに「CPU が自分で選びます」と出す）
+    void SetupCpuSlots()
+    {
+        if (!MatchSetup.IsVsCpu) return;
+        PlayerType cpu = MatchSetup.CpuSide;
+        SkillDefinition[] picked = CpuLoadout.Choose(database != null ? database.allSkills : null, GameRng.NewSeed());
+        System.Array.Copy(picked, SlotsOf(cpu), SkillRanks.SlotCount);
+        Debug.Log($"CPU（{(cpu == PlayerType.Player1 ? "先手" : "後手")}）の編成：{CpuLoadout.Describe(picked)}");
+        ReplaceSlotsWithLabel(cpu, "CpuLoadoutLabel", $"{MatchSetup.SideLabel(cpu)}\nCPU は魔法を自分で選びます");
     }
 
     // ------------------------------------------------------------
@@ -135,7 +156,9 @@ public class DeckSelectController : MonoBehaviour
         if (database == null) return result;
         foreach (SkillDefinition skill in database.allSkills)
         {
-            if (skill != null && skill.Selectable && skill.rank == rank && !result.Contains(skill)) result.Add(skill);
+            if (skill == null || !skill.Selectable || skill.rank != rank || result.Contains(skill)) continue;
+            if (MatchSetup.IsBossRaid && !RaidRules.IsMagicUsable(skill.Id)) continue; // 討伐任務で使える魔法だけ
+            result.Add(skill);
         }
         return result;
     }
@@ -269,6 +292,7 @@ public class DeckSelectController : MonoBehaviour
     {
         if (slotIndex < 0 || slotIndex >= SkillRanks.SlotCount) return;
         if (MatchSetup.IsCpu(player)) return; // CPU の分は CPU が選ぶ
+        if (MatchSetup.IsBossRaid && player != PlayerType.Player1) return; // 討伐任務：後手の席はボス
         SkillRank rank = SkillRanks.RankOfSlot(slotIndex);
         if (IsLocked(rank)) return; // 候補が少ないランクは自動で選ばれていて、変えられない
 
@@ -533,11 +557,11 @@ public class DeckSelectController : MonoBehaviour
     private void UpdateSlotDisplays()
     {
         if (!MatchSetup.IsCpu(PlayerType.Player1)) UpdateGroup(player1SelectedSkills, player1SlotButtons, player1SlotTexts);
-        if (!MatchSetup.IsCpu(PlayerType.Player2)) UpdateGroup(player2SelectedSkills, player2SlotButtons, player2SlotTexts);
+        if (!MatchSetup.IsCpu(PlayerType.Player2) && !MatchSetup.IsBossRaid) UpdateGroup(player2SelectedSkills, player2SlotButtons, player2SlotTexts);
 
         if (playButton != null)
         {
-            playButton.interactable = IsReady(player1SelectedSkills) && IsReady(player2SelectedSkills);
+            playButton.interactable = IsReady(player1SelectedSkills) && (MatchSetup.IsBossRaid || IsReady(player2SelectedSkills));
         }
     }
 
@@ -584,7 +608,7 @@ public class DeckSelectController : MonoBehaviour
     // ゲーム開始ボタンがクリックされたときに呼び出す
     public void OnPlayButtonClicked()
     {
-        if (!IsReady(player1SelectedSkills) || !IsReady(player2SelectedSkills))
+        if (!IsReady(player1SelectedSkills) || (!MatchSetup.IsBossRaid && !IsReady(player2SelectedSkills)))
         {
             Debug.LogWarning("魔法の編成が終わっていません（通常魔法を3つ選んでください）");
             return;

@@ -35,14 +35,16 @@ public class MeteorEffect : SkillEffect
   public override List<Vector2Int> GetAreaBlockers(SkillContext context, Vector2Int cursor, List<Vector2Int> area)
   {
     List<Vector2Int> blockers = new List<Vector2Int>();
-    bool centerOk = (BoardZones.IsOwnZone(context.Player, cursor.x) || BoardZones.ZoneOf(cursor.x) == BoardZone.Neutral)
+    // 討伐任務（ボスがいる）は敵陣も中心にできる
+    bool raid = context.GameBoard.Boss != null && context.GameBoard.Boss.active;
+    bool centerOk = (raid || BoardZones.IsOwnZone(context.Player, cursor.x) || BoardZones.ZoneOf(cursor.x) == BoardZone.Neutral)
                     && !context.GameBoard.Cells.IsBroken(cursor.x, cursor.y);
     if (!centerOk) blockers.Add(cursor);
     blockers.AddRange(MagicKit.KingSquares(context.GameBoard, area));
     return blockers;
   }
 
-  public override string BlockedText => "中心は自陣か中立のマス（破壊マス以外）。王将を巻き込む範囲（赤）は選べません";
+  public override string BlockedText => "中心は自陣か中立のマス（討伐任務は敵陣も可。破壊マス以外）。王将を巻き込む範囲（赤）は選べません";
 
   public override void Execute(SkillContext context)
   {
@@ -69,6 +71,7 @@ public class MeteorEffect : SkillEffect
       Vector2Int dir = new Vector2Int(System.Math.Sign(q.X - center.x), System.Math.Sign(q.Y - center.y));
       if (tl.Vanish(q, Reason, dir)) n++;
     }
+    tl.HitBoss(area); // 討伐任務：3×3 がボスに重なれば当たる（炎上はボスに効かない）
     tl.Wait(0.5f);
 
     // 範囲のマスを炎上させる（破壊マスは SetBurning 側で除外される）
