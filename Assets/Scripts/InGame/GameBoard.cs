@@ -35,6 +35,34 @@ public class GameBoard : MonoBehaviour
     // 盤だけを受け取る判定（移動・持ち駒のルール・魔法の空きマスなど）が、ボスのマスを見るのに使う
     public BossState Boss { get; set; }
 
+    // 討伐任務の状態（GameSystem が入れる。討伐任務でなければ null）。駒を作るたびに、駒の番号（GamePiece.serial）を作った順に振る
+    // （RaidState.nextPieceId。ボスの弓・軍銃兵の照準が駒を選ぶ順・追う駒を指すのに使う）。局面の読み込みの間は null にして、番号を振らない
+    public RaidState Raid { get; set; }
+
+    void AssignSerial(GamePiece piece)
+    {
+        if (piece != null && Raid != null && Raid.active) piece.serial = Raid.nextPieceId++;
+    }
+
+    // 防壁の後ろの守り（討伐任務。WallRules.IsShielded）：(x, y) のボスの席の駒が、同じ筋で手前にある防壁に守られているか。
+    // 守られた駒は、プレイヤーのどの攻撃も受けない（移動の行き先・狙撃の対象・取り・消失・押し出しのどれにもならない）
+    public bool IsShieldedByWall(int x, int y)
+    {
+        if (Boss == null) return false;
+        return WallRules.IsShielded((px, py) =>
+        {
+            GamePiece q = GetPieceAt(px, py);
+            return q != null ? q.type : (PieceType?)null;
+        }, x, y);
+    }
+
+    // 駒 mover が (x, y) の駒 target のマスに入れないか：防壁に守られた相手の駒（火薬を爆発させる場合を除く。Prototype の board.js の canLandOn）
+    public bool IsShieldedTarget(GamePiece mover, int x, int y)
+    {
+        GamePiece target = GetPieceAt(x, y);
+        return target != null && mover != null && target.player != mover.player && !PieceRules.Detonates(mover, target) && IsShieldedByWall(x, y);
+    }
+
     // (x, y) がボスのマスか（倒れたボスはどのマスも占めない）
     public bool BossAt(int x, int y)
     {
@@ -74,13 +102,16 @@ public class GameBoard : MonoBehaviour
     private bool started;
 
     // 初期配置を layout にする（討伐任務の編成）。盤の準備がもう済んでいれば、並べ直す
+    // 盤の準備（Start）がまだでも、ここですぐ並べる（討伐任務：このあとボスの席の初期配置の駒を置き、軍銃兵が照準を選ぶので、
+    // 編成の駒が先に盤にいる必要がある。Start では並べ直さない）
     public void UseLayout(List<PieceSpawnData> layout)
     {
         layoutOverride = layout;
-        if (!started) return;
         RemoveAllPieces();
         SetupInitialPieces();
     }
+
+    private bool initialPlaced;
 
 
     [SerializeField] private List<PieceMap> pieceMapList = new List<PieceMap>();
@@ -102,7 +133,7 @@ public class GameBoard : MonoBehaviour
         }
         AllDeactivePanel();
         started = true;
-        SetupInitialPieces();
+        if (!initialPlaced) SetupInitialPieces();
     }
 
     public void ActivePanel(int num)
@@ -129,6 +160,7 @@ public class GameBoard : MonoBehaviour
     }
     void SetupInitialPieces()
     {
+        initialPlaced = true;
         List<PieceSpawnData> layout = layoutOverride ?? CreateLayout();
         foreach (PieceSpawnData item in layout)
         {
@@ -158,6 +190,7 @@ public class GameBoard : MonoBehaviour
                 piece.transform.localRotation = Quaternion.Euler(0, 0, 180);
             }
             boardData[index] = piece;
+            AssignSerial(piece); // 討伐任務：編成の順に駒の番号を振る
         }
     }
 
@@ -297,8 +330,8 @@ public class GameBoard : MonoBehaviour
         }
         else if (PieceRules.IsMinion(type))
         {
-            // ボスの手下（小赤鬼）はプレハブを持たない：実行時に絵を作る（Piece/PieceKooni.cs）
-            piece = PieceKooni.Create(transform);
+            // ボスの席の駒（小赤鬼・軍歩兵・軍銃兵・防壁）はプレハブを持たない：実行時に絵を作る（Piece/PieceKooni.cs・PieceSoldier.cs）
+            piece = type == PieceType.Kooni ? (GamePiece)PieceKooni.Create(transform) : PieceSoldier.Create(transform, type);
         }
         else
         {
@@ -317,6 +350,8 @@ public class GameBoard : MonoBehaviour
             piece.transform.localRotation = Quaternion.Euler(0, 0, 180);
         }
         if (PieceRules.IsGiant(piece)) piece.hp = GiantRules.MaxHp; // 巨人は HP 3（局面の読み込みでは ApplyPiece が書き換える）
+        if (PieceRules.IsWallPiece(type)) piece.hp = WallRules.MaxHp; // 防壁も HP 3
+        AssignSerial(piece); // 討伐任務：作った順に駒の番号を振る（打った駒・呼び出された手下・アンデッド）
         if (attach) PutCells(piece, x, y);
         return piece;
     }

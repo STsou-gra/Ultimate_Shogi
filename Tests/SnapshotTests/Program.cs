@@ -25,6 +25,7 @@ static partial class Program
         if (Environment.GetEnvironmentVariable("TEST_ONLY") == "boss")
         {
             TestBoss();
+            TestDaishogun();
             Console.WriteLine($"checks={checks} fails={fails}");
             return fails == 0 ? 0 : 1;
         }
@@ -41,6 +42,7 @@ static partial class Program
         TestCpu();
         TestKassen();
         TestBoss();
+        TestDaishogun();
         Console.WriteLine($"checks={checks} fails={fails}");
         return fails == 0 ? 0 : 1;
     }

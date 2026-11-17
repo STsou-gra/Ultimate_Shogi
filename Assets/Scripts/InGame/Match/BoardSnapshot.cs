@@ -27,24 +27,35 @@ public class SnapshotPiece
     public bool initial;           // 初期配置の駒（倒されると fallenInitial に記録する）
     public bool frozen;            // 時間停止中：消失・爆発の予定があり、もう動かせない
     public bool pendingPromote;    // 時間停止中：成りの予定がある（もう成れない）
-    public int hp;                 // 巨人の残りの HP（巨人以外は 0）。巨人の x・y は 3×3 の中央のマス（盤の Grid には占めるマス全部に入る）
+    public int hp;                 // 巨人・防壁の残りの HP（それ以外は 0）。巨人の x・y は 3×3 の中央のマス（盤の Grid には占めるマス全部に入る）
     public int cooldownUntil;      // 合戦将棋型：連打の間隔が終わる tick（clockTick がこれより小さい間は行動できない。0 = 動いたことがない。
                                    // Prototype の p.cd と同じく、一度付いたら残る。GamePiece.cooldownUntilTick）
 
-    // 討伐任務：ボスの手下（小赤鬼）の状態（MinionData。手下でない駒は minion = false のまま。BossEngine が進める）
-    public bool minion;            // 手下の状態を持つか
+    // 討伐任務：駒の番号（作った順に 1 から。RaidState.nextPieceId。照準が駒を選ぶ順・追う駒を指す。Prototype の駒の id）。討伐任務でなければ 0
+    public int serial;
+
+    // 討伐任務：ボスの席の駒（手下）の状態（MinionData。BossEngine が進める）。一定の間隔で動く手下（小赤鬼・軍歩兵）は minion = true、
+    // 照準で撃つ手下（軍銃兵）は gunner = true。防壁はどちらも false（minionSerial だけ持つ）。手下でない駒はどれも初期値のまま
+    public bool minion;            // 一定の間隔で動く手下の状態を持つか
     public int minionSerial;       // 現れた順の番号（手下を動かす順）
     public int minionNext;         // 次に動く対局の時間（tick）
     public bool minionPlanned;     // 行き先を決めたか
     public bool minionHasTo;       // 行き先があるか
     public int minionToX = -1;     // 行き先のマス
     public int minionToY = -1;
+    public bool gunner;            // 照準で撃つ手下（軍銃兵）の状態を持つか
+    public int gunNext;            // 次に撃つ対局の時間（tick）
+    public AimData aim;            // 軍銃兵の照準
 
     public PlayerType Owner => (PlayerType)owner;
 
     public MinionData Minion
     {
-        get => new MinionData { Active = minion, Serial = minionSerial, Next = minionNext, Planned = minionPlanned, HasTo = minionHasTo, ToX = minionToX, ToY = minionToY };
+        get => new MinionData
+        {
+            Active = minion, Serial = minionSerial, Next = minionNext, Planned = minionPlanned, HasTo = minionHasTo, ToX = minionToX, ToY = minionToY,
+            Gunner = gunner, GunNext = gunNext, Aim = aim,
+        };
         set
         {
             minion = value.Active;
@@ -54,8 +65,14 @@ public class SnapshotPiece
             minionHasTo = value.HasTo;
             minionToX = value.ToX;
             minionToY = value.ToY;
+            gunner = value.Gunner;
+            gunNext = value.GunNext;
+            aim = value.Aim;
         }
     }
+
+    // 防壁か（討伐任務の障害物。PieceRules.IsWallPiece）
+    public bool IsWallPiece => PieceRules.IsWallPiece(type);
 
     // 巨人か（3×3 マスを占める。GiantRules）
     public bool IsGiant => PieceRules.IsGiant(type);
@@ -86,9 +103,11 @@ public class SnapshotPiece
         if (undead) sb.Append(" アンデッド");
         if (wing) sb.Append(" 翼");
         if (counter) sb.Append(" カウンター");
-        if (IsGiant) sb.Append(" HP").Append(hp);
+        if (IsGiant || IsWallPiece) sb.Append(" HP").Append(hp);
+        if (serial > 0) sb.Append(" #").Append(serial);
         if (cooldownUntil > 0) sb.Append(" 連打の間隔 t").Append(cooldownUntil);
         if (minion) sb.Append(" 手下#").Append(minionSerial).Append(" 次 t").Append(minionNext).Append(minionPlanned ? (minionHasTo ? $" →({minionToX}, {minionToY})" : " →なし") : "");
+        if (gunner) sb.Append(" 銃兵#").Append(minionSerial).Append(" 次 t").Append(gunNext).Append(" 照準 ").Append(aim);
         if (!initial) sb.Append(" (初期配置でない)");
         return sb.ToString();
     }
@@ -350,6 +369,24 @@ public class BoardSnapshot
         return c != null && c.IsWall;
     }
 
+    // 防壁の後ろの守り（討伐任務。WallRules.IsShielded）：(x, y) のボスの席の駒が、同じ筋で手前にある防壁に守られているか。
+    // 守られた駒は、プレイヤーのどの攻撃も受けない（移動の行き先・狙撃の対象・取り・消失・押し出しのどれにもならない）
+    public bool IsShieldedByWall(int x, int y)
+    {
+        if (!IsRaid) return false;
+        return WallRules.IsShielded((px, py) =>
+        {
+            SnapshotPiece q = At(px, py);
+            return q != null ? q.type : (PieceType?)null;
+        }, x, y);
+    }
+
+    // 駒 q がプレイヤーの攻撃の当たらない駒か（盤上にいて、防壁に守られている。Prototype の effects.js の isUntouchable）
+    public bool IsUntouchable(SnapshotPiece q)
+    {
+        return q != null && At(q.x, q.y) == q && IsShieldedByWall(q.x, q.y);
+    }
+
     // 翼状態（PieceRules の IsBlockedFor・IsBlockedForType・IsHazardFor・IsHazardForType・Detonates と同じ判定）。
     // 翼状態の駒は破壊マスにも入れ、炎上・落とし穴で消失しない。壁は翼状態でも入れない・通れない
     public bool IsBlockedFor(SnapshotPiece p, int x, int y)
@@ -434,6 +471,8 @@ public class BoardSnapshot
             if (old != null && old != p) Remove(old);
         }
         if (p.IsGiant && p.hp <= 0) p.hp = GiantRules.MaxHp;
+        // 討伐任務：駒の番号を作った順に振る（Prototype の createPiece の id。もう番号のある駒＝対局から写した駒・JSON から読んだ駒はそのまま）
+        if (IsRaid && p.serial <= 0) p.serial = raid.nextPieceId++;
         if (!pieces.Contains(p)) pieces.Add(p);
         PutCells(p);
     }
@@ -504,6 +543,7 @@ public class BoardSnapshot
             if (s.boss.ai == null) s.boss.ai = new BossAiState();
             if (s.boss.ai.cells == null) s.boss.ai.cells = new List<MatchSquare>();
             if (s.raid == null) s.raid = new RaidState();
+            if (s.raid.nextPieceId <= 0) s.raid.nextPieceId = 1;
             if (string.IsNullOrEmpty(s.mode)) s.mode = GameModes.Versus.Id;
             return s;
         }
@@ -596,6 +636,8 @@ public class BoardSnapshot
         if (p == null) return "";
         string key = $"{p.type}|{p.owner}|{p.promoted}|{p.moveCount}|{p.shield}|{p.phalanx}|{p.undead}|{p.wing}|{p.counter}|{p.initial}|{p.hp}|{p.cooldownUntil}";
         if (p.minion) key += $"|m{p.minionSerial}|{p.minionNext}|{p.minionPlanned}|{p.minionHasTo}|{p.minionToX}|{p.minionToY}";
+        if (p.gunner) key += $"|g{p.minionSerial}|{p.gunNext}|{p.aim}";
+        if (p.serial > 0) key += $"|#{p.serial}";
         return all ? $"{key}|{p.frozen}|{p.pendingPromote}" : key;
     }
 
@@ -619,12 +661,13 @@ public class BoardSnapshot
             foreach (MatchSquare c in ai.cells) sb.Append(c);
         }
         if (ai.hasData) sb.Append(" 次の1歩 t").Append(ai.nextAt).Append(ai.hasNext ? ai.next.ToString() : "(なし)");
+        if (ai.aim.active) sb.Append(" 照準 ").Append(ai.aim);
         return sb.ToString();
     }
 
     public static string RaidKey(RaidState r)
     {
-        return r == null || !r.active ? "なし" : $"王将の被弾 {r.kingHits}・手下の番号 {r.minionSerial}";
+        return r == null || !r.active ? "なし" : $"王将の被弾 {r.kingHits}・手下の番号 {r.minionSerial}・駒の番号 {r.nextPieceId}";
     }
 
     string RecipesKey()

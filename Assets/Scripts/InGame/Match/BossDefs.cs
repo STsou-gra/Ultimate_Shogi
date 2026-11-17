@@ -13,6 +13,21 @@ public class BossAttackEntry
     public bool NoRepeat;    // 2 回続けない
 }
 
+// ボスの席の初期配置の駒（Prototype のボスの定義の enemies。大将軍の陣）
+public class BossEnemy
+{
+    public PieceType Type;
+    public int X;   // 段
+    public int Y;   // 筋
+
+    public BossEnemy(PieceType type, int x, int y)
+    {
+        Type = type;
+        X = x;
+        Y = y;
+    }
+}
+
 public class BossDef
 {
     public string Id;
@@ -33,6 +48,25 @@ public class BossDef
     public uint Color = 0xd32f2f;        // 表示の色（0xRRGGBB）
     public bool Implemented = true;      // false のボスは、ボス選択の画面に並ぶが選べない（まだ移植していないボス）
 
+    // 向きを固定する（Prototype の fixedFacing。動かない・向きを変えないボス：大将軍はいつもプレイヤー側）。false なら攻撃を選ぶたびに王将の方を向く
+    public bool HasFixedFacing;
+    public int FixedFacingX = -1;        // 固定する向き（段の方向。-1 = プレイヤー側）
+    public int FixedFacingY;             // 固定する向き（筋の方向）
+
+    // ボスの席の初期配置の駒（Prototype の enemies。この順に置く：乱数を引く順・手下を動かす順になる）
+    public BossEnemy[] Enemies = new BossEnemy[0];
+
+    // 勝ちの条件（Prototype の clearRule.requireNoMinions）：HP 0 に加えて、この種類の手下が盤上に 1 体もいないこと。
+    // 空でなければ、ボスの HP が 0 になったあとも手下は動き続ける（ボスの攻撃は止まる・ボスのマスは空く）
+    public PieceType[] ClearRequireNoMinions = new PieceType[0];
+
+    public bool MinionsOutliveBoss => ClearRequireNoMinions != null && ClearRequireNoMinions.Length > 0;
+
+    public bool IsRequiredMinion(PieceType type)
+    {
+        return ClearRequireNoMinions != null && System.Array.IndexOf(ClearRequireNoMinions, type) >= 0;
+    }
+
     // ダメージの倍率（Prototype の damageTaken。なければ 1）。0 以下なら効かない
     public System.Func<BossHit, float> DamageRate;
 
@@ -48,12 +82,16 @@ public class BossAttackDef
     public string Name;
     public string Summary;        // ボスのパネルの攻撃の一覧に出す短い説明
     public string Description;
-    public float TelegraphSec;    // 予告の秒数（範囲は予告を始めた時点で確定し、そのあと動かない）
+    public float TelegraphSec;    // 予告の秒数（範囲は予告を始めた時点で確定し、そのあと基本は動かない。0 なら予告なしですぐ始める：守備）
     public string TelegraphText;  // 範囲を出さない予告の文言（暴れ回り。範囲を出す攻撃は null）
-    public float DurationSec;     // 続く行動（暴れ回り）の秒数（一発の攻撃は 0）
+    public float DurationSec;     // 続く行動（暴れ回り・守備）の秒数（一発の攻撃は 0）
     public float StepSec;         // 続く行動：1 歩の間隔（次の行き先はこの秒数だけ前に表示する）
     public float RestSec;         // 続く行動のあとの休憩の秒数（休憩の間は行動ペースを数えない）
     public uint Color = 0xff5252;
+    public bool Retarget;         // 予告の間、照準が駒を追う（弓。Prototype の retarget）。期限の LockSecBefore 秒前に固まる
+    public float LockSecBefore;   // 照準が固まるのは着弾の何秒前か
+    public bool Invulnerable;     // 続く行動の間、ボスはダメージを受けない（守備。BossEngine.Damage の 1 か所で止める）
+    public bool Harmless;         // 駒に攻撃を当てない行動（出陣命令。予告を青で光らせる。Prototype の telegraphColor）
 
     public bool IsLasting => DurationSec > 0f;
 }
@@ -112,7 +150,45 @@ public static class BossAttacks
         TelegraphSec = 5f, TelegraphText = "暴れ回り！", DurationSec = 10f, StepSec = 1f, RestSec = 5f, Color = 0xd50000,
     };
 
-    public static readonly IReadOnlyList<BossAttackDef> All = new List<BossAttackDef> { Sweep, Smash, Rampage, Spin, Summon };
+    // ---- 大将軍の攻撃（Prototype の bow.js・greatsword.js・guard.js・deploy.js）
+
+    // 弓：プレイヤーの駒（王将も含む）を 1 枚ランダムに選び、予告の間その駒を照準で追う。着弾の 2 秒前に照準が固まり、
+    // 予告が終わると照準のマス 1 つを射抜く。追っていた駒が途中で消えたら、残っている駒からまた選ぶ（対局の乱数）
+    public static readonly BossAttackDef Bow = new BossAttackDef
+    {
+        Id = "bow", Name = "弓", Summary = "駒を追う照準1マスを射る（着弾2秒前に固まる）",
+        Description = "プレイヤーの駒を1枚選んで照準で追い、5秒後に照準のマス1つを射抜く。照準は着弾の2秒前に固まる（そこから逃げれば当たらない）。",
+        TelegraphSec = 5f, Retarget = true, LockSecBefore = 2f, Color = 0xffca28,
+    };
+
+    // 大剣斬り：正面に接する 横（ボスの幅 ＋ 左右 1 マス）× 奥行き GreatswordDepth マス
+    public static readonly BossAttackDef Greatsword = new BossAttackDef
+    {
+        Id = "greatsword", Name = "大剣斬り", Summary = "正面5×2を斬る",
+        Description = "大剣を振り下ろし、正面に接する横5×奥行き2マスを斬る。",
+        TelegraphSec = 3f, Color = 0x90caf9,
+    };
+    public const int GreatswordDepth = 2;
+
+    // 守備：予告なしですぐ構え、5 秒のあいだ、ボスはどの攻撃を受けても 0 ダメージ（攻撃した駒が跳ね返るのは今までどおり）。休憩なし。防壁・兵は守らない
+    public static readonly BossAttackDef Guard = new BossAttackDef
+    {
+        Id = "guard", Name = "守備", Summary = "5秒間、ボスへのダメージが0",
+        Description = "大剣を地に突き立てて守りを固める。5秒間、ボスへの攻撃はすべて0ダメージになる（防壁・兵は守らない）。",
+        TelegraphSec = 0f, DurationSec = 5f, RestSec = 0f, Invulnerable = true, Color = 0x4fc3f7,
+    };
+
+    // 出陣命令：ボスの正面に接する 1 列（盤の端から端まで）の空いたマスに、軍歩兵を置く。予告では列全体を光らせ、
+    // 置けるかどうか（駒・ボス・破壊マス・壁がないか）は予告が終わって実行するときに判定する。駒に攻撃は当てない
+    public static readonly BossAttackDef Deploy = new BossAttackDef
+    {
+        Id = "deploy", Name = "出陣命令", Summary = "四段の空きマスに軍歩兵を出す",
+        Description = "正面の1列（四段の9マス）の空いたマスに軍歩兵を出す。駒がいるマスには出さない。",
+        TelegraphSec = 2f, Harmless = true, Color = 0x7986cb,
+    };
+    public const PieceType DeployPiece = PieceType.GunFu;
+
+    public static readonly IReadOnlyList<BossAttackDef> All = new List<BossAttackDef> { Sweep, Smash, Rampage, Spin, Summon, Bow, Greatsword, Guard, Deploy };
 
     public static BossAttackDef ById(string id)
     {
@@ -154,19 +230,40 @@ public static class BossDefs
         Color = 0xd32f2f,
     };
 
-    // 大将軍（Prototype の src/defs/bosses/daishogun.js）。まだ移植していないので、ボス選択の画面には並ぶが選べない（Implemented = false）。
-    // 移植するときは、攻撃（弓・大剣斬り・守備・出陣命令）と兵（軍歩兵・軍銃兵・防壁）を BossEngine・BossAttacks に足して Implemented を外す
+    // 大将軍（Prototype の src/defs/bosses/daishogun.js）：3×3・HP 30・行動ペース 10 秒・攻撃 4 種。動かず、向きはいつもプレイヤー側。
+    // 陣（ボスの席の初期配置）：軍銃兵 6 体（一段の 1〜3 筋・7〜9 筋）・防壁 6 枚（その手前の二段）・軍歩兵 9 体（四段）。
+    // 勝ちの条件：HP 0 に加えて、軍歩兵・軍銃兵が盤上に 1 体もいないこと（防壁は残っていてよい。大将軍を倒しても兵は動き続ける）。
+    // 座標：Prototype の (x, y) は Unity の (8 − y, x)。一段 = 段 8・二段 = 段 7・四段 = 段 5。筋は Prototype の x（6・7・8・0・1・2 の順）
     public static readonly BossDef Daishogun = new BossDef
     {
-        Id = "daishogun", Name = "大将軍", Title = "鉄壁の陣",
-        Description = "陣の奥から動かず、弓と大剣で攻め、兵を繰り出す大将軍。（準備中：次の移植で実装）",
+        Id = "daishogun", Name = "大将軍", Title = "鉄壁の陣の主",
+        Description = "陣の奥に構える甲冑の武将。弓と大剣で攻め、守りを固め、軍歩兵を出陣させる。銃兵・防壁・歩兵の陣を崩し、兵を全滅させて大将軍を討て。",
         W = 3, H = 3, StartX = 6, StartY = 3, Hp = 30,
         CooldownSec = 10f,
+        HasFixedFacing = true, FixedFacingX = -1, FixedFacingY = 0,
+        Attacks = new[]
+        {
+            new BossAttackEntry { Id = "bow", Weight = 3 },
+            new BossAttackEntry { Id = "greatsword", Weight = 3 },
+            new BossAttackEntry { Id = "guard", Weight = 2, NoRepeat = true },
+            new BossAttackEntry { Id = "deploy", Weight = 2, NoRepeat = true },
+        },
+        Enemies = DaishogunEnemies(),
+        ClearRequireNoMinions = new[] { PieceType.GunFu, PieceType.GunJu },
         KingMaxHits = 3,
         CostLimit = 50, ForgeSlots = 2,
-        Color = 0x5c6bc0,
-        Implemented = false,
+        Color = 0x3949ab,
     };
+
+    static BossEnemy[] DaishogunEnemies()
+    {
+        int[] flanks = { 6, 7, 8, 0, 1, 2 }; // 軍銃兵（一段）・防壁（二段）を置く筋：1〜3 筋と 7〜9 筋（Prototype の FLANKS）
+        List<BossEnemy> res = new List<BossEnemy>();
+        foreach (int y in flanks) res.Add(new BossEnemy(PieceType.GunJu, 8, y));
+        foreach (int y in flanks) res.Add(new BossEnemy(PieceType.Bouheki, 7, y));
+        for (int y = 0; y < BoardCells.Size; y++) res.Add(new BossEnemy(PieceType.GunFu, 5, y));
+        return res.ToArray();
+    }
 
     public static readonly IReadOnlyList<BossDef> All = new List<BossDef> { Akaoni, Daishogun };
 
@@ -198,6 +295,15 @@ public static class BossDefs
         foreach (BossAttackEntry a in def.Attacks)
         {
             if (BossAttacks.ById(a.Id) == null) errors.Add($"攻撃 {a.Id} が定義されていません");
+        }
+        HashSet<int> seen = new HashSet<int>();
+        foreach (BossEnemy e in def.Enemies ?? new BossEnemy[0])
+        {
+            string name = PieceNames.Full(e.Type);
+            if (!PieceRules.IsMinion(e.Type)) errors.Add($"{name} はボス側の駒ではありません");
+            if (!BoardCells.InBounds(e.X, e.Y)) errors.Add($"ボス側の駒 {name} が盤に収まりません");
+            else if (e.X >= def.StartX && e.X < def.StartX + def.H && e.Y >= def.StartY && e.Y < def.StartY + def.W) errors.Add($"ボス側の駒 {name} がボスに重なっています");
+            if (!seen.Add(e.X * 100 + e.Y)) errors.Add($"ボス側の駒が同じマス（{e.X}, {e.Y}）に重なっています");
         }
         return errors;
     }

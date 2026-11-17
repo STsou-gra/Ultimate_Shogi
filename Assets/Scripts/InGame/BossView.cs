@@ -5,9 +5,10 @@ using UnityEngine.UI;
 using TMPro;
 
 // 討伐任務のボスの見た目（Prototype の src/view/bossView.js・BossPanel.js）。
-//  ・盤上：ボスの絵（3×3 マス。動くときは滑らかに追う）・向きの印（金棒）・攻撃の予告の範囲（赤く光るマス）と
-//    「技の名前 ＋ 残り秒数」・暴れ回りの次の 1 歩の行き先（橙のマスと矢印）・小赤鬼の次の行き先の矢印（動く 1 秒前から）・
-//    ダメージの数字・攻撃が当たった瞬間の光
+//  ・盤上：ボスの絵（3×3 マス。動くときは滑らかに追う。赤鬼王・大将軍）・向きの印（金棒／大剣）・攻撃の予告の範囲（赤く光るマス。
+//    駒に当てない出陣命令は青）と「技の名前 ＋ 残り秒数」・暴れ回りの次の 1 歩の行き先（橙のマスと矢印）・
+//    手下（小赤鬼・軍歩兵）の次の行き先の矢印（動く 1 秒前から）・弓と軍銃兵の照準（駒を追う間は黄・固まったら赤）・
+//    守備のバリア（青い輪）・ダメージの数字・攻撃が当たった瞬間の光
 //  ・画面の左上（合戦将棋型の HUD の後手の席の位置）：ボスのパネル（名前・HP のバー・今の行動と残り秒数・王将の耐久・攻撃の一覧）
 // 盤上の表示は、毎フレーム GameSystem.Boss（BossState）と駒の MinionData を読んで描く（局面の読み込み・棋譜の再生でもそのまま合う）。
 // 一瞬の演出（ダメージ・攻撃の瞬間）だけ GameSystem.BossEventRaised で受ける。
@@ -23,6 +24,10 @@ public class BossView : MonoBehaviour
     private static readonly Color WarnColor = RuntimeUi.Hex(0xff1744);      // 予告の範囲
     private static readonly Color StepColor = RuntimeUi.Hex(0xff9100);      // 暴れ回りの次の 1 歩
     private static readonly Color MinionArrowColor = RuntimeUi.Hex(0xffab40);
+    private static readonly Color HarmlessColor = RuntimeUi.Hex(0x536dfe);  // 駒に当てない予告（出陣命令）
+    private static readonly Color AimTrackColor = RuntimeUi.Hex(0xffd600);  // 照準：駒を追っている
+    private static readonly Color AimLockColor = RuntimeUi.Hex(0xff1744);   // 照準：固まった
+    private static readonly Color GuardColor = RuntimeUi.Hex(0x4fc3f7);     // 守備のバリア
     private static readonly Color PanelColor = new Color(0.10f, 0.03f, 0.04f, 0.82f);
 
     private Transform root;
@@ -35,6 +40,13 @@ public class BossView : MonoBehaviour
     private TextMeshPro label;        // 予告の「技の名前 ＋ 残り秒数」
     private SpriteRenderer stepArrow; // 暴れ回りの次の 1 歩
     private readonly List<SpriteRenderer> minionArrows = new List<SpriteRenderer>();
+    private readonly List<SpriteRenderer> reticles = new List<SpriteRenderer>();   // 弓・軍銃兵の照準
+    private readonly List<SpriteRenderer> aimLines = new List<SpriteRenderer>();   // 軍銃兵から照準への線
+    private SpriteRenderer guardSr;   // 守備のバリア
+    private string shownBossId;       // 今の絵のボス
+    private float shotFlashTime;
+    private Vector3 shotFrom, shotTo;
+    private SpriteRenderer shotLine;  // 軍銃兵が撃った瞬間の線
 
     private Vector3 bossPos;
     private bool bossPlaced;
@@ -114,6 +126,10 @@ public class BossView : MonoBehaviour
         clubSr = NewSprite("Club", MagicSprites.Club, 11);
         stepArrow = NewSprite("StepArrow", MagicSprites.BossArrow, 12);
         stepArrow.gameObject.SetActive(false);
+        guardSr = NewSprite("Guard", MagicSprites.GuardRing, 12);
+        guardSr.gameObject.SetActive(false);
+        shotLine = NewSprite("ShotLine", MagicSprites.Square, 14);
+        shotLine.gameObject.SetActive(false);
 
         GameObject labelObj = new GameObject("TelegraphLabel", typeof(RectTransform));
         labelObj.transform.SetParent(root, false);
@@ -233,6 +249,7 @@ public class BossView : MonoBehaviour
         UpdateLabel(b, ai, secLeft, pulse);
         UpdateStepArrow(b, ai);
         UpdateMinionArrows();
+        UpdateAims(b, ai, pulse, dt);
         UpdatePopups(dt);
 
         if (Time.unscaledTime >= nextHudRefresh)
@@ -272,13 +289,33 @@ public class BossView : MonoBehaviour
             : Vector3.zero;
 
         bool alive = b.hp > 0;
+        if (shownBossId != b.id)
+        {
+            // ボスごとの絵（赤鬼王・大将軍）と向きの印（金棒・大剣）
+            shownBossId = b.id;
+            bossSr.sprite = MagicSprites.BossSprite(b.id);
+            clubSr.sprite = MagicSprites.BossWeapon(b.id);
+        }
         bossSr.transform.localPosition = bossPos + shake;
         float breathe = 1f + 0.015f * Mathf.Sin(Time.unscaledTime * 2.2f);
         bossSr.transform.localScale = new Vector3(b.w / 3f * 0.97f * breathe, b.h / 3f * 0.97f * breathe, 1f);
 
         // 色：ダメージで白く光る・範囲を出さない予告（暴れ回り）と行動中は赤く光る・倒れたら消えていく
         Color c = Color.white;
-        bool raging = alive && (ai.phase == BossAiState.Acting || (ai.phase == BossAiState.Telegraph && !ai.hasCells));
+        bool guarding = alive && BossEngine<GamePiece>.IsInvulnerable(b); // 守備：赤くせず、青いバリアを出す
+        bool raging = alive && !guarding && (ai.phase == BossAiState.Acting || (ai.phase == BossAiState.Telegraph && !ai.hasCells));
+        guardSr.gameObject.SetActive(guarding);
+        if (guarding)
+        {
+            guardSr.transform.localPosition = bossPos + new Vector3(0f, 0f, -0.03f);
+            float gs = 1f + 0.03f * Mathf.Sin(Time.unscaledTime * 6f);
+            guardSr.transform.localScale = new Vector3(b.w / 3f * gs, b.h / 3f * gs, 1f);
+            guardSr.transform.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(Time.unscaledTime * 1.5f) * 4f);
+            Color gc = GuardColor;
+            gc.a = 0.7f + 0.25f * pulse;
+            guardSr.color = gc;
+            c = Color.Lerp(Color.white, new Color(0.7f, 0.9f, 1f, 1f), 0.5f);
+        }
         if (raging) c = Color.Lerp(Color.white, new Color(1f, 0.25f, 0.2f, 1f), 0.35f + 0.45f * pulse);
         if (ai.phase == BossAiState.Resting && alive) c = new Color(0.72f, 0.72f, 0.8f, 1f); // 休憩中
         if (flashTime > 0f) c = Color.Lerp(c, new Color(1f, 1f, 0.6f, 1f), flashTime / 0.25f);
@@ -308,7 +345,11 @@ public class BossView : MonoBehaviour
 
         if (alive && ai.phase == BossAiState.Telegraph && ai.hasCells)
         {
-            foreach (MatchSquare c in ai.cells) Paint(c, WarnColor, 0.28f + 0.3f * pulse);
+            // 予告の色：照準が駒を追う攻撃（弓）は追っている間は黄・固まったら赤。駒に当てない行動（出陣命令）は青。それ以外は赤
+            BossAttackDef atk = BossAttacks.ById(ai.attack);
+            Color warn = atk != null && atk.Retarget ? (ai.aim.locked ? AimLockColor : AimTrackColor) : atk != null && atk.Harmless ? HarmlessColor : WarnColor;
+            float a = atk != null && atk.Retarget && !ai.aim.locked ? 0.2f + 0.15f * pulse : 0.28f + 0.3f * pulse;
+            foreach (MatchSquare c in ai.cells) Paint(c, warn, a);
         }
         if (alive && ai.phase == BossAiState.Acting && ai.hasNext)
         {
@@ -380,7 +421,66 @@ public class BossView : MonoBehaviour
         PlaceArrow(stepArrow, from, to, 1.6f, StepColor);
     }
 
-    // 小赤鬼の次の行き先の矢印（動く 1 秒前から）
+    // 照準（弓：予告の間、照準のマスに十字。軍銃兵：兵から照準のマスへの線と十字。追っている間は黄・固まったら赤で、マスも光る）と、
+    // 軍銃兵が撃った瞬間の線
+    void UpdateAims(BossState b, BossAiState ai, float pulse, float dt)
+    {
+        int n = 0, lines = 0;
+        if (gameSystem.IsInTurn)
+        {
+            if (b.hp > 0 && ai.phase == BossAiState.Telegraph && ai.aim.active && ai.aim.hasCell)
+            {
+                PlaceReticle(n++, ai.aim.Cell, ai.aim.locked, 0.92f, pulse);
+            }
+            foreach (GamePiece p in gameBoard.Pieces())
+            {
+                if (p == null || !p.minion.Gunner || !p.minion.Aim.active || !p.minion.Aim.hasCell) continue;
+                AimData aim = p.minion.Aim;
+                PlaceReticle(n++, aim.Cell, aim.locked, 0.7f, pulse);
+                if (aim.locked) Paint(aim.Cell, AimLockColor, 0.2f + 0.12f * pulse);
+                Vector2 from = GameHelper.CalcPanelLocation(p.X, p.Y), to = GameHelper.CalcPanelLocation(aim.x, aim.y);
+                if (lines >= aimLines.Count) aimLines.Add(NewSprite($"AimLine_{lines}", MagicSprites.Square, 13));
+                Color lc = aim.locked ? AimLockColor : AimTrackColor;
+                lc.a = aim.locked ? 0.7f : 0.3f;
+                PlaceLine(aimLines[lines++], from, to, aim.locked ? 0.05f : 0.03f, lc);
+            }
+        }
+        for (int i = n; i < reticles.Count; i++) reticles[i].gameObject.SetActive(false);
+        for (int i = lines; i < aimLines.Count; i++) aimLines[i].gameObject.SetActive(false);
+
+        shotFlashTime = Mathf.Max(0f, shotFlashTime - dt);
+        shotLine.gameObject.SetActive(shotFlashTime > 0f);
+        if (shotFlashTime > 0f) PlaceLine(shotLine, shotFrom, shotTo, 0.1f, new Color(1f, 0.95f, 0.7f, shotFlashTime / 0.25f));
+    }
+
+    void PlaceReticle(int index, MatchSquare cell, bool locked, float size, float pulse)
+    {
+        if (index >= reticles.Count) reticles.Add(NewSprite($"Reticle_{index}", MagicSprites.Reticle, 14));
+        SpriteRenderer sr = reticles[index];
+        sr.gameObject.SetActive(true);
+        Vector2 at = GameHelper.CalcPanelLocation(cell.x, cell.y);
+        sr.transform.localPosition = new Vector3(at.x, at.y, -0.15f);
+        float s = locked ? size : size * (1f + 0.08f * Mathf.Sin(Time.unscaledTime * 8f + index));
+        sr.transform.localScale = new Vector3(s, s, 1f);
+        sr.transform.localRotation = Quaternion.Euler(0f, 0f, locked ? 0f : Time.unscaledTime * 40f % 360f);
+        Color c = locked ? AimLockColor : AimTrackColor;
+        c.a = locked ? 1f : 0.7f + 0.3f * pulse;
+        sr.color = c;
+    }
+
+    // 正方形の絵を伸ばして、from から to への線にする
+    static void PlaceLine(SpriteRenderer sr, Vector2 from, Vector2 to, float width, Color color)
+    {
+        sr.gameObject.SetActive(true);
+        Vector2 d = to - from;
+        Vector2 mid = (from + to) * 0.5f;
+        sr.transform.localPosition = new Vector3(mid.x, mid.y, -0.13f);
+        sr.transform.localRotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg);
+        sr.transform.localScale = new Vector3(Mathf.Max(0.01f, d.magnitude), width, 1f);
+        sr.color = color;
+    }
+
+    // 手下（小赤鬼・軍歩兵）の次の行き先の矢印（動く 1 秒前から）
     void UpdateMinionArrows()
     {
         int n = 0;
@@ -445,8 +545,29 @@ public class BossView : MonoBehaviour
                 if (e.Result == BossEvent.Guarded) AddPopup("盾", e.At, new Color(0.6f, 0.9f, 1f, 1f), 4.5f);
                 break;
             case BossEventType.MinionSpawned:
-                AddPopup("小赤鬼", e.At, new Color(1f, 0.6f, 0.4f, 1f), 3.6f);
+                AddPopup(e.Piece is GamePiece mp ? PieceNames.Full(mp.type) : "手下", e.At, new Color(1f, 0.6f, 0.4f, 1f), 3.6f);
                 break;
+            case BossEventType.Guarded:
+                AddPopup("防いだ！", e.At, new Color(0.6f, 0.9f, 1f, 1f), 5.5f);
+                break;
+            case BossEventType.GuardStart:
+                AddPopup("守備", new MatchSquare(gameSystem.Boss.x + 1, gameSystem.Boss.y + 1), new Color(0.6f, 0.9f, 1f, 1f), 7f);
+                nextHudRefresh = 0f;
+                break;
+            case BossEventType.WallHit:
+                AddPopup(e.Hp > 0 ? "-1" : "崩壊！", e.At, new Color(1f, 0.85f, 0.6f, 1f), e.Hp > 0 ? 4.5f : 5.5f);
+                break;
+            case BossEventType.GunnerShot:
+            {
+                // 軍銃兵が撃った瞬間：兵から照準のマスへ光の線
+                Vector2 a = GameHelper.CalcPanelLocation(e.From.x, e.From.y), c = GameHelper.CalcPanelLocation(e.At.x, e.At.y);
+                shotFrom = a;
+                shotTo = c;
+                shotFlashTime = 0.25f;
+                attackFlashTime = 0.3f;
+                attackFlashCells = new List<MatchSquare> { e.At };
+                break;
+            }
             case BossEventType.Defeated:
                 AddPopup("討伐！", new MatchSquare(gameSystem.Boss.x + 1, gameSystem.Boss.y + 1), new Color(1f, 0.9f, 0.3f, 1f), 9f);
                 break;
@@ -514,8 +635,9 @@ public class BossView : MonoBehaviour
         hpFill.color = Color.Lerp(RuntimeUi.Hex(0xffc400), RuntimeUi.Hex(0xff1744), rate);
 
         BossAttackDef atk = BossAttacks.ById(ai.attack);
-        if (b.hp <= 0) stateText.text = "討伐成功！";
-        else if (gameSystem.IsTimeStopped) stateText.text = "時間停止中（ボス・小赤鬼は止まっている）";
+        int soldiers = gameSystem.RequiredMinionsLeft; // 大将軍：倒さないと勝てない兵（軍歩兵・軍銃兵）の残り
+        if (b.hp <= 0) stateText.text = soldiers > 0 ? $"<color=#FFD54A>{name}は倒れた！ 残りの兵 {soldiers} 体を全滅させよう</color>" : "討伐成功！";
+        else if (gameSystem.IsTimeStopped) stateText.text = "時間停止中（ボス・手下は止まっている）";
         else if (ai.phase == BossAiState.Telegraph && atk != null) stateText.text = $"<color=#FF8A80>「{atk.Name}」まで {secLeft} 秒</color>";
         else if (ai.phase == BossAiState.Acting && atk != null) stateText.text = $"<color=#FF8A80>「{atk.Name}」中　残り {secLeft} 秒</color>";
         else if (ai.phase == BossAiState.Resting) stateText.text = $"休憩中　あと {secLeft} 秒（攻撃のチャンス）";
@@ -540,8 +662,10 @@ public class BossView : MonoBehaviour
                 if (a == null) continue;
                 bool current = b.hp > 0 && ai.attack == a.Id && (ai.phase == BossAiState.Telegraph || ai.phase == BossAiState.Acting);
                 string head = current ? "<color=#FF8A80>▶ " : "<color=#E0E0E8>・";
-                sb.Append($"{head}<b>{a.Name}</b></color>　<color=#B0B0BC>{a.Summary}（予告 {a.TelegraphSec:0} 秒）</color>\n");
+                string tele = a.TelegraphSec > 0f ? $"予告 {a.TelegraphSec:0} 秒" : "予告なし";
+                sb.Append($"{head}<b>{a.Name}</b></color>　<color=#B0B0BC>{a.Summary}（{tele}）</color>\n");
             }
+            if (def.MinionsOutliveBoss) sb.Append($"<color=#FFD54A>勝ち：HP 0 ＋ 兵の全滅（残り {soldiers} 体。防壁は残ってよい）</color>\n");
         }
         sb.Append("<color=#B0B0BC>駒をボスのマスへ動かすと攻撃（駒は元のマスへ戻る）</color>");
         listText.text = sb.ToString();

@@ -126,7 +126,7 @@ static partial class Program
         Check(AKAONI.Attacks.Select(a => a.Id).SequenceEqual(new[] { "sweep", "smash", "spin", "summon", "rampage" }), "赤鬼王: 攻撃 5 種");
         Check(BossDefs.Validate(AKAONI).Count == 0 && AKAONI.Implemented, "赤鬼王: 定義の検査に通る");
         Check(AKAONI.KingMaxHits == 3 && AKAONI.CostLimit == 50 && AKAONI.ForgeSlots == 2, "赤鬼王: 王将 3 回目で負け・コスト上限 50・錬成駒 2 種");
-        Check(!BossDefs.Daishogun.Implemented, "大将軍: まだ選べない");
+        Check(BossDefs.Daishogun.Implemented && BossDefs.Validate(BossDefs.Daishogun).Count == 0, "大将軍: 選べる・定義が正しい");
         Check(BossDefs.Validate(new BossDef { Id = "x", W = 3, H = 3, StartX = 8, StartY = 3, Hp = 30 }).Count > 0, "ボス: 盤に収まらない開始位置は弾く");
         Check(BossAttacks.Sweep.TelegraphSec == 5f && BossAttacks.Smash.TelegraphSec == 5f && BossAttacks.Spin.TelegraphSec == 5f && BossAttacks.Summon.TelegraphSec == 4f, "攻撃: 予告 5 秒（小赤鬼号令は 4 秒）");
         Check(BossAttacks.Rampage.TelegraphSec == 5f && BossAttacks.Rampage.DurationSec == 10f && BossAttacks.Rampage.StepSec == 1f && BossAttacks.Rampage.RestSec == 5f, "暴れ回り: 予告 5 秒・10 秒間・1 秒ごと・休憩 5 秒");
@@ -993,7 +993,11 @@ static partial class Program
     // ------------------------------------------------------------
     static void TestRaidKifus()
     {
-        foreach (string name in new[] { "raid-akaoni-1.json", "raid-akaoni-2.json", "raid-akaoni-3.json", "raid-akaoni-4.json" })
+        foreach (string name in new[]
+                 {
+                     "raid-akaoni-1.json", "raid-akaoni-2.json", "raid-akaoni-3.json", "raid-akaoni-4.json",
+                     "raid-daishogun-1.json", "raid-daishogun-2.json", "raid-daishogun-3.json", "raid-daishogun-4.json",
+                 })
         {
             string path = FindKifu(name);
             Check(path != null, $"Prototype の棋譜 {name} がある（Tests/SnapshotTests/PrototypeKifus）");
@@ -1001,8 +1005,10 @@ static partial class Program
             using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(path));
             JsonElement k = doc.RootElement;
             JsonElement cfg = k.GetProperty("config");
-            Check(cfg.GetProperty("mode").GetString() == "bossRaid" && cfg.GetProperty("ruleset").GetString() == "kassen" && cfg.GetProperty("bossId").GetString() == "akaoni",
-                $"{name}: 討伐任務・合戦将棋型・赤鬼王");
+            BossDef kifuBoss = BossDefs.ById(cfg.GetProperty("bossId").GetString());
+            Check(cfg.GetProperty("mode").GetString() == "bossRaid" && cfg.GetProperty("ruleset").GetString() == "kassen" && kifuBoss != null
+                  && kifuBoss.Id == (name.Contains("daishogun") ? "daishogun" : "akaoni"), $"{name}: 討伐任務・合戦将棋型・{(kifuBoss != null ? kifuBoss.Name : "?")}");
+            if (kifuBoss == null) continue;
 
             // 編成（Prototype の setup.formation・forgePicks）と魔法（先手だけ。normal・ultimate・transcendent の順）
             RaidFormation f = new RaidFormation();
@@ -1022,7 +1028,7 @@ static partial class Program
             uint seed = k.GetProperty("seed").GetUInt32();
             BoardSnapshot s = Kassen(seed);
             s.players[0].skills = deck;
-            BoardSimulator.SetupRaid(s, AKAONI, f);
+            BoardSimulator.SetupRaid(s, kifuBoss, f);
 
             List<JsonElement> actions = k.GetProperty("actions").EnumerateArray().ToList();
             int n = actions.Count, played = 0, matched = 0;

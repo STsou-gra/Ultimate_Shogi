@@ -63,6 +63,9 @@ public class FormationView : MonoBehaviour
 
     static FormationView open;
 
+    // 開いているか（タイトル画面は、この画面が開いている間キーを読まない）
+    public static bool IsOpen => open != null;
+
     // タイトルの上に開く（前回のそのボスの編成があれば、それを並べた状態で開く。なければおまかせ配置）
     public static void Open(BossDef def)
     {

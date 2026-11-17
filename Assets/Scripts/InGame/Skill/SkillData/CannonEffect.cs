@@ -56,11 +56,16 @@ public class CannonEffect : SkillEffect
 
     // 巨人は何マス重なっても 1 回の攻撃（生き残れば、そのマスは壊れない：GameSystem.BreakCell）
     List<GamePiece> victims = MagicKit.PiecesIn(context.GameBoard, cells);
+    // 討伐任務：撃った時点で防壁に守られていた駒のマスは壊さない（防壁は HP が 1 減り、守られた駒は消えない：GameSystem.VanishPiece）
+    List<Vector2Int> shielded = cells.FindAll(c => system.IsShieldedByWall(c.x, c.y));
 
     if (tl == null)
     {
       foreach (GamePiece q in victims) system.VanishPiece(q, Reason);
-      foreach (Vector2Int c in cells) system.BreakCell(c.x, c.y);
+      foreach (Vector2Int c in cells)
+      {
+        if (!shielded.Contains(c)) system.BreakCell(c.x, c.y);
+      }
       return;
     }
 
@@ -91,7 +96,7 @@ public class CannonEffect : SkillEffect
       prev = step;
       tl.ScheduleState(() =>
       {
-        if (!system.BossAt(c.x, c.y)) system.BreakCell(c.x, c.y); // ボスのいるマスは壊さない
+        if (!system.BossAt(c.x, c.y) && !shielded.Contains(c)) system.BreakCell(c.x, c.y); // ボスのいるマス・防壁に守られていた駒のマスは壊さない
       });
     }
     if (context.Fx != null) context.Fx.CannonDone(cells, owner, tl.Time);

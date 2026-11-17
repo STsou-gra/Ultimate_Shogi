@@ -261,6 +261,8 @@ public static partial class BoardSimulator
         // 移動先：空き・相手の駒・火薬（自分の火薬にも入れる。鳥は味方の火薬には入れない。PieceRules.CanLandOn）
         SnapshotPiece target = s.At(x, y);
         if (target == p) return false;
+        // 討伐任務：防壁に守られた相手の駒のマスには入れない（防壁そのもののマスは攻撃として選べる）
+        if (target != null && target.owner != p.owner && !BoardSnapshot.Detonates(p, target) && s.IsShieldedByWall(x, y)) return false;
         return target == null || target.owner != p.owner || BoardSnapshot.Detonates(p, target);
     }
 
@@ -275,6 +277,7 @@ public static partial class BoardSimulator
                 SnapshotPiece q = s.At(x, y);
                 if (q == null) return GiantRules.Occupant.Empty;
                 if (PieceRules.IsExplosive(q.type)) return GiantRules.Occupant.Bomb;
+                if (q.owner != p.owner && s.IsShieldedByWall(x, y)) return GiantRules.Occupant.Own; // 防壁に守られた駒のマスには入れない（味方の駒と同じ扱い）
                 return q.owner == p.owner ? GiantRules.Occupant.Own : GiantRules.Occupant.Enemy;
             },
             (x, y) => s.IsBlockedFor(p, x, y),
@@ -416,7 +419,8 @@ public static partial class BoardSimulator
             for (int y = 0; y < BoardCells.Size; y++)
             {
                 SnapshotPiece q = s.At(x, y);
-                if (q != null && q.owner != p.owner && q.type != PieceType.King) targets.Add(new MatchSquare(x, y));
+                // 討伐任務：防壁に守られた駒は撃てない（防壁は撃てる）
+                if (q != null && q.owner != p.owner && q.type != PieceType.King && !s.IsShieldedByWall(x, y)) targets.Add(new MatchSquare(x, y));
             }
         }
         // 討伐任務：ボスのマスも撃てる
@@ -601,6 +605,15 @@ public static partial class BoardSimulator
             return;
         }
         SnapshotPiece target = s.At(x, y);
+        if (target != null && target != p && target.owner != p.owner && target.IsWallPiece)
+        {
+            // 討伐任務：防壁のマスへの移動は攻撃。防壁の HP を 1 減らして、元のマスへ跳ね返る（ボスと同じ）。
+            // 移動として数え、攻撃したマスが敵陣なら成る（Prototype の play.js の attackWall・movePiece）
+            HitWall(s, target);
+            if (promote) p.promoted = true;
+            p.moveCount++;
+            return;
+        }
         // 火薬のマスに入ったら爆発する（鳥は爆発させずに火薬を取る：下の取りの処理へ）
         if (target != null && target != p && BoardSnapshot.Detonates(p, target))
         {
@@ -644,6 +657,14 @@ public static partial class BoardSimulator
             return;
         }
         List<SnapshotPiece> occupants = PiecesIn(s, row);
+        // 討伐任務：先頭の 1 列に防壁があれば、どれも攻撃して跳ね返る（移動として数える）
+        List<SnapshotPiece> walls = occupants.FindAll(q => q.owner != p.owner && q.IsWallPiece);
+        if (walls.Count > 0)
+        {
+            foreach (SnapshotPiece w in walls) HitWall(s, w);
+            p.moveCount++;
+            return;
+        }
         bool bounced = false;
         List<SnapshotPiece> enemies = occupants.FindAll(q => q.owner != p.owner && !PieceRules.IsExplosive(q.type));
         if (enemies.Count > 0)
@@ -753,6 +774,13 @@ public static partial class BoardSimulator
     // 取り（GameSystem.CapturePiece と同じ）。取れたら true（盾・カウンターで防がれたら false）。attacker は取ろうとした駒（なければ null）
     static bool Capture(BoardSnapshot s, SnapshotPiece target, PlayerType by, SnapshotPiece attacker)
     {
+        // 討伐任務：防壁は取れない（HP が減る）。防壁に守られた駒は取れない（Prototype の effects.js の tryCapture）
+        if (target.IsWallPiece)
+        {
+            HitWall(s, target);
+            return false;
+        }
+        if (s.IsUntouchable(target)) return false;
         // 巨人：1 回の攻撃で HP -1。HP が残れば取れない（攻撃した駒は跳ね返る）。0 になったら取り（盾・カウンターは付かない）
         if (target.IsGiant && !HitGiant(target)) return false;
         // カウンター：取りを 1 回だけ無効にし（盾より先。盾は残る）、攻撃した駒への反撃を予定する（行動の終わりの ResolveCounters）。
@@ -808,10 +836,29 @@ public static partial class BoardSimulator
         s.counters = null;
     }
 
-    // 消失（爆発・隕石・炎上など）：盤から取り除く。巨人は 1 回の攻撃（HP -1。0 になったら消える）。消えたら true
+    // 防壁がプレイヤーの攻撃を受けた（討伐任務。GameSystem.HitWall と同じ。Prototype の effects.js の hitWall）：何で当てても 1 回につき
+    // WallRules.DamagePerHit だけ HP が減り、0 になったら崩れて盤から消える（持ち駒にもエナジーにもならない）。崩れたら true
+    static bool HitWall(BoardSnapshot s, SnapshotPiece w)
+    {
+        if (!s.Contains(w) || !w.IsWallPiece) return false;
+        if (w.hp <= 0) w.hp = WallRules.MaxHp;
+        w.hp = System.Math.Max(0, w.hp - WallRules.DamagePerHit);
+        if (w.hp > 0) return false;
+        Kill(s, w);
+        return true;
+    }
+
+    // 消失（爆発・隕石・炎上など）：盤から取り除く。巨人は 1 回の攻撃（HP -1。0 になったら消える）。消えたら true。
+    // 討伐任務：防壁は HP が減り（消えたかは返さない）、防壁に守られた駒は消えない
     static bool Vanish(BoardSnapshot s, SnapshotPiece p)
     {
         if (!s.Contains(p)) return false;
+        if (p.IsWallPiece)
+        {
+            HitWall(s, p);
+            return false;
+        }
+        if (s.IsUntouchable(p)) return false;
         if (p.IsGiant && !HitGiant(p)) return false;
         return Kill(s, p);
     }

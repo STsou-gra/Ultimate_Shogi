@@ -35,12 +35,20 @@ public static class PieceRules
 
     // ボスの手下（討伐任務。ボスの席＝後手の駒。Prototype の駒の定義の minion）：ボスの攻撃は当たらず、ボスの AI と一緒に時間で動く。
     // プレイヤーの駒で取れる・魔法や爆発で倒せる（持ち駒にもエナジーにもならない）。自分では動けない・成らない
+    // 小赤鬼（赤鬼王）・軍歩兵・軍銃兵・防壁（大将軍）。動き方は MinionRules.PatternOf
     public static bool IsMinion(PieceType type)
     {
-        return type == PieceType.Kooni;
+        return type == PieceType.Kooni || type == PieceType.GunFu || type == PieceType.GunJu || type == PieceType.Bouheki;
     }
 
-    // 成れる駒か（王将・金将・火薬・狙撃手・鳥・巨人・小赤鬼は成らない）
+    // 防壁（討伐任務の障害物。Prototype の駒の定義の wall。WallRules）：プレイヤーの攻撃は何で当てても 1 回につき HP が 1 減り、0 で崩れる。
+    // 駒が入ろうとすると攻撃になって跳ね返る。同じ筋で防壁より奥にいるボスの席の駒は、防壁が残っている間プレイヤーの攻撃を受けない（WallRules.IsShielded）
+    public static bool IsWallPiece(PieceType type)
+    {
+        return type == PieceType.Bouheki;
+    }
+
+    // 成れる駒か（王将・金将・火薬・狙撃手・鳥・巨人と、ボスの席の駒（小赤鬼・軍歩兵・軍銃兵・防壁）は成らない）
     public static bool CanPromote(PieceType type)
     {
         switch (type)
@@ -52,13 +60,16 @@ public static class PieceRules
             case PieceType.Bird:
             case PieceType.Giant:
             case PieceType.Kooni:
+            case PieceType.GunFu:
+            case PieceType.GunJu:
+            case PieceType.Bouheki:
                 return false;
             default:
                 return true;
         }
     }
 
-    // 取ったときに持ち駒になるか（王将は持ち駒の枠がない。火薬・小赤鬼は Prototype の capturable: false）
+    // 取ったときに持ち駒になるか（王将は持ち駒の枠がない。火薬とボスの席の駒は Prototype の capturable: false）
     public static bool GoesToHand(PieceType type)
     {
         return type != PieceType.King && type != PieceType.Gunpowder && !IsMinion(type);

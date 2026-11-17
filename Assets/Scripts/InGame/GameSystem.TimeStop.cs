@@ -552,6 +552,14 @@ public partial class GameSystem
                 return;
             }
 
+            case TimeStopKind.Wall:
+                // 討伐任務：防壁への攻撃（先に崩れていれば何もしない）
+                if (!IsOnBoard(e.Target)) return;
+                tl.MarkHit(Vector2Int.zero);
+                HitWall(e.Target, e.Reason);
+                tl.Wait(0.08f);
+                return;
+
             case TimeStopKind.Boss:
                 // 討伐任務：時間停止中にボスへ与えたダメージ
                 tl.MarkHit(Vector2Int.zero);

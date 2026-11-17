@@ -28,12 +28,14 @@ public static partial class BoardSimulator
         foreach (SnapshotPiece p in new List<SnapshotPiece>(s.pieces)) s.Remove(p);
         s.mode = GameModes.BossRaid.Id;
         s.ruleset = def.RulesetId;
+        s.raid = new RaidState { active = true }; // 駒の番号（serial）は、ここから作った順に 1 から振る（編成 → ボスの席の初期配置）
         foreach (RaidPlacement f in formation.pieces)
         {
             s.Place(new SnapshotPiece { type = f.type, owner = (int)PlayerType.Player1, x = f.x, y = f.y, initial = true });
         }
         s.boss = BossState.Create(def);
-        s.raid = new RaidState { active = true };
+        // ボスの席の初期配置の駒（大将軍の陣）。軍銃兵は置いたときに照準を選ぶ（対局の乱数）
+        BossEngine<SnapshotPiece>.PlaceEnemies(new SnapshotBossHost(s), def);
         s.recipes.Clear();
         foreach (RaidForgeOption r in RaidRules.ForgeRecipes(formation)) s.recipes.Add(new SnapshotRecipe { piece = r.Type, cost = r.Cost });
         if (s.Mode.TranscendentUnlockedFromStart) s.players[(int)PlayerType.Player1].transcendentUnlocked = true;
@@ -89,6 +91,7 @@ public static partial class BoardSimulator
         public bool HasShield(SnapshotPiece p) => p.shield;
         public bool IsUndead(SnapshotPiece p) => p.undead;
         public int HpOf(SnapshotPiece p) => p.hp;
+        public int SerialOf(SnapshotPiece p) => p.serial;
         public MinionData GetMinion(SnapshotPiece p) => p.Minion;
         public void SetMinion(SnapshotPiece p, MinionData d) => p.Minion = d;
 
@@ -115,6 +118,7 @@ public static partial class BoardSimulator
         public SnapshotPiece SpawnMinion(PieceType type, int x, int y)
         {
             SnapshotPiece p = new SnapshotPiece { type = type, owner = (int)PlayerType.Player2, x = x, y = y };
+            if (p.IsWallPiece) p.hp = WallRules.MaxHp;
             s.Place(p);
             return p;
         }
@@ -222,7 +226,8 @@ public static partial class BoardSimulator
     // 討伐任務の勝敗（RaidResults.Of）
     public static RaidOutcome RaidOutcomeOf(BoardSnapshot s)
     {
-        return RaidResults.Of(s.boss, s.raid, s.KingCount(PlayerType.Player1) > 0);
+        int left = s.HasBoss ? BossEngine<SnapshotPiece>.RequiredMinionsLeft(new SnapshotBossHost(s)) : 0;
+        return RaidResults.Of(s.boss, s.raid, s.KingCount(PlayerType.Player1) > 0, left);
     }
 
     // 討伐任務の勝敗が決まっていれば終局にする（先手の勝ち＝討伐成功 ／ 後手の勝ち＝討伐失敗）。終わったら true
@@ -322,12 +327,14 @@ public static partial class BoardSimulator
             }
             int fromX = p.x;
             bool boss = s.BossAt(pick.x, pick.y);
+            SnapshotPiece at = s.At(pick.x, pick.y);
+            bool wall = at != null && at.owner != p.owner && at.IsWallPiece; // 防壁への攻撃（跳ね返る）も移動として数える
             bool? res = Step(s, p, pick.x, pick.y, false);
-            // ボスへの攻撃（跳ね返る）も移動として数え、攻撃したマスが敵陣なら成る
-            if (s.Contains(p) && (res == true || (res == null && boss)))
+            // ボス・防壁への攻撃（跳ね返る）も移動として数え、攻撃したマスが敵陣なら成る
+            if (s.Contains(p) && (res == true || (res == null && (boss || wall))))
             {
                 p.moveCount++;
-                if (CanPromote(p, fromX, boss ? pick.x : p.x)) p.promoted = true;
+                if (CanPromote(p, fromX, boss || wall ? pick.x : p.x)) p.promoted = true;
             }
             ResolveCounters(s);
         }

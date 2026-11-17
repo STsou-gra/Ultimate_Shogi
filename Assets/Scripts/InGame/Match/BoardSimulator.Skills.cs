@@ -169,6 +169,7 @@ public static partial class BoardSimulator
         if (!BoardCells.InBounds(x, y) || s.IsBroken(x, y)) return false;
         if (s.BossAt(x, y)) return true; // 討伐任務：ボスのマスにも跳べる（攻撃して跳ね返る）
         SnapshotPiece t = s.At(x, y);
+        if (t != null && t.owner != p.owner && !PieceRules.IsExplosive(t.type) && s.IsShieldedByWall(x, y)) return false; // 防壁に守られた駒のマスには入れない
         return t == null || t.owner != p.owner || PieceRules.IsExplosive(t.type);
     }
 
@@ -198,10 +199,11 @@ public static partial class BoardSimulator
                 path.Add(new MatchSquare(x, y));
                 break;
             }
+            if (s.IsShieldedByWall(x, y)) break; // 防壁に守られた駒の手前で止まる（討伐任務）
             if (q.owner != p.owner)
             {
                 path.Add(new MatchSquare(x, y));
-                if (pierce) continue;
+                if (pierce && !q.IsWallPiece) continue; // 防壁は貫けない（攻撃して跳ね返る）
                 break;
             }
             break;
@@ -246,7 +248,8 @@ public static partial class BoardSimulator
                 SnapshotPiece q = s.At(x, y);
                 if (q != null)
                 {
-                    if (q.owner != p.owner || PieceRules.IsExplosive(q.type)) beam.Hit = q;
+                    // 防壁に守られた駒には当たらない（光線はそこで止まる）
+                    if ((q.owner != p.owner || PieceRules.IsExplosive(q.type)) && !s.IsShieldedByWall(x, y)) beam.Hit = q;
                     break;
                 }
                 x += d.x;
@@ -298,6 +301,11 @@ public static partial class BoardSimulator
             return null;
         }
         SnapshotPiece target = s.At(tx, ty);
+        if (target != null && target != p && target.owner != p.owner && target.IsWallPiece)
+        {
+            HitWall(s, target); // 討伐任務：防壁へ入ろうとした → 防壁を攻撃して（HP -1）、元のマスに残る
+            return null;
+        }
         if (target != null && target != p)
         {
             if (PieceRules.IsExplosive(target.type))
@@ -323,6 +331,12 @@ public static partial class BoardSimulator
             Capture(s, q, by.Owner, by); // 巨人は押せない：1 回の攻撃になる
             return;
         }
+        if (q.IsWallPiece)
+        {
+            HitWall(s, q); // 防壁は押せない：HP が減る
+            return;
+        }
+        if (s.IsShieldedByWall(q.x, q.y)) return; // 防壁に守られた駒には効かない
         int tx = q.x + dx, ty = q.y + dy;
         if (!BoardCells.InBounds(tx, ty))
         {
@@ -669,11 +683,13 @@ public static partial class BoardSimulator
             {
                 List<MatchSquare> cells = Band(t0.x, t0.y, false);
                 List<SnapshotPiece> victims = PiecesIn(s, cells); // 巨人は 1 回（生き残れば、そのマスは壊れない：BreakCell）
+                // 討伐任務：撃った時点で防壁に守られていた駒のマスは壊さない（防壁は HP が 1 減り、守られた駒は消えない：Vanish）
+                List<MatchSquare> shielded = cells.FindAll(c => s.IsShieldedByWall(c.x, c.y));
                 foreach (SnapshotPiece q in victims) Vanish(s, q);
                 EffectHitBoss(s, cells); // 討伐任務：帯がボスに重なれば当たる
                 foreach (MatchSquare sq in cells)
                 {
-                    if (!s.BossAt(sq.x, sq.y)) BreakCell(s, sq.x, sq.y); // ボスのいるマスは壊さない
+                    if (!s.BossAt(sq.x, sq.y) && !shielded.Contains(sq)) BreakCell(s, sq.x, sq.y); // ボスのいるマスは壊さない
                 }
                 break;
             }
@@ -873,6 +889,7 @@ public static partial class BoardSimulator
         SnapshotCell c = s.Cell(x, y);
         if (c == null || c.IsBroken) return;
         SnapshotPiece q = s.At(x, y);
+        if (q != null && (q.IsWallPiece || s.IsShieldedByWall(x, y))) return; // 討伐任務：防壁・防壁に守られた駒のマスは壊さない
         if (q != null && q.IsGiant) return; // 巨人のマスは壊れない（巨人への攻撃は呼び出し側で 1 回だけ当てる：破壊砲・世界の終わり）
         c.state = CellState.Broken;
         c.burnUntil = -1;

@@ -137,7 +137,9 @@ public class TimeStopMove
 // 時間が動き出してから GameSystem.HitGiant で HP を減らす）。数値で保存しているので末尾に足していく
 // Boss：討伐任務のボスへのダメージ（BossHit が攻撃の種類、At が当たったマス。時間が動き出してから GameSystem.DamageBoss で与える。
 // Prototype の damage.js の deferBossDamage）
-public enum TimeStopKind { Capture, Explode, Vanish, Promote, Cell, Giant, Boss }
+// Wall：討伐任務の防壁への攻撃（Target が防壁、Reason が攻撃の名前。時間が動き出してから GameSystem.HitWall で HP を減らす。
+// Prototype の effects.js の hitWall の予定 { kind: 'wall' }）
+public enum TimeStopKind { Capture, Explode, Vanish, Promote, Cell, Giant, Boss, Wall }
 public enum TimeStopCellEffect { Trap, Break, Burn, Wall }
 
 // 時間停止の予定 1 つ（Prototype の pending の 1 件）

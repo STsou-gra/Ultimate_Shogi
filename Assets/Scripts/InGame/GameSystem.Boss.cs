@@ -32,7 +32,9 @@ public partial class GameSystem
     // (x, y) がボスのマスか（倒れたボスはどのマスも占めない）
     public bool BossAt(int x, int y) => match != null && match.BossAt(x, y);
     // 今の勝敗（討伐任務でなければ None）
-    public RaidOutcome RaidOutcomeNow => IsRaid ? RaidResults.Of(match.Boss, match.Raid, IsKingAlive(PlayerType.Player1)) : RaidOutcome.None;
+    public RaidOutcome RaidOutcomeNow => IsRaid ? RaidResults.Of(match.Boss, match.Raid, IsKingAlive(PlayerType.Player1), RequiredMinionsLeft) : RaidOutcome.None;
+    // ボスの勝ちの条件で、まだ盤上に残っていてはいけない手下の数（大将軍：軍歩兵・軍銃兵。赤鬼王は 0）
+    public int RequiredMinionsLeft => IsRaid && bossHost != null ? BossEngine<GamePiece>.RequiredMinionsLeft(bossHost) : 0;
     // 王将があと何回ボスの攻撃に耐えられるか
     public int KingHitsLeft
     {
@@ -91,6 +93,7 @@ public partial class GameSystem
     {
         match.SetupRaid(def, formation);
         gameBoard.Boss = match.Boss;
+        gameBoard.Raid = match.Raid; // 駒の番号を、ここから作った順に振る（編成 → ボスの席の初期配置）
         bossHost = new BossHostImpl(this);
 
         List<PieceSpawnData> layout = new List<PieceSpawnData>();
@@ -99,6 +102,8 @@ public partial class GameSystem
             layout.Add(new PieceSpawnData { X = f.x, Y = f.y, type = f.type, player = PlayerType.Player1 });
         }
         gameBoard.UseLayout(layout);
+        // ボスの席の初期配置の駒（大将軍の陣：軍銃兵・防壁・軍歩兵）。軍銃兵は置いたときに照準を選ぶ（対局の乱数。Prototype の setupRaid）
+        BossEngine<GamePiece>.PlaceEnemies(bossHost, def);
 
         raidRecipes = BuildRaidRecipes(formation);
         if (player2 != null) player2.SetSkillDeck(EmptyDeck("Boss Seat Deck"));
@@ -184,6 +189,7 @@ public partial class GameSystem
         public bool HasShield(GamePiece p) => p.hasShield;
         public bool IsUndead(GamePiece p) => p.isUndead;
         public int HpOf(GamePiece p) => p.hp;
+        public int SerialOf(GamePiece p) => p.serial;
         public MinionData GetMinion(GamePiece p) => p.minion;
         public void SetMinion(GamePiece p, MinionData d) => p.minion = d;
 
@@ -260,7 +266,26 @@ public partial class GameSystem
                 Debug.Log($"[Boss] {boss}を討伐した！");
                 break;
             case BossEventType.MinionSpawned:
-                Debug.Log($"[Boss] ({e.At.x}, {e.At.y}) に小赤鬼が現れた");
+                Debug.Log($"[Boss] ({e.At.x}, {e.At.y}) に{(e.Piece is GamePiece mp ? PieceNames.Full(mp.type) : "手下")}が現れた");
+                break;
+            case BossEventType.GuardStart:
+                Debug.Log($"[Boss] {boss}：「{BossAttacks.NameOf(e.Attack)}」（{e.Sec:0} 秒間、{boss}へのダメージが 0）");
+                ShowSeatNotice(PlayerType.Player1, $"【{boss}】 「{BossAttacks.NameOf(e.Attack)}」！ {e.Sec:0} 秒間、{boss}への攻撃は効かない（兵・防壁は攻撃できる）");
+                break;
+            case BossEventType.Guarded:
+                Debug.Log($"[Boss] {boss}が攻撃を防いだ（{RaidRules.HitLabel(e.Source)}。0 ダメージ）");
+                break;
+            case BossEventType.Deployed:
+                Debug.Log($"[Boss] {boss}：「{BossAttacks.NameOf(e.Attack)}」（{(e.Cells != null ? e.Cells.Count : 0)} 体）");
+                break;
+            case BossEventType.GunnerShot:
+                Debug.Log($"[Boss] ({e.From.x}, {e.From.y}) の軍銃兵が ({e.At.x}, {e.At.y}) を撃った（{(e.Hits > 0 ? "命中" : "外れ")}）");
+                break;
+            case BossEventType.WallHit:
+                Debug.Log($"[Boss] ({e.At.x}, {e.At.y}) の防壁が{(string.IsNullOrEmpty(e.Text) ? "" : e.Text + "の")}攻撃を受けた（HP {e.Hp} / {e.MaxHp}）");
+                break;
+            case BossEventType.WallBroken:
+                Debug.Log($"[Boss] ({e.At.x}, {e.At.y}) の防壁が崩れた");
                 break;
         }
         BossEventRaised?.Invoke(e);
@@ -271,6 +296,44 @@ public partial class GameSystem
     {
         if (!IsRaid || timeStop != null || bossHost == null) return;
         BossEngine<GamePiece>.Tick(bossHost);
+    }
+
+    // ------------------------------------------------------------
+    //  防壁（Prototype の effects.js の hitWall・board.js の isShieldedByWall）。BoardSimulator の HitWall・BoardSnapshot.IsShieldedByWall と同じ
+    // ------------------------------------------------------------
+
+    // 防壁が崩れたときの消失の理由（PieceDefeat.Reason。演出で見分けるのに使う）
+    public const string ReasonWallBroken = "防壁の崩壊";
+
+    // 防壁の後ろの守り：(x, y) のボスの席の駒が、同じ筋で手前にある防壁に守られているか（討伐任務でなければ false）
+    public bool IsShieldedByWall(int x, int y) => IsRaid && gameBoard.IsShieldedByWall(x, y);
+
+    // 駒 q がプレイヤーの攻撃の当たらない駒か（盤上にいて、防壁に守られている）
+    bool IsUntouchable(GamePiece q)
+    {
+        return q != null && IsRaid && gameBoard.GetPieceAt(q.X, q.Y) == q && gameBoard.IsShieldedByWall(q.X, q.Y);
+    }
+
+    // 防壁 w がプレイヤーの攻撃を受けた：何で当てても 1 回につき WallRules.DamagePerHit だけ HP が減り、0 になったら崩れて盤から消える
+    // （持ち駒にもエナジーにもならない）。by は攻撃の名前（演出・ログ用）。崩れたら true。
+    // 時間停止中は予定（TimeStopKind.Wall）にして、時間が動き出してから HP を減らす
+    public bool HitWall(GamePiece w, string by)
+    {
+        if (w == null || !IsOnBoard(w) || !PieceRules.IsWallPiece(w.type)) return false;
+        MatchSquare at = new MatchSquare(w.X, w.Y);
+        if (timeStop != null)
+        {
+            AddPending(new TimeStopPending { Kind = TimeStopKind.Wall, Target = w, TargetType = w.type, Reason = by ?? "", At = new Vector2Int(w.X, w.Y) }, "防壁に攻撃");
+            return false;
+        }
+        w.hp = Mathf.Max(0, (w.hp > 0 ? w.hp : WallRules.MaxHp) - WallRules.DamagePerHit);
+        float delay = ActiveSpecial != null ? Mathf.Max(0f, ActiveSpecial.HitTime) : Mathf.Max(captureFxDelay, enterCellFxDelay);
+        pendingActionFxTime = Mathf.Max(pendingActionFxTime, delay + 0.3f);
+        OnBossEvent(new BossEvent { Type = BossEventType.WallHit, Piece = w, At = at, Hp = w.hp, MaxHp = WallRules.MaxHp, Text = by, Sec = delay });
+        if (w.hp > 0) return false;
+        OnBossEvent(new BossEvent { Type = BossEventType.WallBroken, Piece = w, At = at, Sec = delay });
+        RemoveDefeatedPiece(new PieceDefeat(w, DefeatKind.Vanish, null, ReasonWallBroken));
+        return true;
     }
 
     // ------------------------------------------------------------

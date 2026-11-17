@@ -48,10 +48,11 @@ public static class SpecialKit
                 path.Add(new Vector2Int(x, y));                   // 火薬に突っ込む → 爆発
                 break;
             }
+            if (ctx.IsShieldedByWall(x, y)) break;                // 防壁に守られた駒の手前で止まる（討伐任務）
             if (q.player != p.player)
             {
                 path.Add(new Vector2Int(x, y));
-                if (pierce) continue;
+                if (pierce && !SpecialContext.IsWallPiece(q)) continue; // 防壁は貫けない（攻撃して跳ね返る）
                 break;
             }
             break;                                                // 味方の駒の手前で止まる
@@ -106,7 +107,8 @@ public static class SpecialKit
                 }
                 if (q != null)
                 {
-                    if (q.player != p.player || SpecialContext.IsExplosive(q)) beam.Hit = q;
+                    // 防壁に守られた駒には当たらない（光線はそこで止まる）
+                    if ((q.player != p.player || SpecialContext.IsExplosive(q)) && !ctx.IsShieldedByWall(x, y)) beam.Hit = q;
                     break;
                 }
                 x += d.x;

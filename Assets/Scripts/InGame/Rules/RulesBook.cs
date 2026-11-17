@@ -120,7 +120,7 @@ public static class RulesBook
     {
         RulesPage p = new RulesPage("討伐任務");
         p.Heading("討伐任務（ボスバトル）")
-         .Text("対戦モードの「討伐任務」で遊ぶ。プレイヤー 1 人（先手・盤の手前）でボスに挑み、ボスの HP を 0 にすれば討伐成功（クリアタイムが出る）。戦闘型は合戦将棋型（手番なし）。")
+         .Text("タイトル画面の「討伐任務」で遊ぶ。プレイヤー 1 人（先手・盤の手前）でボスに挑み、ボスの HP を 0 にすれば討伐成功（クリアタイムが出る。大将軍は兵の全滅も必要）。戦闘型は合戦将棋型（手番なし）。")
          .Text("流れ：ボス選択 → 編成（駒の配置）→ 錬成駒 → 魔法スキル → 対局 → 結果（「もう一度」「ボス選択へ」「棋譜を保存」「タイトルへ」）。");
 
         p.Heading("編成");
@@ -147,7 +147,7 @@ public static class RulesBook
          .Text($"必殺技 {RaidRules.BossDamage(null, BossHit.OfSpecial(PieceType.Pawn))}・爆発 {RaidRules.BossDamage(null, BossHit.Explosion)}・狙撃 {RaidRules.BossDamage(null, BossHit.Snipe)}・ファランクスの槍 {RaidRules.BossDamage(null, BossHit.Phalanx)}", 2)
          .Text($"魔法 … 剣 {RaidRules.MagicBossDamage("Sword")}・ボム {RaidRules.MagicBossDamage("Bomb")}・隕石 {RaidRules.MagicBossDamage("Meteor")}・破壊砲 {RaidRules.MagicBossDamage("Cannon")}（1 回の技・魔法・爆発につき 1 回だけ当たる）", 2)
          .Text($"エナジー：1 秒ごとに +{BattleRulesets.Kassen.EnergyPerSec}。盤上の駒を動かす・必殺技を使うたびに +{GameModes.BossRaid.MoveEnergy}（ボスへの攻撃も含む）。")
-         .Text("ボスの攻撃：範囲を予告の秒数だけ前から赤く光らせ、技の名前と残り秒数を出す。範囲は予告の始めに決まり、そのあと動かない。")
+         .Text("ボスの攻撃：範囲を予告の秒数だけ前から赤く光らせ、技の名前と残り秒数を出す。範囲は予告の始めに決まり、そのあと動かない（弓の照準だけは、固まるまで駒を追う）。")
          .Text("当たった駒 … 盾があれば盾が割れて残る／火薬は爆発する（ボスにも当たる）／巨人は HP -1／それ以外は撃破（盤から消え、駒の価値ぶんのエナジーを得る。持ち駒にはならない）", 2)
          .Text("王将はボスの攻撃に 2 回まで耐え、3 回目でゲームオーバー（回数はボスごと。盾があれば盾が先に割れる）。王将が取られる・消失するのも負け。", 2)
          .Text($"停止世界：行動回数の上限がなく、{BattleRulesets.Kassen.Durations.TimeStopSec:0} 秒のあいだ何回でも行動できる。その間ボス・手下は止まり、ボスへのダメージは時間が動き出してから入る。")
@@ -169,9 +169,48 @@ public static class RulesBook
             {
                 BossAttackDef a = BossAttacks.ById(entry.Id);
                 if (a == null) continue;
-                string tail = a.IsLasting ? $"予告 {a.TelegraphSec:0} 秒（範囲は出ず、ボスが赤く光る）→ {a.DurationSec:0} 秒間、{a.StepSec:0} 秒ごとに 1 マス動く（次の行き先を出す）→ {a.RestSec:0} 秒休む"
+                string tail = a.Invulnerable ? $"予告なしですぐ構える。{a.DurationSec:0} 秒間、青いバリアが出て「防いだ！」になる。攻撃した駒は跳ね返る"
+                    : a.IsLasting ? $"予告 {a.TelegraphSec:0} 秒（範囲は出ず、ボスが赤く光る）→ {a.DurationSec:0} 秒間、{a.StepSec:0} 秒ごとに 1 マス動く（次の行き先を出す）→ {a.RestSec:0} 秒休む"
+                    : a.Retarget ? $"予告 {a.TelegraphSec:0} 秒。照準は黄色の間は駒を追い、着弾の {a.LockSecBefore:0} 秒前に赤く固まる。追っていた駒が消えたら選び直す"
+                    : a.Harmless ? $"予告 {a.TelegraphSec:0} 秒（青く光る。駒には当たらない）"
                     : $"予告 {a.TelegraphSec:0} 秒";
-                p.Text($"{a.Name}：{Clean(a.Description)}（{tail}）", 2);
+                string note = entry.NoRepeat ? "。2 回続けては使わない" : "";
+                p.Text($"{a.Name}（重み {entry.Weight}{note}）：{Clean(a.Description)}（{tail}）", 2);
+            }
+            if (def.HasFixedFacing) p.Text("動かず、向きはいつもプレイヤー側（王将が横にいても向きを変えない）。", 2);
+            if (def.Enemies != null && def.Enemies.Length > 0)
+            {
+                // 陣（ボスの席の初期配置）：種類ごとの数
+                List<string> army = new List<string>();
+                foreach (PieceType t in new[] { PieceType.GunJu, PieceType.Bouheki, PieceType.GunFu, PieceType.Kooni })
+                {
+                    int n = System.Array.FindAll(def.Enemies, e => e.Type == t).Length;
+                    if (n > 0) army.Add($"{PieceNames.Full(t)} {n}");
+                }
+                p.Text($"陣（対局の始めに並ぶボスの席の駒）… {string.Join("・", army)}。ボスの攻撃はボスの席の駒に当たらない。", 2);
+                if (System.Array.Exists(def.Enemies, e => e.Type == PieceType.GunFu) || System.Array.Exists(def.Attacks, e => e.Id == BossAttacks.Deploy.Id))
+                {
+                    p.Text($"軍歩兵：{MinionRules.StepSec:0} 秒ごとに前（プレイヤー側）へ 1 マス進む（{MinionRules.WarnSec:0} 秒前から次のマスの矢印が出る）。前のマスの駒は攻撃を受け（ボスの攻撃と同じ扱い）、" +
+                           "消えたら進む。ボスの席の駒・ボス・破壊マス・壁に塞がれたら進まず、いちばん手前の段で止まる。成らない。", 2);
+                }
+                if (System.Array.Exists(def.Enemies, e => e.Type == PieceType.GunJu))
+                {
+                    p.Text($"軍銃兵：動かない。{MinionRules.GunnerIntervalSec:0} 秒ごとに、プレイヤーの駒を 1 枚選んで照準で追い（撃つ {MinionRules.GunnerLockSecBefore:0} 秒前に赤く固まる）、" +
+                           "照準のマスを撃つ（ボスの攻撃と同じ扱い。防壁や駒にさえぎられない）。1 回当てれば倒せる。", 2);
+                }
+                if (System.Array.Exists(def.Enemies, e => e.Type == PieceType.Bouheki))
+                {
+                    p.Text($"防壁：動かない障害物で HP {WallRules.MaxHp}（数字で表示）。何で攻撃しても {WallRules.DamagePerHit} 減り、0 で崩れる。入ろうとした駒は跳ね返り" +
+                           "（移動回数・移動のエナジーは数える）、走り駒は止まる。", 2)
+                     .Text("防壁が残っている間、同じ筋で防壁より奥にいる兵は、移動・跳躍の着地・狙撃・魔法・爆発・光線・押し出しのどれも受けない。その筋の防壁を崩せば攻撃できる。", 2);
+                }
+                p.Text("兵・防壁は取る・狙撃・魔法・爆発・ファランクスで倒せる（持ち駒にもエナジーにもならない）。", 2);
+            }
+            if (def.MinionsOutliveBoss)
+            {
+                List<string> need = new List<string>();
+                foreach (PieceType t in def.ClearRequireNoMinions) need.Add(PieceNames.Full(t));
+                p.Text($"勝ち：HP 0 に加えて、{string.Join("・", need)}を盤上から全滅させる（防壁は残っていてよい）。{def.Name}を倒すと攻撃は止まるが、残った兵は動き・撃ち続ける。", 2);
             }
             if (System.Array.Exists(def.Attacks, e => e.Id == BossAttacks.Summon.Id))
             {
@@ -187,7 +226,7 @@ public static class RulesBook
         SeatKeys k = SeatKeys.RaidSolo("討伐任務");
         p.Heading("操作")
          .Text($"キーボード全体を使う（CPU と対戦の合戦将棋型と同じ）。錬成のキーは {SeatKeys.Label(k.Forge, 0)}〜{SeatKeys.Label(k.Forge, k.Forge.Length - 1)}（画面右上の錬成パネルの順）。")
-         .Text("画面の左上にボスのパネル（HP・今の行動と残り秒数・王将の耐久・攻撃の一覧）。")
+         .Text("画面の左上にボスのパネル（HP・今の行動と残り秒数・王将の耐久・攻撃の一覧・大将軍は残りの兵の数）。")
          .Text("棋譜・局面：ボスと編成も記録する。棋譜を再生すると同じ戦いになる（行動ごとに盤面を照らし合わせる）。");
         return p;
     }
@@ -630,8 +669,12 @@ public static class RulesBook
     static RulesPage ControlsPage(RulesSources src)
     {
         RulesPage p = new RulesPage("操作");
+        p.Heading("タイトル画面")
+         .Text("遊ぶモードを選ぶ：「通常対局」（対戦モードの画面へ）／「討伐任務」（ボスバトル。ボス選択の画面へ。「討伐任務」のページ）。← → で選んで Enter（Space）で決定、マウスでも選べる。")
+         .Text("下のボタン：「ルール」（この説明。Tab キーでも開く）・「棋譜を読み込んで再生」（棋譜のファイルを選んで、最初から再生する）", 2)
+         .Text("対戦モード・ボス選択の画面の「◀ タイトルに戻る」（Esc）で、タイトル画面へ戻る。", 2);
         p.Heading("対戦モード")
-         .Text("タイトルの「ゲームスタート」で選ぶ：「2人で対戦」（1 台の画面で交代に操作）／「CPU と対戦」（自分が先手か後手か・CPU の強さを選ぶ）／「討伐任務」（ボスバトル。「討伐任務」のページ）");
+         .Text("タイトル画面の「通常対局」で選ぶ：「2人で対戦」（1 台の画面で交代に操作）／「CPU と対戦」（自分が先手か後手か・CPU の強さを選ぶ）");
         for (int lv = CpuLevels.Min; lv <= CpuLevels.Max; lv++) p.Text($"{CpuLevels.Label(lv)}：{CpuLevels.Note(lv)}", 2);
         p.Text("CPU と対戦では、魔法スキルの編成は自分の分だけ（CPU は自分で選ぶ）。盤は回らず、いつも自分が手前。CPU の手番は操作できない（考えている間も画面は動く）");
         if (src.CpuSide.HasValue)

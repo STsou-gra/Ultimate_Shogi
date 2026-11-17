@@ -53,7 +53,7 @@ namespace UnityEngine
     }
 }
 
-public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn, Gunpowder, Sniper, Bird, Giant, Kooni }
+public enum PieceType { King, Rook, Bishop, GoldGeneral, SilverGeneral, Knight, Lance, Pawn, Gunpowder, Sniper, Bird, Giant, Kooni, GunFu, GunJu, Bouheki }
 public enum PlayerType { Player1, Player2 }
 // MatchSnapshot.cs が使う列挙（本体は Match/TimeStopState.cs。Unity の型に依存するので複製している。値を変えたらこちらも合わせる。DefeatKind は MatchState.cs をそのまま使う）
 
@@ -107,6 +107,17 @@ public class GameBoard
     public TimeStopState TimeStop { get; set; }
     public BossState Boss { get; set; }
     public bool BossAt(int x, int y) => Boss != null && Boss.Covers(x, y);
+    // 本体の GameBoard.IsShieldedByWall・IsShieldedTarget と同じ（防壁に守られた相手の駒のマスには入れない）
+    public bool IsShieldedByWall(int x, int y)
+    {
+        if (Boss == null) return false;
+        return WallRules.IsShielded((px, py) => { GamePiece q = GetPieceAt(px, py); return q != null ? q.type : (PieceType?)null; }, x, y);
+    }
+    public bool IsShieldedTarget(GamePiece mover, int x, int y)
+    {
+        GamePiece target = GetPieceAt(x, y);
+        return target != null && mover != null && target.player != mover.player && !PieceRules.Detonates(mover, target) && IsShieldedByWall(x, y);
+    }
     public bool PathCrossesBoss(int fromX, int fromY, int toX, int toY)
     {
         if (Boss == null || !Boss.IsAlive) return false;
