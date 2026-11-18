@@ -37,6 +37,13 @@ public class TranscendentStatusView : MonoBehaviour
     private RectTransform panel;      // 背景（文字の大きさに合わせる）
     private TextMeshProUGUI label;
     private string shownText;
+    private readonly Vector3[] corners = new Vector3[4]; // ボタンの四隅（毎フレーム使い回す）
+
+    // 今の表示の元になった値（変わったときだけ StatusText を作り直す。毎フレームの GC を避ける）
+    private bool statusShown;
+    private bool shownUsed;
+    private bool shownUnlocked;
+    private TranscendentProgress shownProgress;
 
     void Start()
     {
@@ -149,31 +156,47 @@ public class TranscendentStatusView : MonoBehaviour
         if (panel.gameObject.activeSelf != show) panel.gameObject.SetActive(show);
         if (!show) return;
 
-        string text = StatusText(current.PlayerType);
-        if (text != shownText)
+        // 文言の元になる値（使用済み → 解放済み → 解放条件の達成状況 の順に、StatusText と同じ優先で調べる）
+        PlayerType owner = current.PlayerType;
+        bool used = gameSystem.IsTranscendentUsed(owner);
+        bool unlocked = !used && gameSystem.IsTranscendentUnlocked(owner);
+        TranscendentProgress progress = used || unlocked ? default : gameSystem.GetTranscendentProgress(owner);
+        if (!statusShown || used != shownUsed || unlocked != shownUnlocked || !SameProgress(progress, shownProgress))
         {
-            shownText = text;
-            label.text = text;
-            Vector2 pref = label.GetPreferredValues(text, maxWidth - 16f, 0f);
-            panel.sizeDelta = new Vector2(Mathf.Min(maxWidth, pref.x + 16f), pref.y + 8f);
+            statusShown = true;
+            shownUsed = used;
+            shownUnlocked = unlocked;
+            shownProgress = progress;
+            string text = StatusText(used, unlocked, progress);
+            if (text != shownText)
+            {
+                shownText = text;
+                label.text = text;
+                Vector2 pref = label.GetPreferredValues(text, maxWidth - 16f, 0f);
+                panel.sizeDelta = new Vector2(Mathf.Min(maxWidth, pref.x + 16f), pref.y + 8f);
+            }
         }
 
         // ボタンの下端の中央から gap だけ下（画面の下にはみ出すなら、はみ出さないところまで上げる）
-        Vector3[] corners = new Vector3[4];
         buttonRect.GetWorldCorners(corners);
         Vector3 bottom = (corners[0] + corners[3]) * 0.5f;
         Vector2 local = canvasRect.InverseTransformPoint(bottom);
         float y = local.y - gap;
         float minY = canvasRect.rect.yMin + 4f + panel.sizeDelta.y;
-        panel.anchoredPosition = new Vector2(local.x, Mathf.Max(y, minY));
+        Vector2 pos = new Vector2(local.x, Mathf.Max(y, minY));
+        if (panel.anchoredPosition != pos) panel.anchoredPosition = pos; // 変わったときだけ書く
     }
 
-    // 手番のプレイヤー owner の状況（Prototype の refreshUnlockStatus と同じ文言）
-    string StatusText(PlayerType owner)
+    static bool SameProgress(TranscendentProgress a, TranscendentProgress b)
     {
-        if (gameSystem.IsTranscendentUsed(owner)) return $"<color={OffColor}>超常魔法：使用済み</color>";
-        if (gameSystem.IsTranscendentUnlocked(owner)) return $"<color={RankColor}>★ 超常魔法：解放済み ★</color>";
-        TranscendentProgress p = gameSystem.GetTranscendentProgress(owner);
+        return a.Invaded == b.Invaded && a.Mine == b.Mine && a.Theirs == b.Theirs;
+    }
+
+    // 手番のプレイヤーの状況（Prototype の refreshUnlockStatus と同じ文言）
+    static string StatusText(bool used, bool unlocked, TranscendentProgress p)
+    {
+        if (used) return $"<color={OffColor}>超常魔法：使用済み</color>";
+        if (unlocked) return $"<color={RankColor}>★ 超常魔法：解放済み ★</color>";
         string invade = $"<color={(p.Invaded ? OnColor : OffColor)}>侵入 {(p.Invaded ? "○" : "×")}</color>";
         string count = $"<color={(p.MoreEnemies ? OnColor : OffColor)}>駒数 自分 {p.Mine} vs 相手 {p.Theirs}</color>";
         return $"<color={RankColor}>超常魔法の解放条件</color>\n{invade}　{count}";

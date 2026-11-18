@@ -202,7 +202,20 @@ public class SeatKeys
             case Key.Period: return ".";
             case Key.Slash: return "/";
             case Key.Semicolon: return ";";
-            default: return k.ToString();
+            default: return CachedName(k);
         }
+    }
+
+    // 上の一覧にないキーの表示名（k.ToString()）。ForgePanelView などが毎フレーム呼ぶので、キーごとに 1 回だけ作って使い回す
+    static readonly Dictionary<int, string> otherKeyNames = new Dictionary<int, string>();
+
+    static string CachedName(Key k)
+    {
+        if (!otherKeyNames.TryGetValue((int)k, out string name))
+        {
+            name = k.ToString();
+            otherKeyNames[(int)k] = name;
+        }
+        return name;
     }
 }
