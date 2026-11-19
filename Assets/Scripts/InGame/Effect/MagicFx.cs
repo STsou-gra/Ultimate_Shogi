@@ -1017,6 +1017,24 @@ public static partial class MagicSprites
     private static Sprite glow, arrow, tail, rock, spearGlow, spearFace;
     private static Sprite wingGlow, wingFace, birdWingGlow, birdWingFace;
 
+    // 対局の開始時に、演出で使う画像を先に作っておく（初めて使った瞬間に 1 ピクセルずつ計算して処理落ちするのを防ぐ。REFACTORING_PLAN A-5）。
+    // 各プロパティを一度読むだけなので、作るものと中身は初めて使ったときに作るものと同じ（隕石の岩の形は今までどおり UnityEngine.Random で決まる。
+    // 対局の乱数とは別）。作った画像は static に残るので、2 局目からは何もしない。
+    // raidBossId は討伐任務のボスの Id（基本対戦は null）。討伐任務のときだけボス・手下の画像も作る。タイトルの PieceShape は対象外
+    public static void Prewarm(string raidBossId)
+    {
+        // 魔法・駒の状態の演出（MagicFx.cs）
+        _ = Glow; _ = Arrow; _ = Tail; _ = Rock; _ = SpearGlow; _ = SpearFace;
+        _ = Square; _ = Shard; _ = CircleColored; _ = CircleWhite; _ = BarrierGlow; _ = BarrierFace;
+        _ = WingGlow; _ = WingFace; _ = BirdWingGlow; _ = BirdWingFace;
+        // 巨人の HP（MagicFx.Giant.cs）・爆弾（MagicFx.Normal.cs）・カウンター（MagicFx.Counter.cs）
+        _ = Heart; _ = Bomb; _ = CounterGlow; _ = CounterFace;
+        if (raidBossId == null) return;
+        // 討伐任務：ボスと武器・手下・照準・王将の盾・矢印（BossSprites.cs）
+        _ = BossSprite(raidBossId); _ = BossWeapon(raidBossId);
+        _ = Kooni; _ = GunFu; _ = GunJu; _ = Bouheki; _ = Reticle; _ = GuardRing; _ = BossArrow;
+    }
+
     // 光の粒（中心が白く外側が透明な円。幅 64px。Prototype の TEX.glow）
     public static Sprite Glow => glow != null ? glow : (glow = Make(64, 32f * PX, (x, y) =>
     {

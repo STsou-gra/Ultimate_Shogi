@@ -310,6 +310,29 @@ public partial class GameSystem : MonoBehaviour
     }
     public bool IsInTurn => currentState == GameState.Player1Turn || currentState == GameState.Player2Turn;
 
+    // DOTween の同時に動かせる Tween・Sequence の数（既定は 200・50）。演出が重なって足りなくなると、対局中に配列を広げる処理と
+    // 「Max Tweens reached」の警告が走るので、最初のシーンを読む前に広げておく（REFACTORING_PLAN A-5）。
+    // 目安：マスの崩落 1 マスで Sequence 1・Tween 6〜8、駒の爆散・カットインなどが重なると Tween 200 を超えうるので、その倍あまり。
+    // DOTweenSettings.asset は触らずコードで設定する。Init は最初の Tween で自動で行うものと同じ（設定ファイルを読む）
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    static void ConfigureTweenCapacity()
+    {
+        DG.Tweening.DOTween.Init();
+        DG.Tweening.DOTween.SetTweensCapacity(500, 125);
+    }
+
+    // 対局の開始時に演出の画像を先に作っておく（初めて使ったときの処理落ちを防ぐ。MagicSprites.Prewarm。2 局目からは何もしない）
+    static void PrewarmEffectSprites(BossDef raidBoss)
+    {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+#endif
+        MagicSprites.Prewarm(raidBoss != null ? raidBoss.Id : null);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        Debug.Log($"演出の画像の事前準備: {watch.ElapsedMilliseconds} ms");
+#endif
+    }
+
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     // シーンを離れる：partial ごとの後片付け
     void OnDestroy()
@@ -429,6 +452,7 @@ public partial class GameSystem : MonoBehaviour
         RaidFormation raidFormation;
         GameModeDef mode = DecideStartMode(out raidBoss, out raidFormation);
         if (raidBoss != null) ruleset = BattleRulesets.ById(raidBoss.RulesetId) ?? BattleRulesets.Kassen;
+        PrewarmEffectSprites(raidBoss);
         match = new MatchState(MatchConfig.FirstPlayer, seed, ruleset, mode);
         // エナジーの増減の「+N エナジー」（BasicMoveFx は Start で作られる。対局の準備の前に作られていなければ探す）
         match.Energy.Changed += (player, value, delta) =>
