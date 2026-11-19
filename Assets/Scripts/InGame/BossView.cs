@@ -38,6 +38,9 @@ public class BossView : MonoBehaviour
     private SpriteRenderer clubSr;
     private readonly SpriteRenderer[] cellSr = new SpriteRenderer[BoardCells.Size * BoardCells.Size];
     private TextMeshPro label;        // 予告の「技の名前 ＋ 残り秒数」
+    private BossAttackDef labelAtk;   // label に今書いてある文字列の元（技・行動中か・残り秒）。同じなら作り直さない
+    private bool labelActing;
+    private int labelSec = -1;
     private SpriteRenderer stepArrow; // 暴れ回りの次の 1 歩
     private readonly List<SpriteRenderer> minionArrows = new List<SpriteRenderer>();
     private readonly List<SpriteRenderer> reticles = new List<SpriteRenderer>();   // 弓・軍銃兵の照準
@@ -75,6 +78,23 @@ public class BossView : MonoBehaviour
     private TextMeshProUGUI kingText;
     private TextMeshProUGUI listText;
     private float nextHudRefresh;
+
+    // RefreshHud の前回の値（同じなら文字列を作り直さない）。表示に使う値：
+    //  見出し：def（ボスの定義。名前・肩書き）
+    //  HP の文字・バー：hp・maxHp
+    //  状態：def（名前）・hp が 0 以下か・残りの兵・時間停止中か・phase・attack（技）・残り秒
+    //  王将：def（KingMaxHits）・raid.kingHits
+    //  攻撃の一覧：def・今の攻撃（hp > 0 で予告・行動中のときの attack。それ以外は null）・残りの兵（MinionsOutliveBoss のときだけ出す）
+    private bool hudShown;            // 一度でも書いたか（BuildHud で false に戻す）
+    private BossDef hudDef;
+    private int hudHp, hudMaxHp;
+    private bool hudDead, hudTimeStopped;
+    private int hudSoldiers, hudSecLeft;
+    private string hudPhase, hudAttack;
+    private int hudKingMax, hudKingHits;
+    private string hudListCurrent;
+    private int hudListSoldiers;
+    private readonly StringBuilder hudBuilder = new StringBuilder();
 
     void Start()
     {
@@ -166,6 +186,7 @@ public class BossView : MonoBehaviour
     void BuildHud()
     {
         canvas = RuntimeUi.CreateCanvas("BossHudCanvas", transform, hudSortingOrder);
+        hudShown = false;
         RectTransform rootRt = (RectTransform)canvas.transform;
         Image panel = RuntimeUi.CreatePanel("BossPanel", rootRt, PanelColor, false);
         panel.raycastTarget = false;
@@ -384,11 +405,11 @@ public class BossView : MonoBehaviour
     {
         bool alive = b.hp > 0;
         BossAttackDef atk = BossAttacks.ById(ai.attack);
-        string text = null;
+        bool show = false, acting = false;
         Vector3 at = bossPos;
         if (alive && ai.phase == BossAiState.Telegraph && atk != null)
         {
-            text = $"{atk.Name}  <size=140%>{secLeft}</size>";
+            show = true;
             if (ai.hasCells && ai.cells.Count > 0)
             {
                 Vector2 sum = Vector2.zero;
@@ -398,15 +419,23 @@ public class BossView : MonoBehaviour
         }
         else if (alive && ai.phase == BossAiState.Acting && atk != null)
         {
-            text = $"{atk.Name}中  <size=140%>{secLeft}</size>";
+            show = true;
+            acting = true;
         }
-        if (text == null)
+        if (!show)
         {
             label.gameObject.SetActive(false);
             return;
         }
         label.gameObject.SetActive(true);
-        label.text = text;
+        // 文字列は技・行動中か・残り秒が変わったときだけ作る（色と位置は毎フレーム）
+        if (atk != labelAtk || acting != labelActing || secLeft != labelSec)
+        {
+            labelAtk = atk;
+            labelActing = acting;
+            labelSec = secLeft;
+            label.text = acting ? $"{atk.Name}中  <size=140%>{secLeft}</size>" : $"{atk.Name}  <size=140%>{secLeft}</size>";
+        }
         label.color = Color.Lerp(Color.white, new Color(1f, 0.85f, 0.3f, 1f), pulse);
         label.transform.localPosition = new Vector3(Mathf.Clamp(at.x, -2.6f, 2.6f), at.y, -0.2f);
     }
@@ -630,47 +659,87 @@ public class BossView : MonoBehaviour
     {
         BossDef def = b.Def;
         string name = def != null ? def.Name : "ボス";
-        headerText.text = def != null && !string.IsNullOrEmpty(def.Title) ? $"【ボス】 {name}　<size=70%>{def.Title}</size>" : $"【ボス】 {name}";
-        hpText.text = $"HP {Mathf.Max(0, b.hp)} / {b.maxHp}";
-        float rate = b.maxHp > 0 ? Mathf.Clamp01((float)b.hp / b.maxHp) : 0f;
-        hpFill.rectTransform.anchorMax = new Vector2(rate, 1f);
-        hpFill.rectTransform.offsetMax = new Vector2(-2f, -2f);
-        hpFill.color = Color.Lerp(RuntimeUi.Hex(0xffc400), RuntimeUi.Hex(0xff1744), rate);
+        bool first = !hudShown;
+        hudShown = true;
+        bool defChanged = first || def != hudDef;
+        hudDef = def;
+        if (defChanged)
+        {
+            headerText.text = def != null && !string.IsNullOrEmpty(def.Title) ? $"【ボス】 {name}　<size=70%>{def.Title}</size>" : $"【ボス】 {name}";
+        }
+
+        if (first || b.hp != hudHp || b.maxHp != hudMaxHp)
+        {
+            hudHp = b.hp;
+            hudMaxHp = b.maxHp;
+            hpText.text = $"HP {Mathf.Max(0, b.hp)} / {b.maxHp}";
+            float rate = b.maxHp > 0 ? Mathf.Clamp01((float)b.hp / b.maxHp) : 0f;
+            hpFill.rectTransform.anchorMax = new Vector2(rate, 1f);
+            hpFill.rectTransform.offsetMax = new Vector2(-2f, -2f);
+            hpFill.color = Color.Lerp(RuntimeUi.Hex(0xffc400), RuntimeUi.Hex(0xff1744), rate);
+        }
 
         BossAttackDef atk = BossAttacks.ById(ai.attack);
         int soldiers = gameSystem.RequiredMinionsLeft; // 大将軍：倒さないと勝てない兵（軍歩兵・軍銃兵）の残り
-        if (b.hp <= 0) stateText.text = soldiers > 0 ? $"<color=#FFD54A>{name}は倒れた！ 残りの兵 {soldiers} 体を全滅させよう</color>" : "討伐成功！";
-        else if (gameSystem.IsTimeStopped) stateText.text = "時間停止中（ボス・手下は止まっている）";
-        else if (ai.phase == BossAiState.Telegraph && atk != null) stateText.text = $"<color=#FF8A80>「{atk.Name}」まで {secLeft} 秒</color>";
-        else if (ai.phase == BossAiState.Acting && atk != null) stateText.text = $"<color=#FF8A80>「{atk.Name}」中　残り {secLeft} 秒</color>";
-        else if (ai.phase == BossAiState.Resting) stateText.text = $"休憩中　あと {secLeft} 秒（攻撃のチャンス）";
-        else stateText.text = $"次の攻撃の予告まで {secLeft} 秒";
+        bool dead = b.hp <= 0;
+        bool timeStopped = gameSystem.IsTimeStopped;
+        if (defChanged || dead != hudDead || soldiers != hudSoldiers || timeStopped != hudTimeStopped
+            || ai.phase != hudPhase || ai.attack != hudAttack || secLeft != hudSecLeft)
+        {
+            hudDead = dead;
+            hudSoldiers = soldiers;
+            hudTimeStopped = timeStopped;
+            hudPhase = ai.phase;
+            hudAttack = ai.attack;
+            hudSecLeft = secLeft;
+            if (dead) stateText.text = soldiers > 0 ? $"<color=#FFD54A>{name}は倒れた！ 残りの兵 {soldiers} 体を全滅させよう</color>" : "討伐成功！";
+            else if (timeStopped) stateText.text = "時間停止中（ボス・手下は止まっている）";
+            else if (ai.phase == BossAiState.Telegraph && atk != null) stateText.text = $"<color=#FF8A80>「{atk.Name}」まで {secLeft} 秒</color>";
+            else if (ai.phase == BossAiState.Acting && atk != null) stateText.text = $"<color=#FF8A80>「{atk.Name}」中　残り {secLeft} 秒</color>";
+            else if (ai.phase == BossAiState.Resting) stateText.text = $"休憩中　あと {secLeft} 秒（攻撃のチャンス）";
+            else stateText.text = $"次の攻撃の予告まで {secLeft} 秒";
+        }
 
         RaidState raid = gameSystem.Raid;
         int max = def != null ? def.KingMaxHits : 3;
         int hits = raid != null ? raid.kingHits : 0;
-        int left = Mathf.Max(0, max - 1 - hits);
-        StringBuilder hearts = new StringBuilder();
-        for (int i = 0; i < max - 1; i++) hearts.Append(i < left ? "<color=#4FC3F7>◆</color>" : "<color=#555566>◇</color>");
-        kingText.text = hits >= max ? "王将：倒れた……"
-            : left > 0 ? $"王将の盾 {hearts}　あと {left} 回まで耐える（{max} 回目で負け）"
-            : $"王将の盾 {hearts}　<color=#FF8A80>次にボスの攻撃を受けると負け</color>";
-
-        StringBuilder sb = new StringBuilder();
-        if (def != null)
+        if (first || max != hudKingMax || hits != hudKingHits)
         {
-            foreach (BossAttackEntry entry in def.Attacks)
-            {
-                BossAttackDef a = BossAttacks.ById(entry.Id);
-                if (a == null) continue;
-                bool current = b.hp > 0 && ai.attack == a.Id && (ai.phase == BossAiState.Telegraph || ai.phase == BossAiState.Acting);
-                string head = current ? "<color=#FF8A80>▶ " : "<color=#E0E0E8>・";
-                string tele = a.TelegraphSec > 0f ? $"予告 {a.TelegraphSec:0} 秒" : "予告なし";
-                sb.Append($"{head}<b>{a.Name}</b></color>　<color=#B0B0BC>{a.Summary}（{tele}）</color>\n");
-            }
-            if (def.MinionsOutliveBoss) sb.Append($"<color=#FFD54A>勝ち：HP 0 ＋ 兵の全滅（残り {soldiers} 体。防壁は残ってよい）</color>\n");
+            hudKingMax = max;
+            hudKingHits = hits;
+            int left = Mathf.Max(0, max - 1 - hits);
+            StringBuilder hearts = hudBuilder;
+            hearts.Clear();
+            for (int i = 0; i < max - 1; i++) hearts.Append(i < left ? "<color=#4FC3F7>◆</color>" : "<color=#555566>◇</color>");
+            kingText.text = hits >= max ? "王将：倒れた……"
+                : left > 0 ? $"王将の盾 {hearts}　あと {left} 回まで耐える（{max} 回目で負け）"
+                : $"王将の盾 {hearts}　<color=#FF8A80>次にボスの攻撃を受けると負け</color>";
         }
-        sb.Append("<color=#B0B0BC>駒をボスのマスへ動かすと攻撃（駒は元のマスへ戻る）</color>");
-        listText.text = sb.ToString();
+
+        // 一覧の「▶」は今の攻撃だけに付くので、予告・行動中の攻撃（なければ null）と残りの兵（出すときだけ）を比べる
+        string current = !dead && (ai.phase == BossAiState.Telegraph || ai.phase == BossAiState.Acting) ? ai.attack : null;
+        int listSoldiers = def != null && def.MinionsOutliveBoss ? soldiers : 0;
+        if (defChanged || current != hudListCurrent || listSoldiers != hudListSoldiers)
+        {
+            hudListCurrent = current;
+            hudListSoldiers = listSoldiers;
+            StringBuilder sb = hudBuilder;
+            sb.Clear();
+            if (def != null)
+            {
+                foreach (BossAttackEntry entry in def.Attacks)
+                {
+                    BossAttackDef a = BossAttacks.ById(entry.Id);
+                    if (a == null) continue;
+                    bool isCurrent = current != null && current == a.Id;
+                    string head = isCurrent ? "<color=#FF8A80>▶ " : "<color=#E0E0E8>・";
+                    string tele = a.TelegraphSec > 0f ? $"予告 {a.TelegraphSec:0} 秒" : "予告なし";
+                    sb.Append($"{head}<b>{a.Name}</b></color>　<color=#B0B0BC>{a.Summary}（{tele}）</color>\n");
+                }
+                if (def.MinionsOutliveBoss) sb.Append($"<color=#FFD54A>勝ち：HP 0 ＋ 兵の全滅（残り {soldiers} 体。防壁は残ってよい）</color>\n");
+            }
+            sb.Append("<color=#B0B0BC>駒をボスのマスへ動かすと攻撃（駒は元のマスへ戻る）</color>");
+            listText.text = sb.ToString();
+        }
     }
 }
