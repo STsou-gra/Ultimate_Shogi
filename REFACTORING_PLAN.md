@@ -122,11 +122,12 @@ Unity エディタで確かめること：
 - 合戦将棋型でファランクス・アンデッドの自動行動が今までどおりの間隔で起きる。
 - 棋譜の再生（合戦将棋型・討伐任務）で、ハッシュ不一致の警告が出ない。
 
-#### - [ ] A-4 手番表示の明滅（P1 の一部） 効果：中／リスク：低〜中
+#### - [x] A-4 手番表示の明滅（P1 の一部） 効果：中／リスク：低〜中
 
 - `GameTickEffects.cs:641`：`turnBadgeText.alpha` の代わりに、実行時に追加した `CanvasGroup` の `alpha` で明滅させる（文字メッシュを作り直さない）。
 - 手番表示の GameObject の子が TMP のサブメッシュ（`TMP_SubMeshUI`）以外にもあるときは、子まで薄くなってしまうので、今の方法のまま残す（安全のため判定を入れる）。
 - 開始時に TMP の `alpha` は 1 に戻しておく。
+- 実装メモ：`GameTickEffects.SetupTurnBadge`（`SetupUI` の最後）で `CanvasGroup` を足す。次のときは足さずに今の方法（TMP の `alpha`）のまま：uGUI の TMP でない／手番表示の GameObject に元から `CanvasGroup` がある（別の用途かもしれないので触らない）／`TMP_SubMeshUI` 以外の子がある。Board シーンの `ActivePlayerText` は子も `CanvasGroup` も無く、文字色の alpha は 1 なので `CanvasGroup` 側になる。手番以外は `alpha` が 1 のままなので、値が変わったときだけ書く。足した `CanvasGroup` は既定値（`interactable`・`blocksRaycasts` は true、`ignoreParentGroups` は false）なので入力は変わらない。
 
 Unity エディタで確かめること：
 - 手番中、「【先手（プレイヤー1）の手番】」などの表示が今までどおり明滅し、手番以外は不透明。
