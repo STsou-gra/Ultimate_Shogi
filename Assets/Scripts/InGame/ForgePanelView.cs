@@ -58,6 +58,19 @@ public class ForgePanelView : MonoBehaviour
     private Image specialImage;
     private TextMeshProUGUI specialLabel;
 
+    // 狙撃・必殺技ボタンに今出している文言の元になった値（変わったときだけ文字列を作り直す。毎フレームの GC を避ける）
+    //  狙撃   … aiming（対象選択中か）・キー名
+    //  必殺技 … choosing（対象選択中か）・usable（使えるか）・技（色）・技名・キー名
+    private bool snipeShown;
+    private bool shownAiming;
+    private string shownSnipeKey;
+    private bool specialShown;
+    private bool shownChoosing;
+    private bool shownUsable;
+    private SpecialMove shownMove;
+    private string shownMoveName;
+    private string shownSpecialKey;
+
     void Start()
     {
         if (gameSystem == null) gameSystem = FindAnyObjectByType<GameSystem>();
@@ -116,8 +129,15 @@ public class ForgePanelView : MonoBehaviour
         if (show)
         {
             SeatKeys keys = gameSystem.KeysOf(gameSystem.FocusSide); // 合戦将棋型は操作中の席のキー
-            snipeLabel.text = aiming ? $"狙撃をやめる  [{SeatKeys.Label(keys.Cancel)}]" : $"狙撃  [{SeatKeys.Label(keys.Snipe)}]";
-            snipeImage.color = aiming ? CancelButtonColor : SnipeButtonColor;
+            string key = SeatKeys.Label(aiming ? keys.Cancel : keys.Snipe);
+            if (!snipeShown || aiming != shownAiming || key != shownSnipeKey)
+            {
+                snipeShown = true;
+                shownAiming = aiming;
+                shownSnipeKey = key;
+                snipeLabel.text = aiming ? $"狙撃をやめる  [{key}]" : $"狙撃  [{key}]";
+                snipeImage.color = aiming ? CancelButtonColor : SnipeButtonColor;
+            }
         }
 
         bool choosing = gameSystem.IsSelectingSpecialTarget;
@@ -130,9 +150,20 @@ public class ForgePanelView : MonoBehaviour
             bool usable = choosing || gameSystem.CanUseSelectedSpecial;
             specialButton.interactable = usable;
             SeatKeys keys = gameSystem.KeysOf(gameSystem.FocusSide);
-            specialLabel.text = choosing ? $"必殺技をやめる  [{SeatKeys.Label(keys.Cancel)}]"
-                : usable ? $"必殺技「{moveName}」  [{SeatKeys.Label(keys.Special)}]" : $"「{moveName}」 対象なし";
-            specialImage.color = choosing ? CancelButtonColor : SpecialButtonColor(move);
+            string key = SeatKeys.Label(choosing ? keys.Cancel : keys.Special);
+            if (!specialShown || choosing != shownChoosing || usable != shownUsable || move != shownMove
+                || moveName != shownMoveName || key != shownSpecialKey)
+            {
+                specialShown = true;
+                shownChoosing = choosing;
+                shownUsable = usable;
+                shownMove = move;
+                shownMoveName = moveName;
+                shownSpecialKey = key;
+                specialLabel.text = choosing ? $"必殺技をやめる  [{key}]"
+                    : usable ? $"必殺技「{moveName}」  [{key}]" : $"「{moveName}」 対象なし";
+                specialImage.color = choosing ? CancelButtonColor : SpecialButtonColor(move);
+            }
         }
     }
 
@@ -209,6 +240,8 @@ public class ForgePanelView : MonoBehaviour
     // ------------------------------------------------------------
     void Build()
     {
+        snipeShown = false;   // ボタンを作り直すので、次の Update で文言を必ず書く
+        specialShown = false;
         GameObject panelObj = new GameObject("ForgePanel", typeof(RectTransform));
         panel = panelObj.GetComponent<RectTransform>();
         panel.SetParent(canvas.transform, false);

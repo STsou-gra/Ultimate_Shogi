@@ -77,13 +77,14 @@
 
 効果が大きくリスクが低い順。
 
-#### - [ ] A-1 HUD の毎フレームの GC（P2・P4） 効果：高／リスク：低
+#### - [x] A-1 HUD の毎フレームの GC（P2・P4） 効果：高／リスク：低
 
 - `InputSeat.cs`：`SeatKeys.KeyName` の既定分岐（`k.ToString()`）の結果を `static Dictionary<Key, string>` にキャッシュする。返す文字列は今と同じ。
 - `GameSystem.Actions.cs`：`ForgeBlockReason` と同じ条件を文字列なしで判定する `bool` 版（例：`IsForgeBlocked`）を追加し、`GameSystem.cs:1740` の `CanForge` から使う。理由の文字列が要る箇所は今の `ForgeBlockReason` のまま。
 - `ForgePanelView.cs`：狙撃・必殺技ボタンの文字列は、元になる値（`aiming`・キー名・技名・`usable`・`choosing`）が前回と変わったときだけ作る。
 - `TranscendentStatusView.cs`：`corners` をフィールドの配列で使い回す。`StatusText` は元になる値（使用済み・解放済み・`TranscendentProgress` の各値）が変わったときだけ作る。位置（`anchoredPosition`）は値が変わったときだけ書く。
 - 今回は `CanUseSelectedSpecial` の `new SpecialContext` は触らない（盤面の変化を拾う仕組みが要るため。B-4 の後に検討）。
+- 実装メモ：`TranscendentStatusView` は文字列を作らなくなったが、`GetTranscendentProgress` → `TranscendentRules.Progress`（`Match/`）の `board.Pieces()` の List はまだ毎フレーム作られる（A-2 で `Pieces(List)` を足したあと、`Match/` の外の呼び出し側で解決できるか検討）。必殺技を使える駒を選んでいる間は `new SpecialContext` も残る。
 
 Unity エディタで確かめること：
 - コンソールにエラー・警告が増えていない。

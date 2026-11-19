@@ -1740,7 +1740,7 @@ public partial class GameSystem : MonoBehaviour
     public bool CanForge(ForgeRecipe recipe)
     {
         if (recipe == null || !CanActNow || isSelectingSnipeTarget || CurrentPlayer == null) return false;
-        return FindRecipe(recipe.pieceType) == recipe && ForgeBlockReason(CurrentSide, recipe) == null;
+        return FindRecipe(recipe.pieceType) == recipe && !IsForgeBlocked(CurrentSide, recipe);
     }
 
     // 錬成する（錬成ボタン・Z・X キー）：「錬成」行動を Dispatch。できたら true

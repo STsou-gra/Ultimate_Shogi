@@ -348,6 +348,17 @@ public partial class GameSystem
         return null;
     }
 
+    // owner が recipe を錬成できないか（ForgeBlockReason(owner, recipe) != null と同じ判定。
+    // 錬成ボタンが毎フレーム調べるので、理由の文字列を作らない版。条件を変えるときは ForgeBlockReason と揃える）
+    bool IsForgeBlocked(PlayerType owner, ForgeRecipe recipe)
+    {
+        if (IsOnlineMatch) return true;
+        Player p = PlayerOf(owner);
+        if (p == null) return true;
+        if (!p.HasEnoughPoint(recipe.cost)) return true;
+        return false;
+    }
+
     // 停止世界を解除できない理由（できるなら null。CanReleaseTimeStop のうち、ルールの分）
     string ReleaseBlockReason(PlayerType me)
     {
