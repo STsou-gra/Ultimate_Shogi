@@ -93,12 +93,13 @@ Unity エディタで確かめること：
 - 超常魔法を編成した対局で、解放条件の表示（侵入 ○×・駒数）が駒の増減に合わせて変わる。
 - Profiler：手番の待機中に `ForgePanelView.Update`・`TranscendentStatusView.LateUpdate` の GC Alloc が 0 B 付近になる。
 
-#### - [ ] A-2 駒一覧の List 生成（P3・P5） 効果：中〜高／リスク：低
+#### - [x] A-2 駒一覧の List 生成（P3・P5） 効果：中〜高／リスク：低
 
 - `GameBoard.cs`：既存の `List<GamePiece> Pieces()` は**残し**、渡された List に詰める `void Pieces(List<GamePiece> into)`（`Clear` してから追加。順序は同じ）を追加する。
 - 毎フレームの呼び出し元だけ、使い回しの List に切り替える：`GameTickEffects.cs:207,440`、`BossView.cs:435,489`。
 - `GameTickEffects.cs:397`：翼の SpriteRenderer を `CreateWings` の時点で `PieceFx`（同ファイル内のクラス）に配列でキャッシュし、毎フレームの `GetComponentsInChildren` をやめる。
 - 盤を書き換えながら回す呼び出し元（`UndeadMarch` など）は今のまま。
+- 実装メモ：`TranscendentRules.Progress`（`Match/`）の `board.Pieces()` は今回は触っていない（`Match/` の中なので。毎フレームの List が 1 本残る）。必要なら `TranscendentStatusView` 側で値の変化を待ってから呼ぶ形を B-4 の後に検討する。
 
 Unity エディタで確かめること：
 - 駒のオーラ・盾・カウンター・ファランクスの槍・アンデッド・翼・鳥の羽ばたきが今までどおり出る。

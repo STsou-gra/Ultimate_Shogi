@@ -219,12 +219,20 @@ public class GameBoard : MonoBehaviour
     public List<GamePiece> Pieces()
     {
         List<GamePiece> res = new List<GamePiece>();
+        Pieces(res);
+        return res;
+    }
+
+    // Pieces() と同じ駒を同じ順で、渡された List に詰める（中身は Clear してから入れる）。
+    // 毎フレーム回す呼び出し元が List を使い回して、GC を出さないようにするためのもの
+    public void Pieces(List<GamePiece> into)
+    {
+        into.Clear();
         for (int i = 0; i < boardData.Length; i++)
         {
             GamePiece p = boardData[i];
-            if (p != null && GameHelper.CalcPanelNum(p.X, p.Y) == i) res.Add(p);
+            if (p != null && GameHelper.CalcPanelNum(p.X, p.Y) == i) into.Add(p);
         }
-        return res;
     }
 
     // 駒が占めるマス（ふつうの駒は 1 マス、巨人は中央 (x, y) の 3×3）
