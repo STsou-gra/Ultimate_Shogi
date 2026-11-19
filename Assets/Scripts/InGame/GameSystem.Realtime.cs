@@ -639,7 +639,7 @@ public partial class GameSystem
 
         if (Policy.IsEveryAutoAct)
         {
-            foreach (PlayerType side in new[] { PlayerType.Player1, PlayerType.Player2 })
+            foreach (PlayerType side in BothSides)
             {
                 foreach (TurnEndAction action in turnEndActions)
                 {

@@ -96,7 +96,7 @@ public partial class GameSystem
         }
 
         // プレイヤーごと（エナジー・持ち駒・倒された初期配置の駒・超常魔法）
-        foreach (PlayerType side in new[] { PlayerType.Player1, PlayerType.Player2 })
+        foreach (PlayerType side in BothSides)
         {
             SnapshotPlayer sp = s.Player(side);
             sp.energy = match.Energy.Get(side);
@@ -133,7 +133,7 @@ public partial class GameSystem
             SpecialMove move = SpecialMoves != null ? SpecialMoves.For((PieceType)t) : null;
             s.specialKinds[t] = SpecialKindOf(move);
         }
-        foreach (PlayerType side in new[] { PlayerType.Player1, PlayerType.Player2 })
+        foreach (PlayerType side in BothSides)
         {
             Player p = PlayerOf(side);
             if (p == null || p.SkillDeck == null || p.SkillDeck.skills == null) continue;

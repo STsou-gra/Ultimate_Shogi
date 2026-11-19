@@ -38,7 +38,8 @@ public class GameController : MonoBehaviour
     void Update()
     {
         var keyboard = Keyboard.current;
-        
+        if (keyboard == null) return; // キーボードが無い（外れた）ときは何もしない（毎フレームの例外を防ぐ）
+
         if(keyboard.fKey.wasPressedThisFrame)
         {
             Ok();

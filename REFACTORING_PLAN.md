@@ -107,13 +107,14 @@ Unity エディタで確かめること：
 - 討伐任務：手下の行き先の矢印・軍銃兵の照準と線が出る。
 - Profiler：`GameTickEffects.LateUpdate` の GC Alloc が 0 B 付近。
 
-#### - [ ] A-3 入力・tick の GC と安全対策（P6・D4） 効果：中／リスク：低
+#### - [x] A-3 入力・tick の GC と安全対策（P6・D4） 効果：中／リスク：低
 
 - `InputSeat.cs`：`SeatKeys.Pressed(Key key)`（1 キー版）を追加する。`AnyPressed` は `All()` の `yield` をやめ、各配列を順に `Pressed` で調べる（結果は同じ）。
 - `GameSystem.cs:745`（`PressedIndex`）・`1805`（`HandleForgeKeys`）：`new[] { key }` を 1 キー版に置き換える。
 - `GameSystem.Realtime.cs:642`・`GameSystem.cs:3021`：`static readonly PlayerType[] BothSides = { PlayerType.Player1, PlayerType.Player2 }`（**順序は同じ**）に置き換える。tick ごとでない箇所（`GameSystem.Snapshot.cs:99,136`、`GameSystem.State.cs:124,213`、`GameSystem.cs:2889`）は任意。
 - `Skill/PhalanxAdvance.cs`・`Skill/UndeadMarch.cs` の `HasWork`：「1 体でもいるか」をアロケーションなしで判定する（戻り値の true / false は今と同じになること）。
 - `GameController.cs`：`Keyboard.current` が null なら return。
+- 実装メモ：`BothSides` は `GameSystem.cs` に置き、任意の箇所（`Snapshot`・`State`・千日手の判定）も含めて `GameSystem` の partial の中はすべて置き換えた。`Match/`・`Cpu/` の `new[] { Player1, Player2 }` は触っていない。`UndeadMarch.HasWork` は `RaidGoals`・`Kings`・`Pieces`・`Moves` の `Count > 0` をそれぞれ List を作らない `HasRaidGoal`・`HasPiece`・`HasAnyMove` に置き換えた（判定の順序は同じで、元の関数は `Run` で使うので残した）。動けるマスの探索は 1 つ見つかった時点でやめる。
 
 Unity エディタで確かめること：
 - 本将棋型：WASD・矢印・F・Space・H・E・G・Q・R・J・Z〜V が今までどおり動く。
