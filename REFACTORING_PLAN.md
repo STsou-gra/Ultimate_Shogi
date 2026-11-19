@@ -134,10 +134,11 @@ Unity エディタで確かめること：
 - 明滅しても文字の位置・縁取りが変わらない。
 - Profiler：`Canvas.SendWillRenderCanvases` の中で手番表示の TMP の再生成（`TextMeshProUGUI.Rebuild` 等）が毎フレーム出なくなる。
 
-#### - [ ] A-5 起動時の事前準備（P8・P9） 効果：中（初回の処理落ちを解消）／リスク：低
+#### - [x] A-5 起動時の事前準備（P8・P9） 効果：中（初回の処理落ちを解消）／リスク：低
 
 - DOTween：`[RuntimeInitializeOnLoadMethod]` か `GameSystem` の開始時に、`DOTween.SetTweensCapacity(500, 125)` 程度をコードで設定する（`DOTweenSettings.asset` は触らない）。容量は演出の重なりから決める。
 - `MagicFx` などの static スプライト（`MagicFx.cs:1016-1241` の `Glow`・`CircleColored`・`CircleWhite`・`BarrierGlow` など）を、対局の開始時に一度読んで先に作っておく。作るものと中身は今と同じ。
+- 実装メモ：DOTween は `GameSystem.ConfigureTweenCapacity`（`[RuntimeInitializeOnLoadMethod(BeforeSceneLoad)]`）で `DOTween.Init()`（最初の Tween で自動で行うものと同じ）→ `SetTweensCapacity(500, 125)`。容量の目安はマスの崩落 1 マスで Sequence 1・Tween 6〜8（`BoardCellView.PlayFallingTile`）で、砲撃の列や駒の爆散・カットインが重なると既定の 200 を超えうるため。画像は `MagicSprites.Prewarm`（`MagicFx.cs`）を `GameSystem.Start` の `DecideStartMode` の直後から呼ぶ。対象は `MagicFx.cs` の 16 個＋`Heart`・`Bomb`・`CounterGlow`・`CounterFace`、討伐任務のときだけボス（`BossSprite`・`BossWeapon`）と手下・照準・盾・矢印の 9 個。タイトルの `PieceShape` は対象外。`Rock` は `UnityEngine.Random` で形を決めるので、その乱数を引く時点が早まる（演出だけの乱数で、対局の乱数・棋譜には影響しない）。エディタと Development Build では所要時間をログに出す。`MakeSpear`・`MakeWing`・`MakeBirdWing` は 1 ピクセルごとに配列やラムダを作っていて事前準備の時間の大半を占めるはずなので、遅ければ中身を変えずに作り方だけ直す余地がある（今回は触っていない）。
 
 Unity エディタで確かめること：
 - コンソールに DOTween の「Max Tweens reached」の警告が出ない（たくさん演出が重なる場面で）。
