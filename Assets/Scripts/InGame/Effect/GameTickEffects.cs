@@ -92,6 +92,7 @@ public class GameTickEffects : MonoBehaviour
         public Transform wings;            // 翼状態の翼（魔法「翼」。駒の後ろ）
         public Transform[] wingSides;      // 〃 右・左
         public SpriteRenderer[] wingGlows;
+        public SpriteRenderer[] wingFaces; // 〃 羽の本体（右・左。毎フレーム GetComponentsInChildren しないよう CreateWings で持っておく）
         public float wingAge;              // 翼が現れてからの秒数（現れる演出用）
         public Transform birdWings;        // 鳥の翼（駒の後ろ）
         public Transform[] birdWingSides;  // 〃 右・左
@@ -110,6 +111,7 @@ public class GameTickEffects : MonoBehaviour
 
     private readonly Dictionary<GamePiece, PieceFx> pieceFx = new Dictionary<GamePiece, PieceFx>();
     private readonly List<GamePiece> deadPieces = new List<GamePiece>();
+    private readonly List<GamePiece> boardPieces = new List<GamePiece>(); // 盤上の駒（毎フレーム使い回す。GameBoard.Pieces(List)）
 
     // 明滅させるハイライト（元の色のアルファに掛ける）
     private readonly List<SpriteRenderer> highlightSprites = new List<SpriteRenderer>();
@@ -204,7 +206,8 @@ public class GameTickEffects : MonoBehaviour
     {
         if (gameBoard == null) return;
 
-        foreach (GamePiece piece in gameBoard.Pieces())
+        gameBoard.Pieces(boardPieces);
+        foreach (GamePiece piece in boardPieces)
         {
             if (piece == null) continue;
             bool shielded = piece.hasShield || Time.time < piece.barrierHoldUntil;
@@ -394,10 +397,7 @@ public class GameTickEffects : MonoBehaviour
                         w.localScale = new Vector3(side * grow, grow, 1f);
                         w.localRotation = Quaternion.Euler(0f, 0f, side * 0.14f * s * Mathf.Rad2Deg); // 羽の先が上下する
                         fx.wingGlows[i].color = WithAlpha(WingGlowColor, appear * (0.45f + 0.35f * s));
-                        foreach (SpriteRenderer sr in w.GetComponentsInChildren<SpriteRenderer>())
-                        {
-                            if (sr != fx.wingGlows[i]) sr.color = WithAlpha(Color.white, appear);
-                        }
+                        fx.wingFaces[i].color = WithAlpha(Color.white, appear);
                     }
                 }
             }
@@ -437,7 +437,8 @@ public class GameTickEffects : MonoBehaviour
     void UpdateSideGlows(bool frozen, float dt)
     {
         if (gameBoard == null) return;
-        foreach (GamePiece piece in gameBoard.Pieces())
+        gameBoard.Pieces(boardPieces);
+        foreach (GamePiece piece in boardPieces)
         {
             if (piece == null) continue;
             PieceFx fx;
@@ -797,6 +798,7 @@ public class GameTickEffects : MonoBehaviour
         fx.wings = CreateWingRoot(piece, WingsName);
         fx.wingSides = new Transform[2];
         fx.wingGlows = new SpriteRenderer[2];
+        fx.wingFaces = new SpriteRenderer[2];
         for (int i = 0; i < 2; i++)
         {
             float side = i == 0 ? 1f : -1f;
@@ -804,7 +806,7 @@ public class GameTickEffects : MonoBehaviour
             w.SetParent(fx.wings, false);
             w.localPosition = new Vector3(side * 0.8f * 0.28f, 0.9f * 0.06f, 0f);
             fx.wingGlows[i] = CreateChildSprite(w, "Glow", MagicSprites.WingGlow, order, Vector2.one);
-            CreateChildSprite(w, "Face", MagicSprites.WingFace, order, Vector2.one);
+            fx.wingFaces[i] = CreateChildSprite(w, "Face", MagicSprites.WingFace, order, Vector2.one);
             fx.wingSides[i] = w;
         }
         fx.wings.gameObject.SetActive(false);

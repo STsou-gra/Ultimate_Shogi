@@ -42,6 +42,7 @@ public class BossView : MonoBehaviour
     private readonly List<SpriteRenderer> minionArrows = new List<SpriteRenderer>();
     private readonly List<SpriteRenderer> reticles = new List<SpriteRenderer>();   // 弓・軍銃兵の照準
     private readonly List<SpriteRenderer> aimLines = new List<SpriteRenderer>();   // 軍銃兵から照準への線
+    private readonly List<GamePiece> boardPieces = new List<GamePiece>();          // 盤上の駒（毎フレーム使い回す。GameBoard.Pieces(List)）
     private SpriteRenderer guardSr;   // 守備のバリア
     private string shownBossId;       // 今の絵のボス
     private float shotFlashTime;
@@ -432,7 +433,8 @@ public class BossView : MonoBehaviour
             {
                 PlaceReticle(n++, ai.aim.Cell, ai.aim.locked, 0.92f, pulse);
             }
-            foreach (GamePiece p in gameBoard.Pieces())
+            gameBoard.Pieces(boardPieces);
+            foreach (GamePiece p in boardPieces)
             {
                 if (p == null || !p.minion.Gunner || !p.minion.Aim.active || !p.minion.Aim.hasCell) continue;
                 AimData aim = p.minion.Aim;
@@ -486,7 +488,8 @@ public class BossView : MonoBehaviour
         int n = 0;
         if (gameSystem.IsInTurn)
         {
-            foreach (GamePiece p in gameBoard.Pieces())
+            gameBoard.Pieces(boardPieces);
+            foreach (GamePiece p in boardPieces)
             {
                 if (p == null || !p.minion.Active || !p.minion.Planned || !p.minion.HasTo) continue;
                 if (n >= minionArrows.Count)
