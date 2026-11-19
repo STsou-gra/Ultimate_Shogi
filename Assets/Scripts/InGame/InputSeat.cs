@@ -138,22 +138,21 @@ public class SeatKeys
         return false;
     }
 
-    // この席のキーのどれかがこのフレームに押されたか（合戦将棋型で、どちらの席の入力を処理するかを決める）
-    public bool AnyPressed()
+    // key がこのフレームに押されたか（1 キー版。毎フレーム new[] { key } を作らないためのもの）
+    public static bool Pressed(Key key)
     {
-        foreach (Key[] keys in All())
-        {
-            if (Pressed(keys)) return true;
-        }
-        return false;
+        Keyboard kb = Keyboard.current;
+        return kb != null && kb[key].wasPressedThisFrame;
     }
 
-    IEnumerable<Key[]> All()
+    // この席のキーのどれかがこのフレームに押されたか（合戦将棋型で、どちらの席の入力を処理するかを決める）。
+    // 毎フレーム両方の席で呼ばれるので、yield の列挙（GC が出る）を使わずに、各配列を順に調べる
+    public bool AnyPressed()
     {
-        yield return Up; yield return Down; yield return Left; yield return Right;
-        yield return Ok; yield return Cancel;
-        yield return Hand; yield return Special; yield return Snipe; yield return Release; yield return Orient; yield return NoPromote;
-        yield return Forge; yield return Skills;
+        return Pressed(Up) || Pressed(Down) || Pressed(Left) || Pressed(Right)
+            || Pressed(Ok) || Pressed(Cancel)
+            || Pressed(Hand) || Pressed(Special) || Pressed(Snipe) || Pressed(Release) || Pressed(Orient) || Pressed(NoPromote)
+            || Pressed(Forge) || Pressed(Skills);
     }
 
     // keys[index] の表示名（なければ ""）

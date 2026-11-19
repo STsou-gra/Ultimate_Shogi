@@ -23,11 +23,22 @@ public class PhalanxAdvance : TurnEndAction
     public override Color Color => PhalanxColor;
     public override string GetStatusText(PlayerType owner) => $"{SideName(owner)}のファランクスが前進！";
 
+    // owner のファランクス状態の駒が 1 体でもいれば動く。
+    // 合戦将棋型では tick ごとに呼ばれるので、並べ替えた List（Pieces）は作らずに、使い回しの List で有無だけ調べる
     public override bool HasWork(GameSystem system, PlayerType owner)
     {
         GameBoard board = system != null ? system.Board : null;
-        return board != null && Pieces(board, owner).Count > 0;
+        if (board == null) return false;
+        board.Pieces(scratch);
+        foreach (GamePiece p in scratch)
+        {
+            if (p != null && p.player == owner && p.hasPhalanx) return true;
+        }
+        return false;
     }
+
+    // HasWork の作業用（メインスレッドの中だけで使う）
+    private static readonly List<GamePiece> scratch = new List<GamePiece>();
 
     // owner のファランクス状態の駒を、盤の奥（相手の陣地側）にいる駒から順に並べる（同じ段は筋の小さい方から。Prototype の phalanxPieces）
     public static List<GamePiece> Pieces(GameBoard board, PlayerType owner)

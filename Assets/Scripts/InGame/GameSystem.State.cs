@@ -121,7 +121,7 @@ public partial class GameSystem
         gameBoard.Raid = match.HasBoss ? match.Raid : null;
         if (IsRaid && match.Formation != null) raidRecipes = BuildRaidRecipes(match.Formation);
         EndBossEffect();
-        foreach (PlayerType owner in new[] { PlayerType.Player1, PlayerType.Player2 })
+        foreach (PlayerType owner in BothSides)
         {
             Player p = PlayerOf(owner);
             PlayerSnapshot ps = snapshot.Player(owner);
@@ -210,7 +210,7 @@ public partial class GameSystem
     // 魔法を Id で探す（今の編成 → 編成の候補 Resources/SkillDatabase）
     SkillDefinition FindSkillById(string id)
     {
-        foreach (PlayerType owner in new[] { PlayerType.Player1, PlayerType.Player2 })
+        foreach (PlayerType owner in BothSides)
         {
             SkillDefinition skill = FindDeckSkill(owner, id);
             if (skill != null) return skill;

@@ -37,20 +37,66 @@ public class UndeadMarch : TurnEndAction
     public override MiniCutInStyle CutInStyle => Style;
     public override string GetStatusText(PlayerType owner) => $"{SideName(owner)}のアンデッドが進軍する……";
 
-    // 動ける駒が 1 体でもいて、相手の王将がいれば動く
+    // 動ける駒が 1 体でもいて、相手の王将がいれば動く。
+    // 合戦将棋型では tick ごとに呼ばれるので、List を作らずに有無だけ調べる（結果は RaidGoals・Kings・Pieces・Moves の Count > 0 と同じ）
     public override bool HasWork(GameSystem system, PlayerType owner)
     {
         GameBoard board = system != null ? system.Board : null;
         if (board == null) return false;
+        board.Pieces(scratch);
         if (system.IsRaid)
         {
             // 討伐任務：相手の王将の代わりにボス（倒れたあとは残っている相手の駒）へ進む
-            if (RaidGoals(system, board, owner).Count == 0) return false;
+            if (!HasRaidGoal(system, board, owner)) return false;
         }
-        else if (Kings(board, BoardZones.Opponent(owner)).Count == 0) return false;
-        foreach (GamePiece p in Pieces(board, owner))
+        else if (!HasPiece(scratch, BoardZones.Opponent(owner), PieceType.King)) return false;
+        foreach (GamePiece p in scratch)
         {
-            if (Moves(board, p).Count > 0) return true;
+            if (p != null && p.player == owner && p.isUndead && HasAnyMove(board, p)) return true;
+        }
+        return false;
+    }
+
+    // HasWork の作業用（メインスレッドの中だけで使う）
+    private static readonly List<GamePiece> scratch = new List<GamePiece>();
+
+    // RaidGoals(system, board, owner).Count > 0 と同じ：ボスが生きていればボスの占めるマス（BossCells の w × h）があるか、
+    // 倒れたあとは owner 以外の駒があるか（PiecesInPrototypeOrder と同じく全マスを GetPieceAt で調べる）
+    static bool HasRaidGoal(GameSystem system, GameBoard board, PlayerType owner)
+    {
+        BossState boss = system.Boss;
+        if (boss != null && boss.hp > 0) return boss.w > 0 && boss.h > 0;
+        for (int x = BoardCells.Size - 1; x >= 0; x--)
+        {
+            for (int y = 0; y < BoardCells.Size; y++)
+            {
+                GamePiece q = board.GetPieceAt(x, y);
+                if (q != null && q.player != owner) return true;
+            }
+        }
+        return false;
+    }
+
+    // Kings(board, owner).Count > 0 と同じ（type の駒が owner に 1 枚でもあるか）
+    static bool HasPiece(List<GamePiece> pieces, PlayerType owner, PieceType type)
+    {
+        foreach (GamePiece q in pieces)
+        {
+            if (q != null && q.player == owner && q.type == type) return true;
+        }
+        return false;
+    }
+
+    // Moves(board, p).Count > 0 と同じ（動けるマスが 1 つでもあるか。見つかった時点でやめる）
+    static bool HasAnyMove(GameBoard board, GamePiece p)
+    {
+        for (int x = 0; x < BoardCells.Size; x++)
+        {
+            for (int y = 0; y < BoardCells.Size; y++)
+            {
+                if (PieceRules.IsHazardFor(board.Cells, p, x, y)) continue;
+                if (MoveRule.IsLegalMove(p, x, y, board)) return true;
+            }
         }
         return false;
     }

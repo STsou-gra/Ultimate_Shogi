@@ -138,6 +138,9 @@ public partial class GameSystem : MonoBehaviour
     [SerializeField] private ForgeRecipeBook forgeRecipeBook; // 未設定なら Resources/ForgeRecipeBook を読む
 
     private static readonly List<ForgeRecipe> NoRecipes = new List<ForgeRecipe>();
+
+    // 先手・後手の順（foreach のたびに new[] { Player1, Player2 } を作らないためのもの。順序を変えないこと）
+    private static readonly PlayerType[] BothSides = { PlayerType.Player1, PlayerType.Player2 };
     public IReadOnlyList<ForgeRecipe> ForgeRecipes
     {
         get
@@ -742,7 +745,7 @@ public partial class GameSystem : MonoBehaviour
         if (keys == null) return -1;
         for (int i = 0; i < keys.Length; i++)
         {
-            if (SeatKeys.Pressed(new[] { keys[i] })) return i;
+            if (SeatKeys.Pressed(keys[i])) return i;
         }
         return -1;
     }
@@ -1802,7 +1805,7 @@ public partial class GameSystem : MonoBehaviour
         Key[] forgeKeys = keys.Forge ?? ForgeKeys;
         for (int i = 0; i < recipes.Count && i < forgeKeys.Length; i++)
         {
-            if (SeatKeys.Pressed(new[] { forgeKeys[i] }))
+            if (SeatKeys.Pressed(forgeKeys[i]))
             {
                 if (!Forge(recipes[i]) && recipes[i] != null && CurrentPlayer != null && !CurrentPlayer.HasEnoughPoint(recipes[i].cost))
                 {
@@ -2886,7 +2889,7 @@ public partial class GameSystem : MonoBehaviour
 
         // 連続王手の千日手: 繰り返しの間、片方の手番の局面がすべて王手されていたら、王手をかけ続けた側の負け
         int first = positionHistory.FindIndex(r => r.key == key);
-        foreach (PlayerType checkedSide in new[] { PlayerType.Player1, PlayerType.Player2 })
+        foreach (PlayerType checkedSide in BothSides)
         {
             bool found = false;
             bool allInCheck = true;
@@ -3018,7 +3021,7 @@ public partial class GameSystem : MonoBehaviour
     {
         if (match == null || gameBoard == null || !IsInTurn) return;
         if (Policy.TranscendentUnlockedFromStart) return; // 討伐任務：最初から解放済み（解放の演出は出さない）
-        foreach (PlayerType owner in new[] { PlayerType.Player1, PlayerType.Player2 })
+        foreach (PlayerType owner in BothSides)
         {
             if (match.IsTranscendentUnlocked(owner) || !TranscendentRules.Progress(gameBoard, owner).Met) continue;
             match.UnlockTranscendent(owner);
