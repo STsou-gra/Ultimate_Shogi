@@ -118,6 +118,9 @@ public class GameTickEffects : MonoBehaviour
     private readonly List<float> highlightBaseAlpha = new List<float>();
 
     private Outline panelOutline;
+    // 手番表示の明滅用。TMP の alpha を変えると文字メッシュを作り直すので、実行時に足した CanvasGroup の alpha で明滅させる
+    // （手番表示に TMP のサブメッシュ以外の子があるときなどは null のままにして、TMP の alpha で明滅させる）
+    private CanvasGroup turnBadgeGroup;
     private readonly List<Button> skillButtons = new List<Button>();
     private readonly List<Outline> skillButtonOutlines = new List<Outline>();
 
@@ -639,7 +642,16 @@ public class GameTickEffects : MonoBehaviour
         // 手番表示
         if (turnBadgeText != null)
         {
-            turnBadgeText.alpha = inTurn ? 0.6f + 0.4f * pulse : 1f;
+            float alpha = inTurn ? 0.6f + 0.4f * pulse : 1f;
+            if (turnBadgeGroup != null)
+            {
+                // 手番以外は 1 のままなので、変わったときだけ書く
+                if (turnBadgeGroup.alpha != alpha) turnBadgeGroup.alpha = alpha;
+            }
+            else
+            {
+                turnBadgeText.alpha = alpha;
+            }
         }
     }
 
@@ -722,6 +734,27 @@ public class GameTickEffects : MonoBehaviour
         {
             turnBadgeText = HandUIManager.Instance.ActivePlayerText;
         }
+        SetupTurnBadge();
+    }
+
+    // 手番表示を CanvasGroup で明滅させる準備
+    void SetupTurnBadge()
+    {
+        if (turnBadgeText == null) return;
+        // 明滅は CanvasGroup 側で行うので、文字そのものは不透明に戻しておく
+        turnBadgeText.alpha = 1f;
+        // CanvasGroup が効くのは uGUI の文字だけ
+        if (!(turnBadgeText is TextMeshProUGUI)) return;
+        Transform badge = turnBadgeText.transform;
+        // 元からある CanvasGroup は別の用途かもしれないので、触らずに今の方法のままにする
+        if (badge.GetComponent<CanvasGroup>() != null) return;
+        // CanvasGroup は子まで薄くするので、TMP のサブメッシュ以外の子があるときは今の方法のままにする
+        for (int i = 0; i < badge.childCount; i++)
+        {
+            if (badge.GetChild(i).GetComponent<TMP_SubMeshUI>() == null) return;
+        }
+        // 既定のまま（interactable・blocksRaycasts は true、ignoreParentGroups は false）なので、入力や親の CanvasGroup の効き方は変わらない
+        turnBadgeGroup = badge.gameObject.AddComponent<CanvasGroup>();
     }
 
     Outline AddOutline(GameObject target, Vector2 distance)
