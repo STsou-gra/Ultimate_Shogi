@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
@@ -24,6 +23,27 @@ public class RealtimeHudView : MonoBehaviour
     private static readonly Color GoteColor = new Color(1f, 0x2a / 255f, 0x4a / 255f, 1f);     // 陣営オーラと同じ赤
     private static readonly Color PauseButtonColor = new Color(0.22f, 0.28f, 0.34f, 1f);
 
+    // 本文の元になる値（文字列を作らずに前回と比べるため）
+    private struct BodyInputs
+    {
+        public SeatKeys Keys;         // キー（キー案内・魔法のキー）
+        public SkillDeck Deck;        // 編成
+        public int SkillCount;        // 編成の魔法の数
+        public int SkillsHash;        // 編成の魔法（の参照）
+        public int Ctrl;              // 席の操作：0 人・1 CPU（RealtimeCpuPacer）・2 それ以外の自動の席（棋譜の再生など）
+        public int CpuLevel;          // CPU の強さ
+        public int CpuInterval;       // CPU の動く間隔（tick）
+        public bool Thinking;         // CPU が考え中か
+        public long SkillStates;      // 魔法ごとに 3 ビット：使えるか・超常魔法の使用済み・解放済み
+        public bool Overflow;         // 魔法が多すぎて SkillStates に入りきらない（毎回作り直す）
+
+        public bool SameAs(in BodyInputs o)
+        {
+            return !Overflow && !o.Overflow && Keys == o.Keys && Deck == o.Deck && SkillCount == o.SkillCount && SkillsHash == o.SkillsHash
+                && Ctrl == o.Ctrl && CpuLevel == o.CpuLevel && CpuInterval == o.CpuInterval && Thinking == o.Thinking && SkillStates == o.SkillStates;
+        }
+    }
+
     private class SeatPanel
     {
         public PlayerType Owner;
@@ -32,6 +52,17 @@ public class RealtimeHudView : MonoBehaviour
         public TextMeshProUGUI Header;
         public TextMeshProUGUI Body;
         public TextMeshProUGUI Status;
+
+        // 前回の表示に使った値（同じなら文字列を作り直さない・Outline を書き直さない）
+        public bool Shown;            // 一度でも書いたか
+        public bool Focus;            // 枠（Outline）：操作中の席か
+        public string State;          // 見出し：状態の文言（「（CPU）」など。どれも固定の文字列）
+        public int Energy;            // 見出し：エナジー
+        public BodyInputs BodyShown;      // 本文：前回の元の値
+        public string StatusRaw;      // 案内文：LocalizeKeys に渡す前の文字列
+        public SeatKeys StatusKeys;   // 案内文：LocalizeKeys に渡したキー
+        public SeatKeys GuideKeys;    // キー案内（移動・決定・錬成など）を作ったときのキー
+        public string Guide;          // キー案内（キーごとに固定なので一度だけ作る）
     }
 
     private Canvas canvas;
@@ -41,6 +72,9 @@ public class RealtimeHudView : MonoBehaviour
     private TextMeshProUGUI pauseText;
     private readonly List<SeatPanel> panels = new List<SeatPanel>();
     private float nextRefresh = 0f;
+    private readonly StringBuilder bodyBuilder = new StringBuilder();
+    private string shownPauseReason; // 一時停止の理由（前回の表示）。null なら「Esc・再開」の文言
+    private bool pauseTextShown;
 
     void Start()
     {
@@ -65,8 +99,14 @@ public class RealtimeHudView : MonoBehaviour
         if (pauseOverlay.activeSelf != paused) pauseOverlay.SetActive(paused);
         if (paused)
         {
-            string reason = gameSystem.PauseReason;
-            pauseText.text = gameSystem.IsUserPaused ? $"一時停止中\n<size=40%>Esc・「再開」ボタンで再開</size>" : $"一時停止中\n<size=40%>{reason}</size>";
+            // 理由が前回と同じなら文字列を作り直さない
+            string reason = gameSystem.IsUserPaused ? null : gameSystem.PauseReason ?? "";
+            if (!pauseTextShown || reason != shownPauseReason)
+            {
+                pauseTextShown = true;
+                shownPauseReason = reason;
+                pauseText.text = reason == null ? "一時停止中\n<size=40%>Esc・「再開」ボタンで再開</size>" : $"一時停止中\n<size=40%>{reason}</size>";
+            }
         }
         pauseLabel.text = gameSystem.IsUserPaused ? "再開  [Esc]" : "一時停止  [Esc]";
 
@@ -84,25 +124,101 @@ public class RealtimeHudView : MonoBehaviour
         foreach (SeatPanel p in panels) RefreshSeat(p);
     }
 
+    // 0.1 秒ごと。文字列は、元になる値が前回と変わったときだけ作る。比べる値：
+    //  枠（Outline）：FocusSide がこの席か
+    //  見出し：状態の文言（棋譜の再生／CPU／操作中／相手の時間停止中。どれも固定の文字列）・エナジー（名前は対局中に変わらない）
+    //  本文：BodyInputs（キー（SeatKeys の参照）・編成の魔法・席の操作の種類・CPU の強さと間隔・考え中か・魔法ごとの使える／使用済み／未解放）
+    //  案内文：SeatStatus の文字列・キー（SeatKeys の参照）
     void RefreshSeat(SeatPanel p)
     {
         PlayerType owner = p.Owner;
         bool focus = gameSystem.FocusSide == owner;
-        Color side = owner == PlayerType.Player1 ? SenteColor : GoteColor;
-        p.Line.effectColor = focus ? Color.Lerp(side, Color.white, 0.35f) : WithAlpha(side, 0.45f);
-        p.Line.effectDistance = focus ? new Vector2(4f, -4f) : new Vector2(2f, -2f);
+        bool first = !p.Shown;
+        p.Shown = true;
+        if (first || focus != p.Focus)
+        {
+            // Outline は値を書くたびに頂点を作り直すので、変わったときだけ書く
+            p.Focus = focus;
+            Color side = owner == PlayerType.Player1 ? SenteColor : GoteColor;
+            p.Line.effectColor = focus ? Color.Lerp(side, Color.white, 0.35f) : WithAlpha(side, 0.45f);
+            p.Line.effectDistance = focus ? new Vector2(4f, -4f) : new Vector2(2f, -2f);
+        }
 
         SeatKeys k = gameSystem.KeysOf(owner);
-        bool cpu = gameSystem.SeatController(owner) != null;
-        string name = gameSystem.IsRaid ? "☗ プレイヤー" : owner == PlayerType.Player1 ? "☗ 先手" : "☖ 後手";
-        string energy = $"エナジー {gameSystem.Match.Energy.Get(owner)}";
         IRealtimeSeatController ctrl = gameSystem.SeatController(owner);
+        bool cpu = ctrl != null;
+        int energy = gameSystem.Match.Energy.Get(owner);
         string state = ctrl is RealtimeReplayController ? "（棋譜の再生）" : cpu ? "（CPU）" : focus ? "（操作中）" : "";
         TimeStopState ts = gameSystem.TimeStop;
         if (ts != null && ts.Owner != owner) state = "（相手の時間停止中は動けない）";
-        p.Header.text = $"{name}{state}　{energy}";
+        if (first || state != p.State || energy != p.Energy)
+        {
+            p.State = state;
+            p.Energy = energy;
+            string name = gameSystem.IsRaid ? "☗ プレイヤー" : owner == PlayerType.Player1 ? "☗ 先手" : "☖ 後手";
+            p.Header.text = $"{name}{state}　エナジー {energy}";
+        }
 
-        StringBuilder sb = new StringBuilder();
+        SkillDeck deck = gameSystem.GetSkillDeck(owner);
+        BodyInputs body = BodyInputsOf(owner, k, ctrl, deck);
+        if (first || !body.SameAs(p.BodyShown))
+        {
+            p.BodyShown = body;
+            p.Body.text = BuildBody(p, k, ctrl, deck);
+        }
+
+        string status = gameSystem.SeatStatus(owner);
+        if (first || status != p.StatusRaw || k != p.StatusKeys)
+        {
+            p.StatusRaw = status;
+            p.StatusKeys = k;
+            p.Status.text = OrEmpty(GameSystem.LocalizeKeys(status, k));
+        }
+    }
+
+    BodyInputs BodyInputsOf(PlayerType owner, SeatKeys k, IRealtimeSeatController ctrl, SkillDeck deck)
+    {
+        BodyInputs v = new BodyInputs { Keys = k, Deck = deck, SkillsHash = 17 };
+        if (ctrl is RealtimeCpuPacer pacer)
+        {
+            v.Ctrl = 1;
+            v.CpuLevel = pacer.Level;
+            v.CpuInterval = gameSystem.Policy.CpuIntervalTicks(pacer.Level);
+            v.Thinking = pacer.IsThinking;
+        }
+        else if (ctrl != null)
+        {
+            v.Ctrl = 2;
+        }
+        if (deck == null || deck.skills == null) return v;
+        v.SkillCount = deck.skills.Count;
+        for (int i = 0; i < v.SkillCount; i++)
+        {
+            SkillDefinition skill = deck.skills[i];
+            v.SkillsHash = v.SkillsHash * 31 + (skill != null ? skill.GetHashCode() : 0);
+            if (skill == null) continue;
+            if (i >= 21)
+            {
+                v.Overflow = true; // 今の編成は 5 枠まで。入りきらないときは毎回作り直す
+                continue;
+            }
+            int b = gameSystem.CanUseSkill(owner, skill) ? 1 : 0;
+            if (skill.rank == SkillRank.Transcendent)
+            {
+                if (gameSystem.IsTranscendentUsed(owner)) b |= 2;
+                if (gameSystem.IsTranscendentUnlocked(owner)) b |= 4;
+            }
+            v.SkillStates |= (long)b << (i * 3);
+        }
+        return v;
+    }
+
+    string BuildBody(SeatPanel p, SeatKeys k, IRealtimeSeatController ctrl, SkillDeck deck)
+    {
+        PlayerType owner = p.Owner;
+        bool cpu = ctrl != null;
+        StringBuilder sb = bodyBuilder;
+        sb.Clear();
         if (ctrl is RealtimeCpuPacer pacer)
         {
             // CPU の席：キーの代わりに強さと間隔（Lv0 2.0 秒／Lv1 1.5 秒／Lv2 1.2 秒）
@@ -110,13 +226,8 @@ public class RealtimeHudView : MonoBehaviour
         }
         else if (!cpu)
         {
-            // 錬成のキーが多い席（討伐任務）は「Z〜;（錬成パネルの順）」とまとめる
-            string forge = k.Forge.Length > 4 ? $"{SeatKeys.Label(k.Forge, 0)}〜{SeatKeys.Label(k.Forge, k.Forge.Length - 1)}（錬成パネルの順）"
-                : string.Join("・", System.Linq.Enumerable.Range(0, k.Forge.Length).Select(i => SeatKeys.Label(k.Forge, i)));
-            sb.Append($"<size=85%>移動 {SeatKeys.Labels(k.Up, k.Left, k.Down, k.Right)}　決定 {SeatKeys.Label(k.Ok)}　取消 {SeatKeys.Label(k.Cancel)}　持ち駒 {SeatKeys.Label(k.Hand)}\n");
-            sb.Append($"必殺技 {SeatKeys.Label(k.Special)}　狙撃 {SeatKeys.Label(k.Snipe)}　向き {SeatKeys.Label(k.Orient)}　解除 {SeatKeys.Label(k.Release)}　錬成 {forge}</size>\n");
+            sb.Append(KeyGuide(p, k));
         }
-        SkillDeck deck = gameSystem.GetSkillDeck(owner);
         if (deck != null && deck.skills != null)
         {
             for (int i = 0; i < deck.skills.Count; i++)
@@ -133,8 +244,33 @@ public class RealtimeHudView : MonoBehaviour
                 if (i % 3 == 2) sb.Append('\n');
             }
         }
-        p.Body.text = sb.ToString().TrimEnd();
-        p.Status.text = OrEmpty(GameSystem.LocalizeKeys(gameSystem.SeatStatus(owner), k));
+        return sb.ToString().TrimEnd();
+    }
+
+    // キー案内（移動・決定・取消・持ち駒・必殺技・狙撃・向き・解除・錬成）。キーごとに固定なので、キーが変わったときだけ作る
+    string KeyGuide(SeatPanel p, SeatKeys k)
+    {
+        if (p.Guide != null && p.GuideKeys == k) return p.Guide;
+        // 錬成のキーが多い席（討伐任務）は「Z〜;（錬成パネルの順）」とまとめる
+        string forge;
+        if (k.Forge.Length > 4)
+        {
+            forge = $"{SeatKeys.Label(k.Forge, 0)}〜{SeatKeys.Label(k.Forge, k.Forge.Length - 1)}（錬成パネルの順）";
+        }
+        else
+        {
+            StringBuilder f = new StringBuilder();
+            for (int i = 0; i < k.Forge.Length; i++)
+            {
+                if (i > 0) f.Append('・');
+                f.Append(SeatKeys.Label(k.Forge, i));
+            }
+            forge = f.ToString();
+        }
+        p.GuideKeys = k;
+        p.Guide = $"<size=85%>移動 {SeatKeys.Labels(k.Up, k.Left, k.Down, k.Right)}　決定 {SeatKeys.Label(k.Ok)}　取消 {SeatKeys.Label(k.Cancel)}　持ち駒 {SeatKeys.Label(k.Hand)}\n"
+            + $"必殺技 {SeatKeys.Label(k.Special)}　狙撃 {SeatKeys.Label(k.Snipe)}　向き {SeatKeys.Label(k.Orient)}　解除 {SeatKeys.Label(k.Release)}　錬成 {forge}</size>\n";
+        return p.Guide;
     }
 
     static string OrEmpty(string text)
