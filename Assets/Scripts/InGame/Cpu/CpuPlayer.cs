@@ -18,7 +18,7 @@ using UnityEngine;
 //   PollThinking  … 考え終わったら行動を返す（最低限かける秒数はない。間隔は RealtimeCpuPacer が数える）。行動はその tick の局面で判定される
 //
 //  味方の CPU（合戦将棋型の基本対戦：人が動かすのは王将だけ。GameSystem.Cpu.cs の AttachAllyCpus）も同じクラスを使う：
-//   ActionFilter で考える行動を「王将以外の駒の移動・必殺技・狙撃と、持ち駒を打つ」に絞り、IsAlly で席の案内文を出さない
+//   ActionFilter で考える行動を「王将以外の駒の移動・狙撃と、持ち駒を打つ」に絞り（必殺技は使わない）、IsAlly で席の案内文を出さない
 //   （人の案内文を「考えています」で上書きしない）
 public class CpuPlayer : MonoBehaviour, IRealtimeCpuBrain
 {

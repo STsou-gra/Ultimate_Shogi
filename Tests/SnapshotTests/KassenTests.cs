@@ -253,8 +253,12 @@ static partial class Program
             Check(!BoardSimulator.CanApply(s, KMv(P2, 6, 2, 5, 2)) && BoardSimulator.LegalActions(s, P2).Count == 0, "停止世界: 相手は動けない");
             int time = s.clockTime;
             int[] energy = { s.players[0].energy, s.players[1].energy };
-            Check(BoardSimulator.ApplyForSearch(s, KMv(P1, 2, 2, 3, 2)), "停止世界: 発動した側は動ける（先読みの近似）");
-            Check(s.timeStopRemaining == 9, "停止世界: 残り 9 回");
+            // 王将だけ操作（基本対戦）：発動した側も動けるのは王将だけ（味方の CPU の駒・持ち駒も止まる）。回数の上限はない
+            Check(!BoardSimulator.CanApply(s, KMv(P1, 2, 2, 3, 2)) && BoardSimulator.LegalActions(s, P1).All(x => x.type != MatchActionType.Move || s.At(x.from.x, x.from.y).type == PieceType.King),
+                "停止世界: 王将以外の駒は動けない");
+            MatchAction kingMove = BoardSimulator.LegalActions(s, P1).First(x => x.type == MatchActionType.Move);
+            Check(BoardSimulator.ApplyForSearch(s, kingMove), "停止世界: 発動した側の王将は動ける（先読みの近似）");
+            Check(s.timeStopRemaining == -1 && s.timeStopped, "停止世界: 回数の上限なし");
             BoardSimulator.Advance(s, MatchPolicy.SecToTicks(K.Durations.TimeStopSec) - 1);
             Check(s.timeStopped && s.clockTime == time && s.players[0].energy == energy[0] && s.players[1].energy == energy[1], "停止世界: 対局の時間・エナジーは止まる");
             BoardSimulator.Tick(s);
@@ -268,14 +272,17 @@ static partial class Program
             s.players[0].energy = 31;
             s.players[0].transcendentUnlocked = true;
             BoardSimulator.Apply(s, Own(Mg("TimeStop"), P1));
-            for (int i = 0; i < 10; i++)
+            int moved = 0;
+            for (int i = 0; i < 15; i++)
             {
                 Check(s.timeStopped, $"停止世界: {i + 1} 回目の前は時間停止中");
-                MatchAction a = BoardSimulator.LegalActions(s, P1).First(x => x.type == MatchActionType.Move);
-                BoardSimulator.ApplyForSearch(s, a);
+                MatchAction a = BoardSimulator.LegalActions(s, P1).FirstOrDefault(x => x.type == MatchActionType.Move);
+                if (a != null && BoardSimulator.ApplyForSearch(s, a)) moved++;
                 BoardSimulator.Advance(s, MatchPolicy.SecToTicks(0.4f));
             }
-            Check(!s.timeStopped, "停止世界: 10 回行動したら解除（時間より先）");
+            Check(moved >= 11 && s.timeStopped, $"停止世界: 王将だけ操作は 10 回を超えて動いても解除されない（{moved} 回）");
+            BoardSimulator.Advance(s, MatchPolicy.SecToTicks(K.Durations.TimeStopSec));
+            Check(!s.timeStopped, "停止世界: 10 秒で解除");
         }
     }
 
@@ -419,8 +426,12 @@ static partial class Program
         Check(!new MatchPolicy(BattleRulesets.Honshogi, null).PlayersControlKingOnly, "王将だけ操作: 本将棋型は全部の駒を動かせる");
 
         MatchAction move = Mv(0, 4, 1, 4), special = MatchAction.Special(new Vector2Int(0, 4)), drop = MatchAction.Drop(PieceType.Pawn, new Vector2Int(4, 4));
+        MatchAction snipe = MatchAction.Snipe(new Vector2Int(0, 4), new Vector2Int(5, 4));
         MatchAction magic = MatchAction.Magic("Shield"), forge = MatchAction.Forge(PieceType.Bird), release = MatchAction.ReleaseTimeStop();
-        foreach (MatchAction a in new[] { move, special })
+        Check(MatchPolicy.IsHumanActionUnderKingOnly(special, PieceType.King) && !MatchPolicy.IsAllyActionUnderKingOnly(special, PieceType.King), "王将だけ操作: 王将の必殺技は人だけ");
+        Check(!MatchPolicy.IsHumanActionUnderKingOnly(special, PieceType.Rook) && !MatchPolicy.IsAllyActionUnderKingOnly(special, PieceType.Rook), "王将だけ操作: 王将以外の必殺技は誰も使わない（味方の CPU は必殺技を使わない）");
+        Check(new MatchPolicy(K, null).TimeStopLimitsMoves == false && new MatchPolicy(K, null, GameModes.BossRaid).TimeStopLimitsMoves == false, "王将だけ操作: 停止世界は秒数だけ");
+        foreach (MatchAction a in new[] { move, snipe })
         {
             Check(MatchPolicy.IsHumanActionUnderKingOnly(a, PieceType.King) && !MatchPolicy.IsAllyActionUnderKingOnly(a, PieceType.King), $"王将だけ操作: 王将の{a.type}は人だけ");
             Check(!MatchPolicy.IsHumanActionUnderKingOnly(a, PieceType.Rook) && MatchPolicy.IsAllyActionUnderKingOnly(a, PieceType.Rook), $"王将だけ操作: 飛車の{a.type}は味方の CPU だけ");
@@ -446,9 +457,10 @@ static partial class Program
                     SnapshotPiece p = a.from.IsOnBoard ? view.At(a.from.x, a.from.y) : null;
                     return MatchPolicy.IsAllyActionUnderKingOnly(a, p != null ? p.type : (PieceType?)null);
                 });
+                Check(legal.All(a => a.type != MatchActionType.Special), $"王将だけ操作: 味方の CPU（{owner}）の候補に必殺技がない");
                 MatchAction c = CpuSearch.Choose(view, Opt(level), legal);
                 SnapshotPiece actor = c != null && c.from.IsOnBoard ? s.At(c.from.x, c.from.y) : null;
-                Check(c != null && BoardSimulator.CanApply(s, c) && (c.type == MatchActionType.Drop || (actor != null && actor.type != PieceType.King)),
+                Check(c != null && c.type != MatchActionType.Special && BoardSimulator.CanApply(s, c) && (c.type == MatchActionType.Drop || (actor != null && actor.type != PieceType.King)),
                     $"王将だけ操作: 味方の CPU（{owner} Lv{level}）は王将以外の駒の手を返す（{c}）");
             }
         }

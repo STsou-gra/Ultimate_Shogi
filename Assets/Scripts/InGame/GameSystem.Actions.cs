@@ -118,6 +118,11 @@ public partial class GameSystem
             reason = "相手の時間停止中は動けません"; // 本将棋型では、時間停止中の手番は必ず発動した人
             return null;
         }
+        if (IsBlockedInKingOnlyTimeStop(a))
+        {
+            reason = "時間停止中に動けるのは王将だけです"; // 王将だけ操作の合戦将棋型（味方の CPU・CPU の王将以外の駒も止まる）
+            return null;
+        }
         if (IsOnlineMatch && me != NetworkManager.Instance.MyPlayerType)
         {
             reason = "相手の手番です";
@@ -544,6 +549,9 @@ public partial class GameSystem
 
         // 停止世界の解除
         if (ReleaseBlockReason(player) == null) res.Add(MatchAction.ReleaseTimeStop());
+
+        // 王将だけ操作の停止世界の間は、王将の行動・魔法・錬成・解除だけ（PlanAction と同じ）
+        if (timeStop != null && UsesAllyCpu) res.RemoveAll(IsBlockedInKingOnlyTimeStop);
         return res;
     }
 

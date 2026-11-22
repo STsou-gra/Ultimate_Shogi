@@ -25,8 +25,9 @@ public class BattleRuleset
     public float PieceCooldownSec;         // 動いた駒が次の行動をできるまでの秒数（0 で制限なし）
     public float[] CpuIntervalSec;         // CPU（Lv0, Lv1, Lv2）が行動する間隔（秒）
 
-    // 人が動かせるのは王将だけにするか（王将以外の駒の移動・必殺技・狙撃と持ち駒を打つのは、席ごとの味方の CPU が行う。
-    // 魔法・錬成・停止世界の解除は人が行う）。基本対戦だけ（討伐任務には使わない。MatchPolicy.PlayersControlKingOnly）
+    // 人が動かせるのは王将だけにするか（王将以外の駒の移動・狙撃と持ち駒を打つのは、席ごとの味方の CPU が行う。味方の CPU は必殺技を使わない。
+    // 魔法・錬成・停止世界の解除は王将（人）だけが行う。停止世界は TimeStopSec 秒だけで、その間は王将だけが動ける）。
+    // 基本対戦だけ（討伐任務には使わない。MatchPolicy.PlayersControlKingOnly）
     public bool KingOnlyControl;
     // 味方の CPU の強さ（行動の間隔は CpuIntervalSec）。CPU と対戦では相手の CPU と同じ強さにする
     public int AllyCpuLevel = 1;
@@ -62,7 +63,7 @@ public static class BattleRulesets
     {
         Id = "kassen",
         Name = "合戦将棋型",
-        Description = "手番がない。プレイヤーが動かすのは王将だけで、ほかの駒は味方の CPU が動かす。両者ともいつでも何度でも王将を動かせる。エナジーは 1 秒ごとに +1。",
+        Description = "手番がない。プレイヤーが動かすのは王将だけで、ほかの駒は味方の CPU が動かす（必殺技は使わない）。魔法・錬成は王将だけが使える。両者ともいつでも何度でも王将を動かせる。エナジーは 1 秒ごとに +1。",
         Realtime = true,
         CutIns = false,       // 全画面のカットインは出さない（スキルごとのエフェクトは出す）
         AwaitEffects = false, // 演出を待たずに重ねて再生する（演出でゲームの進行を止めない）

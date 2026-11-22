@@ -12,9 +12,10 @@ using UnityEngine;
 //    その席を手番にした写しの局面で考え（IRealtimeCpuBrain）、考え終わった tick に行動を入れる（そのときの局面で判定し、できなければ捨てる）。
 //    人はキーボード全体で自分の席を操作する（SeatKeys.KassenSolo）。盤は回さない（先手の側から見る）
 //  ・合戦将棋型の基本対戦（MatchPolicy.PlayersControlKingOnly）：人が動かせるのは王将だけ。人の席には、王将以外の駒の
-//    移動・必殺技・狙撃と持ち駒を打つのを受け持つ味方の CPU（RealtimeCpuPacer ＋ CpuPlayer）を付ける（AttachAllyCpus）。
+//    移動・狙撃と持ち駒を打つのを受け持つ味方の CPU（RealtimeCpuPacer ＋ CpuPlayer）を付ける（AttachAllyCpus）。味方の CPU は必殺技を使わない。
 //    2人で対戦なら両方の席、CPU と対戦なら人の席だけ（CPU の席は今までどおり CPU が全部の駒を動かす）。
-//    魔法・錬成・停止世界の解除は人が行う。人の入力から王将以外の駒の行動は出せない（Dispatch・IsHumanAllowedAction）。
+//    魔法・錬成・停止世界の解除は王将（人）だけが行う。人の入力から王将以外の駒の行動は出せない（Dispatch・IsHumanAllowedAction）。
+//    停止世界は TimeStopSec 秒だけ（回数の上限なし）で、その間は王将だけが動ける（味方の CPU も止まる。IsBlockedInKingOnlyTimeStop）。
 //    席が Controller（CPU・棋譜の再生）に任されている間は、味方の CPU は動かない（棋譜には味方の CPU の行動も席の行動として残るので、再生で再現される）
 public partial class GameSystem
 {
@@ -153,7 +154,7 @@ public partial class GameSystem
         return p != null ? p.type : (PieceType?)null;
     }
 
-    // 味方の CPU が行う行動か（王将以外の駒の移動・必殺技・狙撃と、持ち駒を打つ）
+    // 味方の CPU が行う行動か（王将以外の駒の移動・狙撃と、持ち駒を打つ。必殺技は使わない）
     bool IsAllyAction(MatchAction a) => MatchPolicy.IsAllyActionUnderKingOnly(a, ActorPieceType(a));
 
     // 席 owner の人の入力から出してよい行動か（王将だけ操作のとき：王将の行動・魔法・錬成・停止世界の解除だけ）
@@ -161,6 +162,13 @@ public partial class GameSystem
     {
         if (!UsesAllyCpu || seatControllers[(int)owner] != null) return true;
         return MatchPolicy.IsHumanActionUnderKingOnly(a, ActorPieceType(a));
+    }
+
+    // 王将だけ操作の停止世界の間に、a ができないか（王将の行動・魔法・錬成・解除だけできる。BoardSimulator.IsBlockedInKingOnlyTimeStop と同じ）
+    bool IsBlockedInKingOnlyTimeStop(MatchAction a)
+    {
+        if (timeStop == null || !UsesAllyCpu) return false;
+        return !MatchPolicy.IsHumanActionUnderKingOnly(a, ActorPieceType(a));
     }
 
     // 人の席で、盤上の駒 piece を人が選べないか（王将だけ操作のときの王将以外の駒）

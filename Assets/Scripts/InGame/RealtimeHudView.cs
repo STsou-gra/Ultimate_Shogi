@@ -234,7 +234,7 @@ public class RealtimeHudView : MonoBehaviour
             if (ally != null)
             {
                 // 王将だけ操作：王将以外の駒・持ち駒は味方の CPU が動かす
-                sb.Append($"<size=85%>王将だけ操作：ほかの駒・持ち駒は味方の CPU（{CpuLevels.Label(ally.Level)}）が {MatchPolicy.TicksToSec(gameSystem.Policy.CpuIntervalTicks(ally.Level)):0.0} 秒ごとに動かす</size>\n");
+                sb.Append($"<size=85%>王将だけ操作：ほかの駒・持ち駒は味方の CPU（必殺技なし・{CpuLevels.Label(ally.Level)}・{MatchPolicy.TicksToSec(gameSystem.Policy.CpuIntervalTicks(ally.Level)):0.0} 秒ごと）が動かす</size>\n");
             }
         }
         if (deck != null && deck.skills != null)

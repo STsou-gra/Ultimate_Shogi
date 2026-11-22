@@ -287,8 +287,10 @@ public static class RulesBook
                     allyIntervals.Add($"2人で対戦は {CpuLevels.Label(lv)}（{r.CpuIntervalSec[System.Math.Min(lv, r.CpuIntervalSec.Length - 1)]:0.0} 秒ごと）");
                 }
                 allyIntervals.Add("CPU と対戦は相手の CPU と同じ強さ・間隔");
-                p.Text("プレイヤーが動かせるのは王将だけ（王将の移動・必殺技・狙撃）。王将以外の駒の移動・必殺技・狙撃と、持ち駒を打つのは、それぞれの席の味方の CPU が一定の間隔ごとに行う（" + string.Join("。", allyIntervals) + "）。", 1)
-                 .Text("魔法・錬成・時間停止の解除はプレイヤーが行う（味方の CPU はエナジーを使わない）。討伐任務では今までどおり全部の駒を動かせる。", 1);
+                p.Text("プレイヤーが動かせるのは王将だけ（王将の移動・必殺技・狙撃）。王将以外の駒の移動・狙撃と、持ち駒を打つのは、それぞれの席の味方の CPU が一定の間隔ごとに行う（" + string.Join("。", allyIntervals) + "）。", 1)
+                 .Text("味方の CPU は必殺技を使わない。魔法・錬成・時間停止の解除は王将（プレイヤー）だけが使える（味方の CPU はエナジーを使わない）。", 1)
+                 .Text($"停止世界：{d.TimeStopSec:0} 秒のあいだ、発動した側の王将だけが何回でも動ける（魔法・錬成も使える）。味方の CPU も止まる。", 1)
+                 .Text("討伐任務では今までどおり全部の駒を動かせる。", 1);
             }
             p
              .Text($"エナジーは 1 秒ごとに +{r.EnergyPerSec}（取り・取られのエナジーは本将棋型と同じ）。動いた駒は {r.PieceCooldownSec:0.0} 秒だけ次の行動ができない。")
@@ -299,7 +301,9 @@ public static class RulesBook
              .Text($"炎上 … 1 ターン = {d.BurnSecPerTurn:0} 秒（隕石は {10 * d.BurnSecPerTurn:0} 秒。マスの数字は残り秒）", 2)
              .Text($"世界の終わり … {d.WorldEndIntervalSec:0} 秒ごとに {MatchConfig.WorldEndCells} マス", 2)
              .Text($"ファランクス・アンデッドの自動行動 … {d.AutoActSec:0} 秒ごと（先手 → 後手の順）", 2)
-             .Text($"停止世界 … {MatchConfig.TimeStopMoves} 回行動か {d.TimeStopSec:0} 秒の早いほう（その間、相手は操作できず、対局の時間も止まる）", 2)
+             .Text(r.KingOnlyControl
+                 ? $"停止世界 … {d.TimeStopSec:0} 秒（回数の上限なし。その間、発動した側の王将だけが動け、相手は操作できず、対局の時間も止まる）"
+                 : $"停止世界 … {MatchConfig.TimeStopMoves} 回行動か {d.TimeStopSec:0} 秒の早いほう（その間、相手は操作できず、対局の時間も止まる）", 2)
              .Text($"超常魔法の解放 … 行動のあとと {d.UnlockCheckSec:0} 秒ごとに判定", 2)
              .Text("「2回行動」は使えない（手番がない）。")
              .Text("画面の上に経過時間。「一時停止」（Esc）で止められる。ルール説明を開いている間・ウィンドウが非アクティブの間も止まる。");
@@ -664,7 +668,8 @@ public static class RulesBook
          .Text("火薬に重なる・撃つ → 爆発の予定。炎上・落とし穴に入る → 消失の予定。その駒はもう動かせない。", 2)
          .Text("成り・隕石や破壊砲で消える駒・マスの変化（落とし穴・壁の設置・破壊・炎上）も予定になる。", 2)
          .Text("時間停止中はエナジーが増えない（魔法の消費はその場で減る）。ファランクス・アンデッドなどの自動行動も止まる。")
-         .Text("回数を使い切るか「解除」を押すと時間が動き出し、予定を起きた順にまとめて処理する（取りのエナジー・盾も、このとき有効になる）。");
+         .Text("回数を使い切るか「解除」を押すと時間が動き出し、予定を起きた順にまとめて処理する（取りのエナジー・盾も、このとき有効になる）。")
+         .Text($"合戦将棋型（基本対戦）：回数の上限はなく {BattleRulesets.Kassen.Durations.TimeStopSec:0} 秒だけ止まる。その間は発動した側の王将だけが動ける（魔法・錬成も使える。味方の CPU も止まる）。");
     }
 
     static void UndeadDetail(RulesPage p)
@@ -752,7 +757,7 @@ public static class RulesBook
         p.Sub(solo.Name)
          .Text($"キーボード全体を使う：カーソル {SeatKeys.Labels(solo.Up, solo.Left, solo.Down, solo.Right)}　決定 {All(solo.Ok)}　取消 {All(solo.Cancel)}　持ち駒 {SeatKeys.Label(solo.Hand)}", 2)
          .Text($"必殺技 {SeatKeys.Label(solo.Special)}　狙撃 {SeatKeys.Label(solo.Snipe)}　範囲の向き {SeatKeys.Label(solo.Orient)}　時間停止の解除 {SeatKeys.Label(solo.Release)}　魔法 {SeatKeys.Label(solo.Skills, 0)}〜{SeatKeys.Label(solo.Skills, solo.Skills.Length - 1)}　錬成 {All(solo.Forge)}", 2);
-        p.Text("基本対戦の合戦将棋型では、選べる駒は王将だけ（王将以外の駒・持ち駒は味方の CPU が動かす）。必殺技・狙撃のキーも王将の分だけ。")
+        p.Text("基本対戦の合戦将棋型では、選べる駒は王将だけ（王将以外の駒・持ち駒は味方の CPU が動かす。味方の CPU は必殺技を使わない）。必殺技・狙撃のキーも王将の分だけ。魔法・錬成は王将（プレイヤー）だけが使える。")
          .Text("成る・成らない：カーソルのキーで選んで決定。画面のボタン（魔法・錬成・必殺技・狙撃）は、最後にキーを押した側（「操作中」）の分。")
          .Text("一時停止：Esc（画面の上の「一時停止」ボタン）。");
 

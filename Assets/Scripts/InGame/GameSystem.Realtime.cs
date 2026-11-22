@@ -209,7 +209,7 @@ public partial class GameSystem
                 : IsCpuSide(s.Owner.Value)
                 ? $"【CPU】 {CpuLevels.Label(MatchSetup.CpuLevel)}が {Policy.Ruleset.CpuIntervalSec[CpuLevels.Clamp(MatchSetup.CpuLevel)]:0.0} 秒ごとに動く"
                 : UsesAllyCpu
-                ? $"【{Policy.Ruleset.Name}】 あなたが動かすのは王将だけ。ほかの駒は味方の CPU が動かす。魔法・錬成はあなたが使う（{RealtimeKeyHint(s.Keys)}）"
+                ? $"【{Policy.Ruleset.Name}】 あなたが動かすのは王将だけ。ほかの駒は味方の CPU が動かす（必殺技は使わない）。魔法・錬成は王将（あなた）だけが使える（{RealtimeKeyHint(s.Keys)}）"
                 : $"【{Policy.Ruleset.Name}】 手番なし。いつでも自分の駒を動かせる（{RealtimeKeyHint(s.Keys)}）";
         }
         UseSeat(focusSide);
@@ -437,11 +437,17 @@ public partial class GameSystem
             }
         }
 
-        // 1'. 味方の CPU（王将だけ操作：人の席の王将以外の駒。GameSystem.Cpu.cs）。席が Controller に任されている間は動かない
+        // 1'. 味方の CPU（王将だけ操作：人の席の王将以外の駒。GameSystem.Cpu.cs）。席が Controller に任されている間は動かない。
+        //     停止世界の間は（どちらの席の味方も）止まる：考えている途中をやめ、時間が動き出してから間隔を数え直す
         for (int i = 0; i < allyCpus.Length; i++)
         {
             RealtimeCpuPacer ally = allyCpus[i];
             if (ally == null || seatControllers[i] != null) continue;
+            if (timeStop != null)
+            {
+                ally.Reset();
+                continue;
+            }
             IEnumerable<MatchAction> actions = ally.RealtimeActions(this, (PlayerType)i);
             if (actions == null) continue;
             foreach (MatchAction a in actions)
