@@ -25,6 +25,7 @@ static partial class Program
         TestKassenTimeStop();
         TestKassenDeterminism();
         TestKassenCpu();
+        TestKassenKingOnly();
         TestKassenHashAndState();
         TestPrototypeKifus();
     }
@@ -405,6 +406,51 @@ static partial class Program
             Invariants(g, "合戦の CPU 同士");
             Check(acts >= 10 && (g.gameOver || acts > 60), $"合戦の CPU 同士: 終局するか 90 秒まで指し続けた（{acts} 回・{(g.gameOver ? "終局" : "続行中")}）");
             Console.WriteLine($"kassen cpu vs cpu（Lv1 対 Lv2）: {acts} 回行動・{(g.gameOver ? $"tick {g.clockTick} で{(g.winner == 0 ? "先手" : g.winner == 1 ? "後手" : "引き分け")}の勝ち" : "90 秒で打ち切り")}");
+        }
+    }
+
+    // ------------------------------------------------------------
+    //  王将だけ操作（合戦将棋型の基本対戦）：人は王将・魔法・錬成・解除、味方の CPU は王将以外の駒・持ち駒（GameSystem.Cpu.cs）
+    // ------------------------------------------------------------
+    static void TestKassenKingOnly()
+    {
+        Check(new MatchPolicy(K, null).PlayersControlKingOnly, "王将だけ操作: 合戦将棋型の基本対戦は王将だけ操作");
+        Check(!new MatchPolicy(K, null, GameModes.BossRaid).PlayersControlKingOnly, "王将だけ操作: 討伐任務は全部の駒を動かせる");
+        Check(!new MatchPolicy(BattleRulesets.Honshogi, null).PlayersControlKingOnly, "王将だけ操作: 本将棋型は全部の駒を動かせる");
+
+        MatchAction move = Mv(0, 4, 1, 4), special = MatchAction.Special(new Vector2Int(0, 4)), drop = MatchAction.Drop(PieceType.Pawn, new Vector2Int(4, 4));
+        MatchAction magic = MatchAction.Magic("Shield"), forge = MatchAction.Forge(PieceType.Bird), release = MatchAction.ReleaseTimeStop();
+        foreach (MatchAction a in new[] { move, special })
+        {
+            Check(MatchPolicy.IsHumanActionUnderKingOnly(a, PieceType.King) && !MatchPolicy.IsAllyActionUnderKingOnly(a, PieceType.King), $"王将だけ操作: 王将の{a.type}は人だけ");
+            Check(!MatchPolicy.IsHumanActionUnderKingOnly(a, PieceType.Rook) && MatchPolicy.IsAllyActionUnderKingOnly(a, PieceType.Rook), $"王将だけ操作: 飛車の{a.type}は味方の CPU だけ");
+            Check(!MatchPolicy.IsHumanActionUnderKingOnly(a, null) && !MatchPolicy.IsAllyActionUnderKingOnly(a, null), $"王将だけ操作: 駒のない{a.type}はどちらも出せない");
+        }
+        Check(!MatchPolicy.IsHumanActionUnderKingOnly(drop, null) && MatchPolicy.IsAllyActionUnderKingOnly(drop, null), "王将だけ操作: 持ち駒を打つのは味方の CPU");
+        foreach (MatchAction a in new[] { magic, forge, release })
+        {
+            Check(MatchPolicy.IsHumanActionUnderKingOnly(a, null) && !MatchPolicy.IsAllyActionUnderKingOnly(a, null), $"王将だけ操作: {a.type}は人だけ");
+        }
+
+        // 味方の CPU：合法手を王将以外の駒の行動に絞って考えると、王将以外の駒の手を返す（CpuPlayer.ActionFilter と同じ絞り方）
+        BoardSnapshot s = Kassen();
+        BoardSimulator.Advance(s, Sec * 5);
+        foreach (PlayerType owner in new[] { P1, P2 })
+        {
+            foreach (int level in new[] { 0, 1, 2 })
+            {
+                BoardSnapshot view = s.Clone();
+                view.current = (int)owner;
+                List<MatchAction> legal = BoardSimulator.LegalActions(view, owner).FindAll(a =>
+                {
+                    SnapshotPiece p = a.from.IsOnBoard ? view.At(a.from.x, a.from.y) : null;
+                    return MatchPolicy.IsAllyActionUnderKingOnly(a, p != null ? p.type : (PieceType?)null);
+                });
+                MatchAction c = CpuSearch.Choose(view, Opt(level), legal);
+                SnapshotPiece actor = c != null && c.from.IsOnBoard ? s.At(c.from.x, c.from.y) : null;
+                Check(c != null && BoardSimulator.CanApply(s, c) && (c.type == MatchActionType.Drop || (actor != null && actor.type != PieceType.King)),
+                    $"王将だけ操作: 味方の CPU（{owner} Lv{level}）は王将以外の駒の手を返す（{c}）");
+            }
         }
     }
 

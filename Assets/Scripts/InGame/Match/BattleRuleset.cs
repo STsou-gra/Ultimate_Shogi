@@ -24,6 +24,12 @@ public class BattleRuleset
     public RulesetDurations Durations;     // 「N ターン」で書かれた規則の読み替え（秒）
     public float PieceCooldownSec;         // 動いた駒が次の行動をできるまでの秒数（0 で制限なし）
     public float[] CpuIntervalSec;         // CPU（Lv0, Lv1, Lv2）が行動する間隔（秒）
+
+    // 人が動かせるのは王将だけにするか（王将以外の駒の移動・必殺技・狙撃と持ち駒を打つのは、席ごとの味方の CPU が行う。
+    // 魔法・錬成・停止世界の解除は人が行う）。基本対戦だけ（討伐任務には使わない。MatchPolicy.PlayersControlKingOnly）
+    public bool KingOnlyControl;
+    // 味方の CPU の強さ（行動の間隔は CpuIntervalSec）。CPU と対戦では相手の CPU と同じ強さにする
+    public int AllyCpuLevel = 1;
 }
 
 // 「N ターン」の規則を秒に読み替えた値（Prototype の kassen.js の durations）
@@ -56,7 +62,7 @@ public static class BattleRulesets
     {
         Id = "kassen",
         Name = "合戦将棋型",
-        Description = "手番がない。両者ともいつでも何度でも自分の駒を動かせる。エナジーは 1 秒ごとに +1。",
+        Description = "手番がない。プレイヤーが動かすのは王将だけで、ほかの駒は味方の CPU が動かす。両者ともいつでも何度でも王将を動かせる。エナジーは 1 秒ごとに +1。",
         Realtime = true,
         CutIns = false,       // 全画面のカットインは出さない（スキルごとのエフェクトは出す）
         AwaitEffects = false, // 演出を待たずに重ねて再生する（演出でゲームの進行を止めない）
@@ -72,6 +78,8 @@ public static class BattleRulesets
         },
         PieceCooldownSec = 0.3f,
         CpuIntervalSec = new[] { 2.0f, 1.5f, 1.2f },
+        KingOnlyControl = true,
+        AllyCpuLevel = 1,
     };
 
     public static readonly IReadOnlyList<BattleRuleset> All = new List<BattleRuleset> { Honshogi, Kassen };

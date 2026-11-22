@@ -276,8 +276,21 @@ public static class RulesBook
             if (r == null || !r.Realtime) continue;
             RulesetDurations d = r.Durations ?? new RulesetDurations();
             p.Heading(r.Name);
-            p.Text("手番がない。両者ともいつでも何度でも自分の駒を動かせる（移動・打つ・必殺技・狙撃・魔法・錬成）。")
-             .Text("1 台のキーボードを左右に分けて、先手・後手が同時に操作する（キーは「操作」のページ）。自分の駒・持ち駒・魔法のキーを使えば、その人の行動になる。")
+            p.Text("手番がない。両者ともいつでも何度でも行動できる（移動・打つ・必殺技・狙撃・魔法・錬成）。")
+             .Text("1 台のキーボードを左右に分けて、先手・後手が同時に操作する（キーは「操作」のページ）。自分の駒・持ち駒・魔法のキーを使えば、その人の行動になる。");
+            if (r.KingOnlyControl)
+            {
+                List<string> allyIntervals = new List<string>();
+                if (r.CpuIntervalSec != null && r.CpuIntervalSec.Length > 0)
+                {
+                    int lv = CpuLevels.Clamp(r.AllyCpuLevel);
+                    allyIntervals.Add($"2人で対戦は {CpuLevels.Label(lv)}（{r.CpuIntervalSec[System.Math.Min(lv, r.CpuIntervalSec.Length - 1)]:0.0} 秒ごと）");
+                }
+                allyIntervals.Add("CPU と対戦は相手の CPU と同じ強さ・間隔");
+                p.Text("プレイヤーが動かせるのは王将だけ（王将の移動・必殺技・狙撃）。王将以外の駒の移動・必殺技・狙撃と、持ち駒を打つのは、それぞれの席の味方の CPU が一定の間隔ごとに行う（" + string.Join("。", allyIntervals) + "）。", 1)
+                 .Text("魔法・錬成・時間停止の解除はプレイヤーが行う（味方の CPU はエナジーを使わない）。討伐任務では今までどおり全部の駒を動かせる。", 1);
+            }
+            p
              .Text($"エナジーは 1 秒ごとに +{r.EnergyPerSec}（取り・取られのエナジーは本将棋型と同じ）。動いた駒は {r.PieceCooldownSec:0.0} 秒だけ次の行動ができない。")
              .Text("必殺技・魔法の全画面のカットインは出ない（スキルごとの演出は出る）。演出の再生で対局の進行は止まらない。")
              .Text("勝ち負け：相手の王将をすべて取った（倒した）ら勝ち。詰み・千日手・王手の表示はなく、打ち歩詰めも禁止しない。")
@@ -739,7 +752,8 @@ public static class RulesBook
         p.Sub(solo.Name)
          .Text($"キーボード全体を使う：カーソル {SeatKeys.Labels(solo.Up, solo.Left, solo.Down, solo.Right)}　決定 {All(solo.Ok)}　取消 {All(solo.Cancel)}　持ち駒 {SeatKeys.Label(solo.Hand)}", 2)
          .Text($"必殺技 {SeatKeys.Label(solo.Special)}　狙撃 {SeatKeys.Label(solo.Snipe)}　範囲の向き {SeatKeys.Label(solo.Orient)}　時間停止の解除 {SeatKeys.Label(solo.Release)}　魔法 {SeatKeys.Label(solo.Skills, 0)}〜{SeatKeys.Label(solo.Skills, solo.Skills.Length - 1)}　錬成 {All(solo.Forge)}", 2);
-        p.Text("成る・成らない：カーソルのキーで選んで決定。画面のボタン（魔法・錬成・必殺技・狙撃）は、最後にキーを押した側（「操作中」）の分。")
+        p.Text("基本対戦の合戦将棋型では、選べる駒は王将だけ（王将以外の駒・持ち駒は味方の CPU が動かす）。必殺技・狙撃のキーも王将の分だけ。")
+         .Text("成る・成らない：カーソルのキーで選んで決定。画面のボタン（魔法・錬成・必殺技・狙撃）は、最後にキーを押した側（「操作中」）の分。")
          .Text("一時停止：Esc（画面の上の「一時停止」ボタン）。");
 
         p.Heading("この画面")

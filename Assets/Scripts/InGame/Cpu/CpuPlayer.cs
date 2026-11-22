@@ -16,6 +16,10 @@ using UnityEngine;
 //   BeginThinking … その席の合法手（GameSystem.LegalActions）と、その席を手番（current）にした写しの局面を作って考え始める
 //                   （Prototype の CpuController.realtimeActions の view.current = owner）
 //   PollThinking  … 考え終わったら行動を返す（最低限かける秒数はない。間隔は RealtimeCpuPacer が数える）。行動はその tick の局面で判定される
+//
+//  味方の CPU（合戦将棋型の基本対戦：人が動かすのは王将だけ。GameSystem.Cpu.cs の AttachAllyCpus）も同じクラスを使う：
+//   ActionFilter で考える行動を「王将以外の駒の移動・必殺技・狙撃と、持ち駒を打つ」に絞り、IsAlly で席の案内文を出さない
+//   （人の案内文を「考えています」で上書きしない）
 public class CpuPlayer : MonoBehaviour, IRealtimeCpuBrain
 {
     public PlayerType Side { get; private set; }
@@ -32,6 +36,12 @@ public class CpuPlayer : MonoBehaviour, IRealtimeCpuBrain
 
     // 考え中か（状況の表示用）
     public bool IsThinking => thinking;
+
+    // 合戦将棋型：考える行動を絞る（null なら合法手すべて。味方の CPU は王将以外の駒の行動だけ）。メインスレッドで呼ぶ
+    public System.Predicate<MatchAction> ActionFilter { get; set; }
+
+    // 人の席の王将以外の駒を動かす味方の CPU か（席の案内文を出さない）
+    public bool IsAlly { get; set; }
 
     GameSystem game;
     bool thinking;
@@ -84,11 +94,12 @@ public class CpuPlayer : MonoBehaviour, IRealtimeCpuBrain
     {
         if (thinking) CancelThinking();
         legal = system.LegalActions(seat);
+        if (ActionFilter != null) legal = legal.FindAll(ActionFilter);
         if (!legal.Exists(a => a.type != MatchActionType.Forge)) return false;
         BoardSnapshot snapshot = system.CaptureSnapshot(false);
         snapshot.current = (int)seat; // 考える席を手番にする（BoardSimulator・CpuSearch は current を CPU の席として読む）
         StartSearch(snapshot, SeedFromHash(system.StateHash()), legal.ConvertAll(a => a.Clone()));
-        system.ShowSeatStatus(seat, $"【CPU】 {CpuLevels.Label(Level)}が考えています……");
+        if (!IsAlly) system.ShowSeatStatus(seat, $"【CPU】 {CpuLevels.Label(Level)}が考えています……");
         return true;
     }
 
@@ -107,8 +118,8 @@ public class CpuPlayer : MonoBehaviour, IRealtimeCpuBrain
         {
             result = result.Clone();
             result.Owner = Side;
-            Debug.Log($"[CPU] {SideName}（{CpuLevels.Label(Level)}）：{result}");
-            system.ShowSeatStatus(Side, $"【CPU】 {result}");
+            Debug.Log($"[{(IsAlly ? "味方CPU" : "CPU")}] {SideName}（{CpuLevels.Label(Level)}）：{result}");
+            if (!IsAlly) system.ShowSeatStatus(Side, $"【CPU】 {result}");
         }
         return true;
     }

@@ -65,6 +65,8 @@ public partial class GameSystem
         if (IsRealtime)
         {
             if (IsRealtimePaused) return false; // 止めている間は入れない（Prototype の canSubmit）
+            // 王将だけ操作（合戦将棋型の基本対戦）：人の入力から王将以外の駒の行動・持ち駒を打つのは出せない（味方の CPU が行う。GameSystem.Cpu.cs）
+            if (!replayDispatching && !IsHumanAllowedAction(plan.Action, plan.Owner)) return false;
             EnqueueRealtime(plan.Action, plan.Owner);
             return true;
         }
