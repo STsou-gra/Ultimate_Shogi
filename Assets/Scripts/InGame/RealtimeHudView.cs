@@ -34,13 +34,14 @@ public class RealtimeHudView : MonoBehaviour
         public int CpuLevel;          // CPU の強さ
         public int CpuInterval;       // CPU の動く間隔（tick）
         public bool Thinking;         // CPU が考え中か
+        public int AllyLevel;         // 人の席の味方の CPU の強さ（王将だけ操作。いなければ -1）
         public long SkillStates;      // 魔法ごとに 3 ビット：使えるか・超常魔法の使用済み・解放済み
         public bool Overflow;         // 魔法が多すぎて SkillStates に入りきらない（毎回作り直す）
 
         public bool SameAs(in BodyInputs o)
         {
             return !Overflow && !o.Overflow && Keys == o.Keys && Deck == o.Deck && SkillCount == o.SkillCount && SkillsHash == o.SkillsHash
-                && Ctrl == o.Ctrl && CpuLevel == o.CpuLevel && CpuInterval == o.CpuInterval && Thinking == o.Thinking && SkillStates == o.SkillStates;
+                && Ctrl == o.Ctrl && CpuLevel == o.CpuLevel && CpuInterval == o.CpuInterval && Thinking == o.Thinking && AllyLevel == o.AllyLevel && SkillStates == o.SkillStates;
         }
     }
 
@@ -178,7 +179,9 @@ public class RealtimeHudView : MonoBehaviour
 
     BodyInputs BodyInputsOf(PlayerType owner, SeatKeys k, IRealtimeSeatController ctrl, SkillDeck deck)
     {
-        BodyInputs v = new BodyInputs { Keys = k, Deck = deck, SkillsHash = 17 };
+        BodyInputs v = new BodyInputs { Keys = k, Deck = deck, SkillsHash = 17, AllyLevel = -1 };
+        CpuPlayer ally = ctrl == null ? gameSystem.AllyCpuOf(owner) : null;
+        if (ally != null) v.AllyLevel = ally.Level;
         if (ctrl is RealtimeCpuPacer pacer)
         {
             v.Ctrl = 1;
@@ -227,6 +230,12 @@ public class RealtimeHudView : MonoBehaviour
         else if (!cpu)
         {
             sb.Append(KeyGuide(p, k));
+            CpuPlayer ally = gameSystem.AllyCpuOf(owner);
+            if (ally != null)
+            {
+                // 王将だけ操作：王将以外の駒・持ち駒は味方の CPU が動かす
+                sb.Append($"<size=85%>王将だけ操作：ほかの駒・持ち駒は味方の CPU（必殺技なし・{CpuLevels.Label(ally.Level)}・{MatchPolicy.TicksToSec(gameSystem.Policy.CpuIntervalTicks(ally.Level)):0.0} 秒ごと）が動かす</size>\n");
+            }
         }
         if (deck != null && deck.skills != null)
         {

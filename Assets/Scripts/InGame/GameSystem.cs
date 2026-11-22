@@ -721,6 +721,11 @@ public partial class GameSystem : MonoBehaviour
                 UseSkill(CurrentSide, skillKey);
                 UpdateActivePlayerSkillUI();
             }
+            else if (SeatKeys.Pressed(keys.Hand) && UsesAllyCpu)
+            {
+                // 王将だけ操作（合戦将棋型の基本対戦）：持ち駒は味方の CPU が打つ
+                if (HandUIManager.Instance != null) HandUIManager.Instance.SetStatusText("【持ち駒】 持ち駒は味方の CPU が打つ（あなたが動かせるのは王将だけ）");
+            }
             else if (SeatKeys.Pressed(keys.Hand))
             {
                 UpdateHandList();
@@ -783,6 +788,16 @@ public partial class GameSystem : MonoBehaviour
         {
             // --- 駒を選択するフェーズ ---
             GamePiece piece = gameBoard.GetPieceAt(x, y);
+
+            // 王将だけ操作（合戦将棋型の基本対戦）：王将以外の自分の駒は味方の CPU が動かす（選べない）
+            if (piece != null && IsMyPiece(piece) && IsAllyControlledPiece(piece))
+            {
+                if (HandUIManager.Instance != null)
+                {
+                    HandUIManager.Instance.SetStatusText($"【{HandUIManager.GetJapaneseName(piece.type)}】 王将以外の駒は味方の CPU が動かす（あなたが動かせるのは王将だけ）");
+                }
+                return;
+            }
 
             // 自分のアンデッドは操作できない（持ち主の手番の終わりに自動で動く）
             if (piece != null && IsMyPiece(piece) && piece.isUndead)

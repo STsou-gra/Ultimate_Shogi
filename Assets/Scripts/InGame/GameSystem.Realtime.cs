@@ -208,6 +208,8 @@ public partial class GameSystem
                     : "【ボス】")
                 : IsCpuSide(s.Owner.Value)
                 ? $"【CPU】 {CpuLevels.Label(MatchSetup.CpuLevel)}が {Policy.Ruleset.CpuIntervalSec[CpuLevels.Clamp(MatchSetup.CpuLevel)]:0.0} 秒ごとに動く"
+                : UsesAllyCpu
+                ? $"【{Policy.Ruleset.Name}】 あなたが動かすのは王将だけ。ほかの駒は味方の CPU が動かす（必殺技は使わない）。魔法・錬成は王将（あなた）だけが使える（{RealtimeKeyHint(s.Keys)}）"
                 : $"【{Policy.Ruleset.Name}】 手番なし。いつでも自分の駒を動かせる（{RealtimeKeyHint(s.Keys)}）";
         }
         UseSeat(focusSide);
@@ -435,6 +437,25 @@ public partial class GameSystem
             }
         }
 
+        // 1'. 味方の CPU（王将だけ操作：人の席の王将以外の駒。GameSystem.Cpu.cs）。席が Controller に任されている間は動かない。
+        //     停止世界の間は（どちらの席の味方も）止まる：考えている途中をやめ、時間が動き出してから間隔を数え直す
+        for (int i = 0; i < allyCpus.Length; i++)
+        {
+            RealtimeCpuPacer ally = allyCpus[i];
+            if (ally == null || seatControllers[i] != null) continue;
+            if (timeStop != null)
+            {
+                ally.Reset();
+                continue;
+            }
+            IEnumerable<MatchAction> actions = ally.RealtimeActions(this, (PlayerType)i);
+            if (actions == null) continue;
+            foreach (MatchAction a in actions)
+            {
+                if (a != null) EnqueueRealtime(a, (PlayerType)i, ally);
+            }
+        }
+
         // 2. キューの行動を積んだ順に実行する
         if (realtimeQueue.Count > 0)
         {
@@ -443,7 +464,7 @@ public partial class GameSystem
             foreach (QueuedAction q in queue)
             {
                 if (!IsInTurn) break;
-                if (q.From != null && !IsSeatControllerAttached(q.From)) continue; // 外された Controller（終わった再生など）の行動
+                if (q.From != null && !IsSeatControllerAttached(q.From) && !IsActiveAllyCpu(q.From)) continue; // 外された Controller（終わった再生など）の行動
                 RunRealtimeAction(q);
             }
         }
@@ -480,6 +501,12 @@ public partial class GameSystem
         try
         {
             ActionPlan plan = PlanAction(q.Action, out string reason);
+            if (plan != null && IsActiveAllyCpu(q.From) && !IsAllyAction(q.Action))
+            {
+                // 考えている間に盤面が変わり、その駒が王将になった（味方の CPU は王将・魔法・錬成を使わない）
+                plan = null;
+                reason = "味方の CPU が動かせるのは王将以外の駒だけです";
+            }
             if (plan == null)
             {
                 Debug.Log($"[Action] 実行できなくなった行動：{q.Action}（{reason}）");

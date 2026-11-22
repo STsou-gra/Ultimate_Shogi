@@ -51,6 +51,20 @@ public static partial class BoardSimulator
     // 動いた駒が次の行動をできるようになるまでの tick（MatchPolicy.PieceCooldownTicks）
     static int PieceCooldownTicks(BoardSnapshot s) => s.IsRealtime ? Ticks(s.Ruleset.PieceCooldownSec) : 0;
 
+    // 王将だけ操作の対局か（MatchPolicy.PlayersControlKingOnly：合戦将棋型の基本対戦）
+    public static bool KingOnly(BoardSnapshot s) => s.IsRealtime && s.Ruleset.KingOnlyControl && !s.Mode.BossSeat;
+
+    // 停止世界に行動回数の上限があるか（MatchPolicy.TimeStopLimitsMoves。討伐任務・王将だけ操作はなし）
+    static bool TimeStopLimitsMoves(BoardSnapshot s) => s.Mode.TimeStopLimitsMoves && !KingOnly(s);
+
+    // 王将だけ操作の停止世界の間に、a ができないか（王将の行動・魔法・錬成・解除だけできる。MatchPolicy.IsHumanActionUnderKingOnly）
+    static bool IsBlockedInKingOnlyTimeStop(BoardSnapshot s, MatchAction a)
+    {
+        if (!s.timeStopped || !KingOnly(s)) return false;
+        SnapshotPiece p = a.from.IsOnBoard ? s.At(a.from.x, a.from.y) : null;
+        return !MatchPolicy.IsHumanActionUnderKingOnly(a, p != null ? p.type : (PieceType?)null);
+    }
+
     // 停止世界が時間で解除されるまでの tick（MatchPolicy.TimeStopTicks）
     static int TimeStopTicks(BoardSnapshot s) => s.IsRealtime ? Ticks(Durations(s).TimeStopSec) : 0;
 
@@ -77,9 +91,9 @@ public static partial class BoardSimulator
                 s.timeStopJustStarted = false;
                 s.timeStopReleasable = true;
             }
-            else if (!forge && s.Mode.TimeStopLimitsMoves)
+            else if (!forge && TimeStopLimitsMoves(s))
             {
-                // 討伐任務は行動回数の上限がない（TimeStopSec 秒だけ止まる）
+                // 討伐任務・王将だけ操作は行動回数の上限がない（TimeStopSec 秒だけ止まる）
                 s.timeStopRemaining--;
                 if (s.timeStopRemaining <= 0) ClearTimeStop(s);
             }

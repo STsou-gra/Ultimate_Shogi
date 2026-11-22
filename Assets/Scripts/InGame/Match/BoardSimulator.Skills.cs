@@ -734,7 +734,7 @@ public static partial class BoardSimulator
             case MagicKind.TimeStop:
                 s.timeStopped = true;
                 s.timeStopOwner = (int)owner;
-                s.timeStopRemaining = s.Mode.TimeStopLimitsMoves ? MatchConfig.TimeStopMoves : -1; // 討伐任務は回数の上限なし（-1）
+                s.timeStopRemaining = TimeStopLimitsMoves(s) ? MatchConfig.TimeStopMoves : -1; // 討伐任務・王将だけ操作は回数の上限なし（-1）
                 s.timeStopJustStarted = true;
                 s.timeStopReleasable = false;
                 s.timeStopElapsed = 0; // 合戦将棋型：止まっている tick（TimeStopSec 秒で解除）

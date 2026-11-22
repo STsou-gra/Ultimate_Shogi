@@ -41,8 +41,8 @@ public class MatchPolicy
     public bool IsPlayerSeat(PlayerType owner) => Mode.IsPlayerSeat(owner);
     // 時間・手番でエナジーが増える席か
     public bool GainsEnergy(PlayerType owner) => Mode.GainsEnergy(owner);
-    // 停止世界に行動回数の上限があるか（討伐任務はなし：TimeStopSec 秒だけ止まる）
-    public bool TimeStopLimitsMoves => Mode.TimeStopLimitsMoves;
+    // 停止世界に行動回数の上限があるか（討伐任務・王将だけ操作の合戦将棋型はなし：TimeStopSec 秒だけ止まる）
+    public bool TimeStopLimitsMoves => Mode.TimeStopLimitsMoves && !PlayersControlKingOnly;
     // 超常魔法を対局の開始時点から解放済みにするか（討伐任務）
     public bool TranscendentUnlockedFromStart => Mode.TranscendentUnlockedFromStart;
     // 盤上の駒の移動・必殺技ごとに得るエナジー（討伐任務は +2）
@@ -50,6 +50,49 @@ public class MatchPolicy
 
     // 手番がなく、時間で進む戦闘型か
     public bool IsRealtime => Ruleset.Realtime;
+
+    // ------------------------------------------------------------
+    //  王将だけ操作（合戦将棋型の基本対戦。BattleRuleset.KingOnlyControl）
+    // ------------------------------------------------------------
+
+    // 人が動かせるのは王将だけで、王将以外の駒は席ごとの味方の CPU が動かすか（討伐任務は今までどおり全部の駒を動かせる）
+    public bool PlayersControlKingOnly => IsRealtime && Ruleset.KingOnlyControl && !IsRaid;
+
+    // 王将だけ操作のとき、人（王将）が自分で行う行動か：王将の移動・必殺技・狙撃と、魔法・錬成・停止世界の解除。
+    // 停止世界の間は、発動した側もこの行動しかできない（王将だけが動ける。味方の CPU・CPU の王将以外の駒も止まる）。
+    // actorPiece は行動する盤上の駒（action.from）の種類（なければ null）
+    public static bool IsHumanActionUnderKingOnly(MatchAction action, PieceType? actorPiece)
+    {
+        if (action == null) return false;
+        switch (action.type)
+        {
+            case MatchActionType.Move:
+            case MatchActionType.Special:
+            case MatchActionType.Snipe:
+                return actorPiece == PieceType.King;
+            case MatchActionType.Drop:
+                return false; // 持ち駒は味方の CPU が打つ
+            default:
+                return true;  // 魔法・錬成・停止世界の解除
+        }
+    }
+
+    // 王将だけ操作のとき、味方の CPU が行う行動か：王将以外の駒の移動・狙撃と、持ち駒を打つ
+    // （必殺技は使わない。魔法・錬成・停止世界の解除は王将（プレイヤー）だけが使う）
+    public static bool IsAllyActionUnderKingOnly(MatchAction action, PieceType? actorPiece)
+    {
+        if (action == null) return false;
+        switch (action.type)
+        {
+            case MatchActionType.Move:
+            case MatchActionType.Snipe:
+                return actorPiece.HasValue && actorPiece.Value != PieceType.King;
+            case MatchActionType.Drop:
+                return true;
+            default:
+                return false;
+        }
+    }
 
     MatchClock Clock => match != null ? match.Clock : null;
     RulesetDurations Dur => Ruleset.Durations ?? new RulesetDurations();

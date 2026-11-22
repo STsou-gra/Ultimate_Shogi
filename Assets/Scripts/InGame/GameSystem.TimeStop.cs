@@ -54,7 +54,9 @@ public partial class GameSystem
 
     // 時間停止中の案内文（Prototype の PlayerPanel.js の timeStopInfo）
     string TimeStopStatusText =>
-        (timeStop.IsUnlimited
+        (timeStop.IsUnlimited && UsesAllyCpu
+            ? $"【時間停止中】 {TimeStopSecText.Trim('（', '）')}のあいだ、王将だけが何回でも動ける（味方の CPU も止まっている）\n"
+            : timeStop.IsUnlimited
             ? $"【時間停止中】 {TimeStopSecText.Trim('（', '）')}のあいだ、何回でも行動できる（ボス・小赤鬼は止まっている）\n"
             : $"【時間停止中】 あと {timeStop.Remaining} 回{TimeStopSecText}行動できる（移動・打つ・魔法・必殺技・狙撃。錬成は数えない）\n") +
         "取り・爆発・成り・マスの変化・ボスへのダメージは、時間が動き出してからまとめて起こる（解除: Q）";
@@ -78,7 +80,7 @@ public partial class GameSystem
     {
         if (timeStop != null || gameBoard == null || moves <= 0) return;
         timeStop = new TimeStopState(owner, moves);
-        if (!Policy.TimeStopLimitsMoves) timeStop.Remaining = -1; // 討伐任務：行動回数の上限なし（TimeStopSec 秒だけ止まる。Prototype の bossRaid の timeStopLimitsMoves）
+        if (!Policy.TimeStopLimitsMoves) timeStop.Remaining = -1; // 討伐任務・王将だけ操作：行動回数の上限なし（TimeStopSec 秒だけ止まる。Prototype の bossRaid の timeStopLimitsMoves）
         gameBoard.TimeStop = timeStop;
         Debug.Log(timeStop.IsUnlimited
             ? $"時が止まった！ {Policy.Ruleset.Durations.TimeStopSec:0} 秒のあいだ、何回でも行動できる（取り・爆発・ボスへのダメージなどは時間が動き出したときにまとめて起こる）"

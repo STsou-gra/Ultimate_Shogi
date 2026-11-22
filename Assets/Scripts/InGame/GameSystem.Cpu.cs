@@ -11,6 +11,12 @@ using UnityEngine;
 //    前の行動を決めてから一定の間隔（Lv0 2.0 秒／Lv1 1.5 秒／Lv2 1.2 秒。BattleRuleset.CpuIntervalSec）たったら、CpuPlayer が
 //    その席を手番にした写しの局面で考え（IRealtimeCpuBrain）、考え終わった tick に行動を入れる（そのときの局面で判定し、できなければ捨てる）。
 //    人はキーボード全体で自分の席を操作する（SeatKeys.KassenSolo）。盤は回さない（先手の側から見る）
+//  ・合戦将棋型の基本対戦（MatchPolicy.PlayersControlKingOnly）：人が動かせるのは王将だけ。人の席には、王将以外の駒の
+//    移動・狙撃と持ち駒を打つのを受け持つ味方の CPU（RealtimeCpuPacer ＋ CpuPlayer）を付ける（AttachAllyCpus）。味方の CPU は必殺技を使わない。
+//    2人で対戦なら両方の席、CPU と対戦なら人の席だけ（CPU の席は今までどおり CPU が全部の駒を動かす）。
+//    魔法・錬成・停止世界の解除は王将（人）だけが行う。人の入力から王将以外の駒の行動は出せない（Dispatch・IsHumanAllowedAction）。
+//    停止世界は TimeStopSec 秒だけ（回数の上限なし）で、その間は王将だけが動ける（味方の CPU も止まる。IsBlockedInKingOnlyTimeStop）。
+//    席が Controller（CPU・棋譜の再生）に任されている間は、味方の CPU は動かない（棋譜には味方の CPU の行動も席の行動として残るので、再生で再現される）
 public partial class GameSystem
 {
     private PlayerType? cpuSide;   // CPU が指す側（CPU と対戦でなければ null）
@@ -75,9 +81,10 @@ public partial class GameSystem
         Debug.Log($"CPU と対戦（{Policy.Ruleset.Name}）：あなたは{(MatchSetup.HumanSide == PlayerType.Player1 ? "先手" : "後手")}、CPU は {CpuLevels.Label(MatchSetup.CpuLevel)}");
     }
 
-    // 合戦将棋型：CPU の席に RealtimeCpuPacer を付ける（対局の始め・棋譜の再生が終わったとき）
+    // 合戦将棋型：CPU の席に RealtimeCpuPacer を付ける（対局の始め・棋譜の再生が終わったとき）。人の席には味方の CPU も付ける
     void AttachRealtimeCpu()
     {
+        AttachAllyCpus();
         if (!IsRealtime || !cpuSide.HasValue || Cpu == null) return;
         if (realtimeCpu == null) realtimeCpu = new RealtimeCpuPacer(Cpu.Level, Cpu);
         else realtimeCpu.Reset();
@@ -85,4 +92,85 @@ public partial class GameSystem
         Debug.Log($"[CPU] {Policy.Ruleset.Name}：{(cpuSide.Value == PlayerType.Player1 ? "先手" : "後手")}の席を CPU（{CpuLevels.Label(Cpu.Level)}）が " +
                   $"{MatchPolicy.TicksToSec(Policy.CpuIntervalTicks(Cpu.Level)):0.0} 秒ごとに動かす");
     }
+
+    // ------------------------------------------------------------
+    //  味方の CPU（王将だけ操作）
+    // ------------------------------------------------------------
+
+    private readonly RealtimeCpuPacer[] allyCpus = new RealtimeCpuPacer[2]; // [先手, 後手]（人の席だけ。なければ null）
+    private readonly CpuPlayer[] allyBrains = new CpuPlayer[2];
+
+    // 人が動かせるのは王将だけで、王将以外の駒は味方の CPU が動かす対局か（合戦将棋型の基本対戦）
+    public bool UsesAllyCpu => IsRealtime && Policy.PlayersControlKingOnly;
+
+    // 席 owner の味方の CPU（なければ null。HUD の「考え中」の表示用）
+    public CpuPlayer AllyCpuOf(PlayerType owner) => allyCpus[(int)owner] != null ? allyBrains[(int)owner] : null;
+
+    // 人の席に味方の CPU を付ける（対局の始め・棋譜の再生が終わったとき。付け直すときは考えている途中をやめて間隔を数え直す）
+    void AttachAllyCpus()
+    {
+        if (!UsesAllyCpu) return;
+        // CPU と対戦：相手の CPU と同じ強さ（同じ間隔）で王将以外の駒を動かす ／ 2人で対戦：戦闘型の既定の強さ
+        int level = CpuLevels.Clamp(HasCpu ? MatchSetup.CpuLevel : Policy.Ruleset.AllyCpuLevel);
+        foreach (PlayerType side in BothSides)
+        {
+            int i = (int)side;
+            if (IsCpuSide(side))
+            {
+                allyCpus[i] = null; // CPU の席は CPU が全部の駒を動かす
+                continue;
+            }
+            if (allyBrains[i] == null)
+            {
+                CpuPlayer brain = gameObject.AddComponent<CpuPlayer>();
+                brain.Init(this, side, level);
+                brain.IsAlly = true;
+                brain.ActionFilter = IsAllyAction;
+                allyBrains[i] = brain;
+            }
+            if (allyCpus[i] == null) allyCpus[i] = new RealtimeCpuPacer(level, allyBrains[i]);
+            else allyCpus[i].Reset();
+        }
+        Debug.Log($"[味方CPU] {Policy.Ruleset.Name}：人が動かすのは王将だけ。王将以外の駒は味方の CPU（{CpuLevels.Label(level)}）が " +
+                  $"{MatchPolicy.TicksToSec(Policy.CpuIntervalTicks(level)):0.0} 秒ごとに動かす");
+    }
+
+    // ctrl が今動いている味方の CPU か（席が Controller に任されている間は動かない）
+    bool IsActiveAllyCpu(IRealtimeSeatController ctrl)
+    {
+        if (ctrl == null) return false;
+        for (int i = 0; i < allyCpus.Length; i++)
+        {
+            if (allyCpus[i] == ctrl && seatControllers[i] == null) return true;
+        }
+        return false;
+    }
+
+    // 行動する盤上の駒（action.from）の種類（なければ null）
+    PieceType? ActorPieceType(MatchAction a)
+    {
+        if (a == null || gameBoard == null || !a.from.IsOnBoard) return null;
+        GamePiece p = gameBoard.GetPieceAt(a.from.x, a.from.y);
+        return p != null ? p.type : (PieceType?)null;
+    }
+
+    // 味方の CPU が行う行動か（王将以外の駒の移動・狙撃と、持ち駒を打つ。必殺技は使わない）
+    bool IsAllyAction(MatchAction a) => MatchPolicy.IsAllyActionUnderKingOnly(a, ActorPieceType(a));
+
+    // 席 owner の人の入力から出してよい行動か（王将だけ操作のとき：王将の行動・魔法・錬成・停止世界の解除だけ）
+    bool IsHumanAllowedAction(MatchAction a, PlayerType owner)
+    {
+        if (!UsesAllyCpu || seatControllers[(int)owner] != null) return true;
+        return MatchPolicy.IsHumanActionUnderKingOnly(a, ActorPieceType(a));
+    }
+
+    // 王将だけ操作の停止世界の間に、a ができないか（王将の行動・魔法・錬成・解除だけできる。BoardSimulator.IsBlockedInKingOnlyTimeStop と同じ）
+    bool IsBlockedInKingOnlyTimeStop(MatchAction a)
+    {
+        if (timeStop == null || !UsesAllyCpu) return false;
+        return !MatchPolicy.IsHumanActionUnderKingOnly(a, ActorPieceType(a));
+    }
+
+    // 人の席で、盤上の駒 piece を人が選べないか（王将だけ操作のときの王将以外の駒）
+    bool IsAllyControlledPiece(GamePiece piece) => UsesAllyCpu && piece != null && piece.type != PieceType.King;
 }

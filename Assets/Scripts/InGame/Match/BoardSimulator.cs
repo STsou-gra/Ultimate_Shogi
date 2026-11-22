@@ -144,6 +144,8 @@ public static partial class BoardSimulator
         if (s.IsRealtime)
         {
             foreach (MatchAction a in res) a.owner = (int)player;
+            // 王将だけ操作の停止世界の間は、王将の行動・魔法・錬成・解除だけ
+            if (s.timeStopped && KingOnly(s)) res.RemoveAll(a => IsBlockedInKingOnlyTimeStop(s, a));
         }
         return res;
     }
@@ -176,6 +178,7 @@ public static partial class BoardSimulator
         PlayerType me = actor.Value;
         if (!s.IsPlayerSeat(me)) { reason = "ボスの席は行動できません"; return false; }
         if (s.timeStopped && s.timeStopOwner != (int)me) { reason = "相手の時間停止中は動けません"; return false; }
+        if (IsBlockedInKingOnlyTimeStop(s, a)) { reason = "時間停止中に動けるのは王将だけです"; return false; }
 
         switch (a.type)
         {
