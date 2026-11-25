@@ -12,7 +12,7 @@
 1. **YAML・メタファイルは編集しない。** `.unity`（シーン）・`.prefab`・`.asset`・`.meta` は直接編集しない（GUID の不整合・シーン破損を防ぐ）。
 2. **インスペクターの参照を守る。** 既存の `[SerializeField]` や `public` フィールドの**名前・型を無断で変更・削除しない**。再アタッチが必要になる変更は、実装前に必ず明示して承認をもらう。
 3. **1 項目ずつ進める。** 計画の 1 項目を実装 → コミット → 「Unity エディタで確かめること」を伝える → 次の項目の承認を待つ。
-4. **ルールの中心部分の挙動を変えない。** `Assets/Scripts/InGame/Match/`・`Cpu/`・`Rules/GameRules.cs` は `Tests/SnapshotTests`（.NET 8）で Prototype の棋譜とハッシュを照合している。数値・処理の順序・乱数の使い方を変えない。
+4. **ルールの中心部分の挙動を変えない。** `Assets/Scripts/InGame/Match/`・`Cpu/`・`Rules/GameRules.cs` は単体テスト（中身は `Assets/Editor/SnapshotTests/`。Unity の Test Runner の EditMode の `SnapshotSuiteTests` と、`Tests/SnapshotTests` の .NET 8 の両方で動く）で Prototype の棋譜とハッシュを照合している。数値・処理の順序・乱数の使い方を変えない。
 5. **グループ A では新しい `.cs` ファイルを作らない。** 新しいファイルには Unity が `.meta` を生成するため。グループ B で新しいファイルが必要なときは、Unity で開いて生成された `.meta` をユーザーにコミットしてもらう、と事前に伝える。
 6. **使用ライブラリ。** DOTween の設定は `Assets/Resources/DOTweenSettings.asset` を触らず、必要ならコードで設定する。TMP は uGUI 2.0 同梱版。Input System 1.19。
 
@@ -22,7 +22,7 @@
 - 対象プラットフォームに **WebGL** がある（`Ultimate-Shogi_WebBuild/`）。WebGL ではインクリメンタル GC が効かず GC がまとめて走るため、GC の削減は WebGL 版で特に効く。
 - Play Mode はドメインリロードあり（`EnterPlayModeOptions: 0`）。static は毎回リセットされる。
 - 作業用のクラウド環境には Unity も dotnet も入っていない。動作確認はユーザーが Unity エディタで行う。
-  - `Tests/SnapshotTests` は `cd Tests/SnapshotTests && dotnet run` で動く（.NET 8 SDK が必要）。対象は `Match/`・`Cpu/`・`GameRules.cs`・`GameHelper.cs` だけ。
+  - `Tests/SnapshotTests` は `cd Tests/SnapshotTests && dotnet run` で動く（.NET 8 SDK が必要）。対象は `Match/`・`Cpu/`・`GameRules.cs`・`GameHelper.cs` だけ。テストの中身は `Assets/Editor/SnapshotTests/` にあり、Unity では Test Runner の EditMode（`SnapshotSuiteTests`）で同じものが動く。
 - 自前のスクリプトは約 3 万行。物理（`Raycast` / `Overlap`）は未使用。
 
 ## 2. すでに良くできていて、触らない部分

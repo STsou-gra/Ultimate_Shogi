@@ -1,51 +1,118 @@
-// 盤面のスナップショットの単体テスト（実行: dotnet run --project Tests/SnapshotTests）
+// 盤面のスナップショットの単体テスト
 //  ・PieceMoves が、PieceMoves に移す前の各駒のクラス（OracleMain.cs）と全マスで同じ判定か
 //  ・ランダムな局面で、BoardSimulator.CanMoveTo / CanDropTo・SnapshotRules（王手・打ち歩詰め）が、今のルール（Rules/GameRules.cs）と同じ判定か
 //  ・行動を当てはめたとき（取りのエナジー・盾・アンデッド・火薬・成り・炎上／落とし穴・手番・鎮火・2回行動・終局・狙撃・錬成・時間停止）
 //  ・JSON の往復、ランダムに指し続けても壊れないか
+//
+// 同じテストを 2 通りで動かす（このフォルダのファイルはどちらでも同じものを使う）：
+//  ・Unity の Test Runner の EditMode：Assets/Tests/EditMode/SnapshotSuiteTests.cs が、下の Suites を 1 つずつ（1 つが 1 件のテスト）
+//    リフレクションで Run する。このフォルダは Assets/Editor の下なので Assembly-CSharp-Editor に入り（ビルドには入らない）、
+//    GamePiece・GameBoard は本物（Assets/Editor/SnapshotSuiteUnity.cs の TestBoards が見た目のない GameObject で作る）
+//  ・Unity の外：Tests/SnapshotTests で dotnet run（.NET 8 SDK。DotnetMain.cs が Suites を全部動かす）。
+//    UnityEngine・GamePiece・GameBoard は Tests/SnapshotTests/UnityStubs.cs の最小限の代わり
+// 両方で通るように、ここでは .NET Standard 2.1（Unity）にある API だけを使う（System.Text.Json は使わない。棋譜は KifuJson.cs で読む）。
+// 出力は Console ではなく Log に書く。テストを足すときは Test〜 のメソッドを書いて、Suites のどれかから呼ぶ（新しい組なら Suites に足す）
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-static partial class Program
+static partial class SnapshotSuite
 {
     static int fails, checks;
     static readonly PlayerType P1 = PlayerType.Player1, P2 = PlayerType.Player2;
+    static readonly List<string> failures = new List<string>();
+    static readonly System.Text.StringBuilder log = new System.Text.StringBuilder();
 
+    // 確認を 1 件数える。失敗の文は 60 件まで残す（同じ原因でたくさん失敗しても出力が埋まらないように）
     static void Check(bool ok, string msg)
     {
         checks++;
-        if (!ok && ++fails <= 60) Console.WriteLine("FAIL " + msg);
+        if (!ok && ++fails <= 60)
+        {
+            failures.Add(msg);
+            Log("FAIL " + msg);
+        }
     }
 
-    static int Main()
+    // テストの途中経過（何局指したか・何手一致したかなど）。Run の結果の Log に入る（dotnet run では画面にも出る）
+    static void Log(string line)
     {
-        // 環境変数 TEST_ONLY=boss なら討伐任務のテストだけ（開発中の確認用）
-        if (Environment.GetEnvironmentVariable("TEST_ONLY") == "boss")
-        {
-            TestBoss();
-            TestDaishogun();
-            Console.WriteLine($"checks={checks} fails={fails}");
-            return fails == 0 ? 0 : 1;
-        }
-        TestPatterns();
-        TestRandomRules(6000, new System.Random(1));
-        TestUchifuzumeCrafted();
-        TestInitialPosition();
-        TestApply();
-        TestJson(new System.Random(2));
-        TestPlayouts(400, new System.Random(3));
-        TestSkills();
-        TestCounter();
-        TestGiant();
-        TestCpu();
-        TestKassen();
-        TestBoss();
-        TestDaishogun();
-        Console.WriteLine($"checks={checks} fails={fails}");
-        return fails == 0 ? 0 : 1;
+        log.AppendLine(line);
+        LogWritten?.Invoke(line);
     }
+
+    // テストの組（Test Runner では 1 組が 1 件のテスト）。名前・中身。乱数のシードは組ごとに固定（どの順に動かしても同じ結果）
+    static readonly (string name, Action run)[] Suites =
+    {
+        ("Patterns", TestPatterns),
+        ("RandomRules", () => TestRandomRules(6000, new System.Random(1))),
+        ("UchifuzumeCrafted", TestUchifuzumeCrafted),
+        ("InitialPosition", TestInitialPosition),
+        ("Apply", TestApply),
+        ("Json", () => TestJson(new System.Random(2))),
+        ("Playouts", () => TestPlayouts(400, new System.Random(3))),
+        ("Skills", TestSkills),
+        ("Counter", TestCounter),
+        ("Giant", TestGiant),
+        ("Cpu", TestCpu),
+        ("Kassen", TestKassen),
+        ("Boss", TestBoss),
+        ("Daishogun", TestDaishogun),
+    };
+
+    // 討伐任務の組（dotnet run で TEST_ONLY=boss のとき、これだけ動かす）
+    public static readonly string[] BossSuiteNames = { "Boss", "Daishogun" };
+
+    // ------------------------------------------------------------
+    //  外から呼ぶ入口（Test Runner の SnapshotSuiteTests・dotnet run の DotnetMain）
+    // ------------------------------------------------------------
+
+    public class SuiteFailedException : Exception
+    {
+        public SuiteFailedException(string message) : base(message) { }
+    }
+
+    // Log の 1 行ごとに呼ばれる（dotnet run が画面に出すのに使う）
+    public static event Action<string> LogWritten;
+
+    public static string[] SuiteNames() => Suites.Select(x => x.name).ToArray();
+
+    // 1 組を動かす。成功したら途中経過の文（Log）と確認の件数を返し、失敗が 1 件でもあれば SuiteFailedException を投げる
+    // （文は失敗した確認の一覧と途中経過）。テストの途中の例外はそのまま投げる（作った GameObject は片付ける）
+    public static string Run(string name, out int checkCount, out int failCount)
+    {
+        Action run = Suites.FirstOrDefault(x => x.name == name).run;
+        if (run == null) throw new ArgumentException($"テストの組 {name} がありません（{string.Join("・", SuiteNames())}）");
+        checks = fails = 0;
+        failures.Clear();
+        log.Clear();
+        try
+        {
+            run();
+        }
+        finally
+        {
+            TestBoards.ReleaseAll();
+        }
+        checkCount = LastCheckCount = checks;
+        failCount = LastFailCount = fails;
+        string summary = $"{name}: checks={checks} fails={fails}";
+        log.AppendLine(summary);
+        if (fails > 0)
+        {
+            string shown = string.Join("\n", failures.Select(m => "・" + m));
+            string more = fails > failures.Count ? $"\n（ほか {fails - failures.Count} 件）" : "";
+            throw new SuiteFailedException($"{summary}\n{shown}{more}\n\n--- 途中経過 ---\n{log}");
+        }
+        return log.ToString();
+    }
+
+    public static string Run(string name) => Run(name, out _, out _);
+
+    // 最後に Run した組の確認の件数・失敗の件数（SuiteFailedException を受け取ったあとに読む）
+    public static int LastCheckCount { get; private set; }
+    public static int LastFailCount { get; private set; }
 
     // ------------------------------------------------------------
     //  PieceMoves と main の各駒のクラスの判定が同じか（全種類・両者・成り・全マス → 全マス）
@@ -67,7 +134,7 @@ static partial class Program
                             if (a != b) Check(false, $"pattern {t} {o} prom={prom} ({x},{y})->({tx},{ty}) main={a} new={b}");
                         }
         Check(true, "patterns");
-        Console.WriteLine($"patterns: {n} 通りを照合");
+        Log($"patterns: {n} 通りを照合");
     }
 
     // ------------------------------------------------------------
@@ -147,10 +214,11 @@ static partial class Program
         }
     }
 
-    // スナップショットから GameBoard（今のルールの判定用）を作る
+    // スナップショットから GameBoard（今のルールの判定用）を作る。盤と駒は TestBoards が作る
+    // （Unity では見た目のない GameObject。Run の終わりか TestBoards.ReleaseAll でまとめて消す）
     static Pos Build(BoardSnapshot s)
     {
-        Pos pos = new Pos { Snap = s, Board = new GameBoard(), Turn = new TurnState(P1) };
+        Pos pos = new Pos { Snap = s, Board = TestBoards.NewBoard(), Turn = new TurnState(P1) };
         for (int i = 0; i < s.turnNumber; i++) pos.Turn.BeginTurn();
         for (int x = 0; x < 9; x++) for (int y = 0; y < 9; y++)
         {
@@ -162,8 +230,12 @@ static partial class Program
         }
         foreach (SnapshotPiece p in s.pieces)
         {
-            GamePiece g = new GamePiece { type = p.type, player = p.Owner, X = p.x, Y = p.y, isPromoted = p.promoted, isUndead = p.undead, hasShield = p.shield, hasWing = p.wing, hp = p.hp };
-            pos.Board.Put(g);
+            GamePiece g = TestBoards.NewPiece(pos.Board, p.type, p.Owner, p.x, p.y);
+            g.isPromoted = p.promoted;
+            g.isUndead = p.undead;
+            g.hasShield = p.shield;
+            g.hasWing = p.wing;
+            g.hp = p.hp;
             pos.Map[p] = g;
         }
         return pos;
@@ -253,8 +325,13 @@ static partial class Program
 
     static void TestRandomRules(int n, System.Random r)
     {
-        for (int i = 0; i < n; i++) CompareRules(RandomPos(r), $"random#{i}");
-        Console.WriteLine($"random rules: {n} 局面（王手 {checkHits} 回・打ち歩詰め {uchifuzumeHits} 回・巨人のいる局面 {giantPositions}）");
+        uchifuzumeHits = checkHits = giantPositions = 0;
+        for (int i = 0; i < n; i++)
+        {
+            CompareRules(RandomPos(r), $"random#{i}");
+            TestBoards.ReleaseAll(); // 局面ごとに作った盤と駒を消す（Unity で GameObject がたまらないように）
+        }
+        Log($"random rules: {n} 局面（王手 {checkHits} 回・打ち歩詰め {uchifuzumeHits} 回・巨人のいる局面 {giantPositions}）");
     }
 
     // ------------------------------------------------------------
@@ -534,14 +611,14 @@ static partial class Program
             BoardSnapshot back = BoardSnapshot.FromJson(json);
             List<string> d = back == null ? new List<string> { "null" } : s.Diff(back, true);
             Check(d.Count == 0, $"json#{i}: {string.Join(" / ", d.Take(3))}");
-            if (i == 0) Console.WriteLine($"snapshot json: {json.Length} 文字");
+            if (i == 0) Log($"snapshot json: {json.Length} 文字");
         }
         MatchAction m = MatchAction.Magic("Meteor", new[] { new Vector2Int(4, 5) }, 1);
         m.Owner = P2;
         string mj = m.ToJson();
         MatchAction mb = MatchAction.FromJson(mj);
         Check(mb != null && mb.Key == m.Key && mb.Owner == P2, "action json");
-        Console.WriteLine($"action json: {mj}");
+        Log($"action json: {mj}");
         Check(MatchAction.FromJson("not json") == null, "action json: 壊れた JSON は null");
     }
 
@@ -571,11 +648,11 @@ static partial class Program
                 if (!BoardSimulator.Apply(s, a, out string reason)) { Check(false, $"playout {g}/{ply}: 合法手が当てはめられない {a} {reason}"); break; }
                 plies++;
                 Invariants(s, $"playout {g}/{ply}");
-                if (ply % 20 == 0) CompareRules(Build(s), $"playout {g}/{ply}");
+                if (ply % 20 == 0) { CompareRules(Build(s), $"playout {g}/{ply}"); TestBoards.ReleaseAll(); }
             }
             if (s.gameOver) ended++;
         }
-        Console.WriteLine($"playouts: {games} 局・{plies} 手（終局 {ended} 局）");
+        Log($"playouts: {games} 局・{plies} 手（終局 {ended} 局）");
     }
 
     static void Invariants(BoardSnapshot s, string label)

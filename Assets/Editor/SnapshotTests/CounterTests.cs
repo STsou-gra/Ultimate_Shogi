@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-static partial class Program
+static partial class SnapshotSuite
 {
     // 先手のカウンター状態の金（(4, 4)）と、後手の手番の盤（Prototype の setup。両者とも カウンター・盾・剣 を編成）
     static (BoardSnapshot s, SnapshotPiece ki) CounterSetup()
@@ -21,8 +21,6 @@ static partial class Program
 
     static void TestCounter()
     {
-        Skills["Counter"] = Sk("Counter", MagicKind.Counter, 6, true);
-
         // 通常魔法・コスト 6・手番を使う。エナジーが足りないと使えない
         {
             BoardSnapshot s = Known(Basic(), new[] { "Counter" });
@@ -231,6 +229,6 @@ static partial class Program
                 Invariants(s, $"counter playout {g}/{ply}");
             }
         }
-        Console.WriteLine($"counter playouts: {games} 局・{plies} 手（カウンター {counters} 回・カウンターが効いて駒が減った手 {strikes}）");
+        Log($"counter playouts: {games} 局・{plies} 手（カウンター {counters} 回・カウンターが効いて駒が減った手 {strikes}）");
     }
 }

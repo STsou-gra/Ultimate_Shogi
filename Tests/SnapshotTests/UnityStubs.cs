@@ -78,27 +78,6 @@ public class GamePiece
     }
 }
 
-public static class Oracles
-{
-    public static OracleBase Make(PieceType t)
-    {
-        switch (t)
-        {
-            case PieceType.Pawn: return new OraclePawn();
-            case PieceType.Lance: return new OracleLance();
-            case PieceType.Knight: return new OracleKnight();
-            case PieceType.SilverGeneral: return new OracleSilverGeneral();
-            case PieceType.GoldGeneral: return new OracleGoldGeneral();
-            case PieceType.Bishop: return new OracleBishop();
-            case PieceType.Rook: return new OracleRook();
-            case PieceType.King: return new OracleKing();
-            case PieceType.Gunpowder: return new OracleGunpowder();
-            case PieceType.Bird: return new OracleBird();
-            default: return new OracleSniper();
-        }
-    }
-}
-
 // GameBoard の代わり（ルールの判定が読む分だけ）
 public class GameBoard
 {
@@ -142,4 +121,19 @@ public class GameBoard
         if (p.type != PieceType.Giant) { boardData[GameHelper.CalcPanelNum(p.X, p.Y)] = p; return; }
         foreach (MatchSquare c in GiantRules.Cells(p.X, p.Y)) boardData[GameHelper.CalcPanelNum(c.x, c.y)] = p; // 巨人は 3×3（本体の GameBoard と同じ）
     }
+}
+
+// テストが盤と駒を作る入口（SnapshotSuite.Build）。Unity の Test Runner では Assets/Editor/SnapshotSuiteUnity.cs が本物の GameObject で作る
+public static class TestBoards
+{
+    public static GameBoard NewBoard() => new GameBoard();
+
+    public static GamePiece NewPiece(GameBoard board, PieceType type, PlayerType owner, int x, int y)
+    {
+        GamePiece p = new GamePiece { type = type, player = owner, X = x, Y = y };
+        board.Put(p);
+        return p;
+    }
+
+    public static void ReleaseAll() { } // 片付けるものはない（Unity の版は GameObject を消す）
 }

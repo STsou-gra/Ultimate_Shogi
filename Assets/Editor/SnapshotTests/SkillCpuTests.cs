@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-static partial class Program
+static partial class SnapshotSuite
 {
     // ------------------------------------------------------------
     //  準備
@@ -33,6 +33,7 @@ static partial class Program
         ["UndeadParadise"] = Sk("UndeadParadise", MagicKind.UndeadParadise, 30, true, true),
         ["TimeStop"] = Sk("TimeStop", MagicKind.TimeStop, 30, true, true),
         ["Bomb"] = Sk("Bomb", MagicKind.Bomb, 4, true),
+        ["Counter"] = Sk("Counter", MagicKind.Counter, 6, true), // CounterTests.cs のほか、合戦将棋型（KassenTests.cs）の編成でも使う
     };
 
     // 必殺技・魔法をシミュレーションできるスナップショットにする（Unity の既定の必殺技と、両者の編成）
@@ -408,7 +409,7 @@ static partial class Program
             }
             if (s.gameOver) ended++;
         }
-        Console.WriteLine($"skill playouts: {games} 局・{plies} 手（魔法 {magic}・必殺技 {special}・終局 {ended} 局）");
+        Log($"skill playouts: {games} 局・{plies} 手（魔法 {magic}・必殺技 {special}・終局 {ended} 局）");
     }
 
     // ------------------------------------------------------------
@@ -460,7 +461,7 @@ static partial class Program
                     BoardSimulator.ApplyForSearch(s, legal[r.Next(legal.Count)]);
                 }
             }
-            Console.WriteLine($"cpu: {n} 回考えた（合法・書き換えない・同じ手）");
+            Log($"cpu: {n} 回考えた（合法・書き換えない・同じ手）");
         }
 
         // 王を取れるなら取る（Lv1・Lv2）
@@ -517,7 +518,7 @@ static partial class Program
                     Invariants(s, $"cpu vs cpu {pr[0]}-{pr[1]} {n}");
                     n++;
                 }
-                Console.WriteLine($"cpu vs cpu（編成 {pr[0]} 対 {pr[1]}）: {n} 手・{(s.gameOver ? (s.winner == 0 ? "先手 Lv1 の勝ち" : s.winner == 1 ? "後手 Lv2 の勝ち" : "引き分け") : "300 手で打ち切り")}・{sw.ElapsedMilliseconds} ms");
+                Log($"cpu vs cpu（編成 {pr[0]} 対 {pr[1]}）: {n} 手・{(s.gameOver ? (s.winner == 0 ? "先手 Lv1 の勝ち" : s.winner == 1 ? "後手 Lv2 の勝ち" : "引き分け") : "300 手で打ち切り")}・{sw.ElapsedMilliseconds} ms");
             }
         }
 
@@ -529,7 +530,7 @@ static partial class Program
                 CpuSearch search = new CpuSearch(s, new CpuSearch.Options { Level = level, TimeLimitMs = 1500 });
                 System.Diagnostics.Stopwatch sw = System.Diagnostics.Stopwatch.StartNew();
                 search.Run();
-                Console.WriteLine($"cpu Lv{level}: 初期配置で {sw.ElapsedMilliseconds} ms・{search.Simulated} 手を試した → {search.Result}");
+                Log($"cpu Lv{level}: 初期配置で {sw.ElapsedMilliseconds} ms・{search.Simulated} 手を試した → {search.Result}");
             }
         }
     }

@@ -2,7 +2,9 @@
   <!--
     盤面のスナップショット（BoardSnapshot・BoardSimulator・SnapshotRules・PieceMoves）の単体テスト。Unity の外（.NET 8 SDK）で動かす。
     実行: このフォルダ（Tests/SnapshotTests）で dotnet run（0 件失敗なら終了コード 0）
-    Assets/ の外に置いているので、Unity はこのフォルダを読まない。UnityEngine は UnityStubs.cs の最小限の代わりを使う
+    テストの中身は Assets/Editor/SnapshotTests/（Unity の Test Runner の EditMode でも同じものが動く。Assets/Tests/EditMode/SnapshotSuiteTests.cs）。
+    このフォルダは Assets/ の外なので、Unity は読まない。ここにあるのは dotnet で動かすためのものだけ：
+    入口（DotnetMain.cs）と、UnityEngine・GamePiece・GameBoard の最小限の代わり（UnityStubs.cs）
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -14,6 +16,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="*.cs" />
+    <!-- テストの中身（Unity の Test Runner と同じファイル） -->
+    <Compile Include="../../Assets/Editor/SnapshotTests/*.cs" Link="Suite/%(Filename)%(Extension)" />
     <!-- テストする本体（GameObject に依存しないクラスと、照合に使う今のルール） -->
     <Compile Include="../../Assets/Scripts/InGame/Match/BoardCells.cs" Link="Game/BoardCells.cs" />
     <Compile Include="../../Assets/Scripts/InGame/Match/MatchSnapshot.cs" Link="Game/MatchSnapshot.cs" />

@@ -9,10 +9,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
 using UnityEngine;
 
-static partial class Program
+static partial class SnapshotSuite
 {
     static void TestBoss()
     {
@@ -736,7 +735,7 @@ static partial class Program
             Check(s.players[1].energy == 0 && s.players[1].hand.All(h => h == 0), $"ランダムな討伐任務 {seed}: ボスの席はエナジー・持ち駒を持たない");
         }
         Check(over > 0, $"ランダムな討伐任務: 終局する対局がある（{over} / 6・討伐成功 {cleared}）");
-        Console.WriteLine($"raid random: 6 局のうち {over} 局が終局（討伐成功 {cleared}）");
+        Log($"raid random: 6 局のうち {over} 局が終局（討伐成功 {cleared}）");
     }
 
     // ------------------------------------------------------------
@@ -1002,9 +1001,8 @@ static partial class Program
             string path = FindKifu(name);
             Check(path != null, $"Prototype の棋譜 {name} がある（Tests/SnapshotTests/PrototypeKifus）");
             if (path == null) continue;
-            using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(path));
-            JsonElement k = doc.RootElement;
-            JsonElement cfg = k.GetProperty("config");
+            KifuJson k = KifuJson.Parse(File.ReadAllText(path));
+            KifuJson cfg = k.GetProperty("config");
             BossDef kifuBoss = BossDefs.ById(cfg.GetProperty("bossId").GetString());
             Check(cfg.GetProperty("mode").GetString() == "bossRaid" && cfg.GetProperty("ruleset").GetString() == "kassen" && kifuBoss != null
                   && kifuBoss.Id == (name.Contains("daishogun") ? "daishogun" : "akaoni"), $"{name}: 討伐任務・合戦将棋型・{(kifuBoss != null ? kifuBoss.Name : "?")}");
@@ -1012,32 +1010,32 @@ static partial class Program
 
             // 編成（Prototype の setup.formation・forgePicks）と魔法（先手だけ。normal・ultimate・transcendent の順）
             RaidFormation f = new RaidFormation();
-            JsonElement setup = k.GetProperty("setup");
-            foreach (JsonElement e in setup.GetProperty("formation").EnumerateArray())
+            KifuJson setup = k.GetProperty("setup");
+            foreach (KifuJson e in setup.GetProperty("formation").EnumerateArray())
             {
                 f.pieces.Add(FP(ProtoPieces[e.GetProperty("type").GetString()], e.GetProperty("x").GetInt32(), e.GetProperty("y").GetInt32()));
             }
-            foreach (JsonElement e in setup.GetProperty("forgePicks").EnumerateArray()) f.forgePicks.Add(ProtoPieces[e.GetString()]);
+            foreach (KifuJson e in setup.GetProperty("forgePicks").EnumerateArray()) f.forgePicks.Add(ProtoPieces[e.GetString()]);
             List<SnapshotSkill> deck = new List<SnapshotSkill>();
-            JsonElement lo = k.GetProperty("loadouts")[0];
-            foreach (JsonElement id in lo.GetProperty("normal").EnumerateArray()) deck.Add(ProtoSkills[id.GetString()]);
+            KifuJson lo = k.GetProperty("loadouts")[0];
+            foreach (KifuJson id in lo.GetProperty("normal").EnumerateArray()) deck.Add(ProtoSkills[id.GetString()]);
             foreach (string rank in new[] { "ultimate", "transcendent" })
             {
-                if (lo.TryGetProperty(rank, out JsonElement v) && v.ValueKind == JsonValueKind.String) deck.Add(ProtoSkills[v.GetString()]);
+                if (lo.TryGetProperty(rank, out KifuJson v) && v.ValueKind == KifuJsonKind.String) deck.Add(ProtoSkills[v.GetString()]);
             }
             uint seed = k.GetProperty("seed").GetUInt32();
             BoardSnapshot s = Kassen(seed);
             s.players[0].skills = deck;
             BoardSimulator.SetupRaid(s, kifuBoss, f);
 
-            List<JsonElement> actions = k.GetProperty("actions").EnumerateArray().ToList();
+            List<KifuJson> actions = k.GetProperty("actions").EnumerateArray().ToList();
             int n = actions.Count, played = 0, matched = 0;
             string error = null;
             while (played < n && !s.gameOver && error == null)
             {
                 while (played < n && actions[played].GetProperty("t").GetInt32() == s.clockTick)
                 {
-                    JsonElement e = actions[played];
+                    KifuJson e = actions[played];
                     MatchAction a = FromProto(s, e);
                     if (!BoardSimulator.Apply(s, a, out string reason))
                     {
@@ -1070,7 +1068,7 @@ static partial class Program
             Check(error == null, $"{name}: {error}");
             Check(matched == n, $"{name}: 全 {n} 手のハッシュが Prototype と一致（{matched} 手）");
             int endTick = k.GetProperty("endTick").GetInt32();
-            Console.WriteLine($"prototype kifu {name}: {matched} / {n} 手のハッシュが一致（seed {seed}・最後の tick {s.clockTick} / {endTick}・ボス HP {s.boss.hp}・王将の被弾 {s.raid.kingHits}・{(s.gameOver ? (s.winner == 0 ? "討伐成功" : "討伐失敗") : "続行中")}）");
+            Log($"prototype kifu {name}: {matched} / {n} 手のハッシュが一致（seed {seed}・最後の tick {s.clockTick} / {endTick}・ボス HP {s.boss.hp}・王将の被弾 {s.raid.kingHits}・{(s.gameOver ? (s.winner == 0 ? "討伐成功" : "討伐失敗") : "続行中")}）");
         }
     }
 }
