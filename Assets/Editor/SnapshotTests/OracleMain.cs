@@ -118,3 +118,25 @@ public class OracleBird : OracleBase { public override bool CanMoveByPattern(int
         int forwardX = (player == PlayerType.Player1) ? 1 : -1; // Player1 は +X が前
         return dx == forwardX && Mathf.Abs(dy) <= 1;
 } }
+
+// 種類ごとの「正解」の駒（狙撃手と、ここにない種類は狙撃手の動き）
+public static class Oracles
+{
+    public static OracleBase Make(PieceType t)
+    {
+        switch (t)
+        {
+            case PieceType.Pawn: return new OraclePawn();
+            case PieceType.Lance: return new OracleLance();
+            case PieceType.Knight: return new OracleKnight();
+            case PieceType.SilverGeneral: return new OracleSilverGeneral();
+            case PieceType.GoldGeneral: return new OracleGoldGeneral();
+            case PieceType.Bishop: return new OracleBishop();
+            case PieceType.Rook: return new OracleRook();
+            case PieceType.King: return new OracleKing();
+            case PieceType.Gunpowder: return new OracleGunpowder();
+            case PieceType.Bird: return new OracleBird();
+            default: return new OracleSniper();
+        }
+    }
+}

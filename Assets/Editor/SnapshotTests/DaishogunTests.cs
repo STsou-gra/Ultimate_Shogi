@@ -9,7 +9,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-static partial class Program
+static partial class SnapshotSuite
 {
     static void TestDaishogun()
     {
@@ -798,6 +798,6 @@ static partial class Program
             if (e1.gameOver) ended++;
             if (e1.gameOver && e1.winner == 0) cleared++;
         }
-        Console.WriteLine($"daishogun random: 4 局のうち {ended} 局が終局（討伐成功 {cleared}）");
+        Log($"daishogun random: 4 局のうち {ended} 局が終局（討伐成功 {cleared}）");
     }
 }

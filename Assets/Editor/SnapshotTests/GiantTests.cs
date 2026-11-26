@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-static partial class Program
+static partial class SnapshotSuite
 {
     // 王だけの盤（先手の手番。王将は Prototype の kingsOnly と同じ (4,8)・(4,0) → Unity の (0,4)・(8,4)）。両者とも 盾・剣・落とし穴・隕石 を編成
     static BoardSnapshot GiantBoard(string[] p2 = null)
@@ -284,9 +284,9 @@ static partial class Program
                 if (!BoardSimulator.Apply(s, a, out string reason)) { Check(false, $"巨人の playout {game}/{ply}: 当てはめられない {a} {reason}"); break; }
                 plies++;
                 Invariants(s, $"巨人の playout {game}/{ply}");
-                if (ply % 15 == 0) CompareRules(Build(s), $"巨人の playout {game}/{ply}");
+                if (ply % 15 == 0) { CompareRules(Build(s), $"巨人の playout {game}/{ply}"); TestBoards.ReleaseAll(); }
             }
         }
-        Console.WriteLine($"giant playouts: 60 局・{plies} 手（巨人の移動 {giantMoves}）");
+        Log($"giant playouts: 60 局・{plies} 手（巨人の移動 {giantMoves}）");
     }
 }

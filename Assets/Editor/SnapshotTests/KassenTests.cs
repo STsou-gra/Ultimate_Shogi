@@ -11,10 +11,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Text.Json;
 using UnityEngine;
 
-static partial class Program
+static partial class SnapshotSuite
 {
     static void TestKassen()
     {
@@ -412,7 +411,7 @@ static partial class Program
             g.current = 0;
             Invariants(g, "合戦の CPU 同士");
             Check(acts >= 10 && (g.gameOver || acts > 60), $"合戦の CPU 同士: 終局するか 90 秒まで指し続けた（{acts} 回・{(g.gameOver ? "終局" : "続行中")}）");
-            Console.WriteLine($"kassen cpu vs cpu（Lv1 対 Lv2）: {acts} 回行動・{(g.gameOver ? $"tick {g.clockTick} で{(g.winner == 0 ? "先手" : g.winner == 1 ? "後手" : "引き分け")}の勝ち" : "90 秒で打ち切り")}");
+            Log($"kassen cpu vs cpu（Lv1 対 Lv2）: {acts} 回行動・{(g.gameOver ? $"tick {g.clockTick} で{(g.winner == 0 ? "先手" : g.winner == 1 ? "後手" : "引き分け")}の勝ち" : "90 秒で打ち切り")}");
         }
     }
 
@@ -534,8 +533,10 @@ static partial class Program
     static string ProtoName(PieceType t) => ProtoPieces.First(kv => kv.Value == t).Key;
 
     // Prototype のマス {x, y} → Unity のマス（x = 8 − y・y = x）
-    static MatchSquare ProtoSq(JsonElement e) => new MatchSquare(8 - e.GetProperty("y").GetInt32(), e.GetProperty("x").GetInt32());
+    static MatchSquare ProtoSq(KifuJson e) => new MatchSquare(8 - e.GetProperty("y").GetInt32(), e.GetProperty("x").GetInt32());
 
+    // 棋譜は Tests/SnapshotTests/PrototypeKifus にある（Assets の外なので Unity は読み込まない）。
+    // dotnet run は実行ファイルの場所から上へたどる。Unity の Test Runner では今のフォルダがプロジェクトのフォルダになる
     static string FindKifu(string name)
     {
         string dir = AppContext.BaseDirectory;
@@ -545,12 +546,16 @@ static partial class Program
             if (File.Exists(p)) return p;
             dir = Path.GetDirectoryName(dir.TrimEnd(Path.DirectorySeparatorChar));
         }
-        string cwd = Path.Combine(Directory.GetCurrentDirectory(), "PrototypeKifus", name);
-        return File.Exists(cwd) ? cwd : null;
+        string cwd = Directory.GetCurrentDirectory();
+        foreach (string p in new[] { Path.Combine(cwd, "PrototypeKifus", name), Path.Combine(cwd, "Tests", "SnapshotTests", "PrototypeKifus", name) })
+        {
+            if (File.Exists(p)) return p;
+        }
+        return null;
     }
 
     // Prototype の行動 → Unity の MatchAction（移動の成りは Prototype と同じく「成れるなら成る」）
-    static MatchAction FromProto(BoardSnapshot s, JsonElement e)
+    static MatchAction FromProto(BoardSnapshot s, KifuJson e)
     {
         string type = e.GetProperty("type").GetString();
         MatchAction a;
@@ -570,12 +575,12 @@ static partial class Program
             case "special":
             case "snipe":
                 a = new MatchAction { type = type == "special" ? MatchActionType.Special : MatchActionType.Snipe, from = ProtoSq(e.GetProperty("from")) };
-                if (e.TryGetProperty("target", out JsonElement st)) a.targets.Add(ProtoSq(st));
+                if (e.TryGetProperty("target", out KifuJson st)) a.targets.Add(ProtoSq(st));
                 break;
             case "magic":
                 a = new MatchAction { type = MatchActionType.Magic, skill = ProtoSkills[e.GetProperty("skill").GetString()].id };
-                if (e.TryGetProperty("target", out JsonElement mt)) a.targets.Add(ProtoSq(mt));
-                if (e.TryGetProperty("to", out JsonElement mto) && ProtoSkills[e.GetProperty("skill").GetString()].UsesDestination) a.to = ProtoSq(mto);
+                if (e.TryGetProperty("target", out KifuJson mt)) a.targets.Add(ProtoSq(mt));
+                if (e.TryGetProperty("to", out KifuJson mto) && ProtoSkills[e.GetProperty("skill").GetString()].UsesDestination) a.to = ProtoSq(mto);
                 break; // orient：Unity の範囲の魔法は向きが 1 つ（Prototype の orient は範囲が回る魔法だけ）
             case "forge":
                 a = new MatchAction { type = MatchActionType.Forge, piece = ProtoPieces[e.GetProperty("piece").GetString()] };
@@ -586,7 +591,7 @@ static partial class Program
             default:
                 throw new Exception($"知らない行動 {type}");
         }
-        if (e.TryGetProperty("owner", out JsonElement o)) a.owner = o.GetInt32();
+        if (e.TryGetProperty("owner", out KifuJson o)) a.owner = o.GetInt32();
         return a;
     }
 
@@ -723,21 +728,20 @@ static partial class Program
             string path = FindKifu(name);
             Check(path != null, $"Prototype の棋譜 {name} がある（Tests/SnapshotTests/PrototypeKifus）");
             if (path == null) continue;
-            using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(path));
-            JsonElement k = doc.RootElement;
+            KifuJson k = KifuJson.Parse(File.ReadAllText(path));
             Check(k.GetProperty("format").GetString() == "ultimate-shogi-kifu" && k.GetProperty("version").GetInt32() == 2, $"{name}: Prototype の棋譜の版 2");
             Check(k.GetProperty("config").GetProperty("ruleset").GetString() == "kassen", $"{name}: 合戦将棋型");
 
             // 編成（Prototype の normal・ultimate・transcendent の順。Unity の枠の順と同じ）
             List<SnapshotSkill>[] decks = { new List<SnapshotSkill>(), new List<SnapshotSkill>() };
-            JsonElement los = k.GetProperty("loadouts");
+            KifuJson los = k.GetProperty("loadouts");
             for (int i = 0; i < 2; i++)
             {
-                JsonElement lo = los[i];
-                foreach (JsonElement id in lo.GetProperty("normal").EnumerateArray()) decks[i].Add(ProtoSkills[id.GetString()]);
+                KifuJson lo = los[i];
+                foreach (KifuJson id in lo.GetProperty("normal").EnumerateArray()) decks[i].Add(ProtoSkills[id.GetString()]);
                 foreach (string rank in new[] { "ultimate", "transcendent" })
                 {
-                    if (lo.TryGetProperty(rank, out JsonElement v) && v.ValueKind == JsonValueKind.String) decks[i].Add(ProtoSkills[v.GetString()]);
+                    if (lo.TryGetProperty(rank, out KifuJson v) && v.ValueKind == KifuJsonKind.String) decks[i].Add(ProtoSkills[v.GetString()]);
                 }
             }
             uint seed = k.GetProperty("seed").GetUInt32();
@@ -745,14 +749,14 @@ static partial class Program
             s.players[0].skills = decks[0];
             s.players[1].skills = decks[1];
 
-            List<JsonElement> actions = k.GetProperty("actions").EnumerateArray().ToList();
+            List<KifuJson> actions = k.GetProperty("actions").EnumerateArray().ToList();
             int n = actions.Count, played = 0, matched = 0;
             string error = null;
             while (played < n && !s.gameOver && error == null)
             {
                 while (played < n && actions[played].GetProperty("t").GetInt32() == s.clockTick)
                 {
-                    JsonElement e = actions[played];
+                    KifuJson e = actions[played];
                     MatchAction a = FromProto(s, e);
                     if (!BoardSimulator.Apply(s, a, out string reason))
                     {
@@ -784,7 +788,7 @@ static partial class Program
             }
             Check(error == null, $"{name}: {error}");
             Check(matched == n, $"{name}: 全 {n} 手のハッシュが Prototype と一致（{matched} 手）");
-            Console.WriteLine($"prototype kifu {name}: {matched} / {n} 手のハッシュが一致（seed {seed}・最後の tick {s.clockTick}）");
+            Log($"prototype kifu {name}: {matched} / {n} 手のハッシュが一致（seed {seed}・最後の tick {s.clockTick}）");
         }
     }
 }
